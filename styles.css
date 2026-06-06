@@ -67,15 +67,42 @@ h2 { font-size: 22px; }
 }
 
 .brand { display: flex; align-items: center; gap: 12px; }
-.home-brand { min-width: 0; }
-.brand-logo {
-  display: block;
-  width: clamp(150px, 18vw, 220px);
-  height: auto;
-  max-height: 72px;
-  object-fit: contain;
-  border-radius: 8px;
-  background: #fff;
+.home-brand {
+  min-width: 0;
+  flex-shrink: 0;
+  gap: 10px;
+  color: var(--text);
+}
+.afrix-mark { padding: 0; background: transparent; }
+.symbol-a,
+.word-afrix {
+  fill: #062d4f;
+}
+.symbol-a-cut,
+.symbol-c,
+.symbol-africa,
+.symbol-madagascar,
+.word-capital {
+  fill: none;
+  stroke: none;
+  color: #c7962f;
+}
+.symbol-a-cut,
+.symbol-africa,
+.symbol-madagascar,
+.word-capital {
+  fill: currentColor;
+}
+.symbol-c {
+  stroke: currentColor;
+  stroke-width: 20;
+  stroke-linecap: square;
+}
+.word-afrix,
+.word-capital {
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: 10px;
 }
 .brand-mark {
   display: grid;
@@ -87,6 +114,13 @@ h2 { font-size: 22px; }
   color: #05110d;
   font-weight: 900;
   font-size: 22px;
+}
+.brand .afrix-mark {
+  display: block;
+  width: 66px;
+  height: 54px;
+  border-radius: 0;
+  background: transparent;
 }
 .brand small { display: block; color: var(--muted); font-size: 13px; }
 
