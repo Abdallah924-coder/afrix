@@ -67,6 +67,16 @@ h2 { font-size: 22px; }
 }
 
 .brand { display: flex; align-items: center; gap: 12px; }
+.home-brand { min-width: 0; }
+.brand-logo {
+  display: block;
+  width: clamp(150px, 18vw, 220px);
+  height: auto;
+  max-height: 72px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #fff;
+}
 .brand-mark {
   display: grid;
   place-items: center;
@@ -303,4 +313,3 @@ th { color: var(--muted); font-size: 12px; }
     min-width: 0;
   }
 }
-
