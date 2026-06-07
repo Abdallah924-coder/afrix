@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tableau de bord - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body data-protected data-page="dashboard">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+    <section class="hero-card">
+      <div>
+        <span class="pill">Liquidity • Trading • Blockchain • Web3</span>
+        <h1>Bienvenue dans votre espace AFRIX.</h1>
+        <p>Suivez vos opérations, votre activité personnelle et votre progression dans le programme partenaire.</p>
+      </div>
+    </section>
+    <section class="stats">
+      <article><span>Solde disponible</span><strong data-balance>0.00 USDT</strong><small>Wallet principal</small></article>
+      <article><span>Activité personnelle</span><strong data-activity>0 USDT</strong><small data-level-note>0 niveau activé</small></article>
+      <article><span>Partenaires actifs</span><strong data-team>0</strong><small>Équipe communautaire</small></article>
+      <article><span>Bonus reçus</span><strong data-bonus>0.00 USDT</strong><small>Récompenses réseau</small></article>
+    </section>
+    <section class="grid two">
+      <article class="panel">
+        <div class="panel-head"><h2>Activité récente</h2><a class="icon-btn" href="transactions.html">↗</a></div>
+        <div class="list" data-recent-list></div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h2>Progression partenaire</h2><span class="badge" data-rank>Niveau 0</span></div>
+        <div class="progress"><span data-progress></span></div>
+        <p class="muted" data-progress-text></p>
+        <div class="copy-row"><input data-ref-link readonly><button class="btn secondary" data-copy-ref>Copier</button></div>
+      </article>
+    </section>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
+

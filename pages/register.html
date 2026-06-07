@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inscription - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body class="auth-page">
+  <main class="auth-layout">
+    <section class="auth-intro">
+      <a class="brand" href="../index.html">
+        <span class="brand-mark">A</span>
+        <span><strong>AFRIX</strong><small>Capital Investment</small></span>
+      </a>
+      <h1>Créez votre compte partenaire.</h1>
+      <p>Votre espace sera configuré en USDT avec lien de parrainage et progression communautaire.</p>
+    </section>
+    <form class="auth-card" data-register-form>
+      <h2>Inscription</h2>
+      <label>Nom complet<input name="fullName" required></label>
+      <label>Email<input type="email" name="email" required></label>
+      <label>Mot de passe<input type="password" name="password" minlength="6" required></label>
+      <label>Code parrain<input name="refCode" placeholder="Ex: AFX2026"></label>
+      <button class="btn primary full" type="submit">Créer le compte</button>
+      <p>Déjà inscrit ? <a href="login.html">Se connecter</a></p>
+    </form>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
+
