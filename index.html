@@ -19,24 +19,45 @@
       </svg>
       <span><strong>AFRIX</strong><small>Capital</small></span>
     </a>
-    <nav>
+    <input class="public-menu-check" id="public-menu" type="checkbox" aria-label="Ouvrir le menu">
+    <label class="public-menu-btn" for="public-menu" aria-label="Ouvrir le menu">
+      <span></span>
+      <span></span>
+      <span></span>
+    </label>
+    <nav class="public-nav-links">
+      <div class="mobile-menu-head">
+        <strong>AFRIX</strong>
+        <label for="public-menu" aria-label="Fermer le menu">×</label>
+      </div>
       <a href="pages/login.html">Connexion</a>
       <a class="btn primary" href="pages/register.html">Créer un compte</a>
     </nav>
+    <label class="public-menu-backdrop" for="public-menu" aria-label="Fermer le menu"></label>
   </header>
 
   <main class="public-hero">
     <section class="hero-copy">
-      <span class="pill">Programme officiel 2026</span>
+      <span class="pill">Programme Web3 2026</span>
       <h1>Finance digitale, blockchain et partenariat international en USDT.</h1>
-      <p>AFRIX Capital Investment connecte activité personnelle, réseau communautaire, wallet USDT et suivi des récompenses dans une interface claire.</p>
+      <p>AFRIX Capital Investment connecte wallet USDT, activité personnelle, réseau communautaire et suivi des récompenses dans une expérience inspirée de la finance Web3.</p>
       <div class="hero-actions">
         <a class="btn primary" href="pages/register.html">Rejoindre AFRIX</a>
         <a class="btn secondary" href="pages/login.html">Accéder au compte</a>
       </div>
     </section>
     <section class="chain-visual" aria-label="Blockchain">
-      <span></span><span></span><span></span><span></span><span></span><span></span>
+      <div class="chain-grid"></div>
+      <div class="chain-line line-a"></div>
+      <div class="chain-line line-b"></div>
+      <div class="chain-line line-c"></div>
+      <div class="chain-line line-d"></div>
+      <span class="chain-node"><strong>USDT</strong><small>Wallet</small></span>
+      <span class="chain-node"><strong>Node</strong><small>DeFi</small></span>
+      <span class="chain-node"><strong>Web3</strong><small>Access</small></span>
+      <span class="chain-node"><strong>20L</strong><small>Network</small></span>
+      <span class="chain-node"><strong>50%</strong><small>Rewards</small></span>
+      <span class="chain-node"><strong>ACI</strong><small>Capital</small></span>
     </section>
   </main>
 
@@ -45,7 +66,5 @@
     <article><span>Bonus réseau</span><strong>20 niveaux</strong></article>
     <article><span>Récompenses</span><strong>Jusqu'à 50%</strong></article>
   </section>
-
-  <script src="app.js"></script>
 </body>
 </html>
