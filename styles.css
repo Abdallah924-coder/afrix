@@ -15,6 +15,12 @@
 
 * { box-sizing: border-box; }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -31,6 +37,7 @@ button, input, select { font: inherit; }
 button { cursor: pointer; }
 input, select {
   width: 100%;
+  min-width: 0;
   min-height: 46px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -39,7 +46,7 @@ input, select {
   background: #071210;
   outline: none;
 }
-label { display: grid; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 13px; }
+label { min-width: 0; display: grid; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 13px; }
 h1, h2, h3, p { margin-top: 0; }
 h1 { font-size: 30px; line-height: 1.12; }
 h2 { font-size: 22px; }
@@ -48,6 +55,7 @@ h2 { font-size: 22px; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  max-width: 100%;
   min-height: 42px;
   border: 0;
   border-radius: 8px;
@@ -243,6 +251,7 @@ h2 { font-size: 22px; }
 .chain-node:nth-of-type(6) { left: 76%; top: 72%; animation-delay: .95s; }
 .public-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 10px 48px 52px; }
 .public-strip article, .panel, .stats article, .plans article {
+  min-width: 0;
   padding: 24px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -356,7 +365,7 @@ h2 { font-size: 22px; }
 .side-card span, .side-card small { display: block; color: var(--muted); font-size: 13px; }
 .side-card strong { display: block; margin: 7px 0; color: var(--gold); font-size: 28px; }
 
-.app { margin-left: 260px; padding: 34px; }
+.app { min-width: 0; margin-left: 260px; padding: 34px; }
 .topbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 18px; }
 .topbar-title p { margin-bottom: 7px; color: var(--cyan); font-size: 13px; }
 .topbar-title { min-width: 0; }
@@ -389,13 +398,20 @@ body[data-page="dashboard"] .stats article {
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .icon-btn { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; color: var(--cyan); background: var(--panel2); }
 .list { display: grid; gap: 10px; }
-.list div, .switch-row, .wallet-address { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 8px; background: var(--panel2); }
+.list div, .switch-row, .wallet-address { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 8px; background: var(--panel2); }
 .list span, .wallet-address span { display: block; color: var(--muted); font-size: 13px; }
 .wallet-address small { display: block; margin-top: 6px; color: var(--muted); }
+.wallet-address > div { min-width: 0; }
+.wallet-address strong,
+.wallet-address small,
+.info-grid strong,
+.muted {
+  overflow-wrap: anywhere;
+}
 .list small { display: block; margin-top: 4px; color: var(--muted); }
 .info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
 .compact-info { grid-template-columns: repeat(2, 1fr); margin-top: 16px; }
-.info-grid div { padding: 12px; border-radius: 8px; background: var(--panel2); }
+.info-grid div { min-width: 0; padding: 12px; border-radius: 8px; background: var(--panel2); }
 .info-grid span { display: block; color: var(--muted); font-size: 12px; }
 .info-grid strong { display: block; margin-top: 6px; }
 .admin-queues { margin-top: 14px; }
@@ -407,6 +423,7 @@ body[data-page="dashboard"] .stats article {
 .progress span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--green), var(--cyan), var(--gold)); }
 .copy-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 16px; }
 .wallet-tabs {
+  min-width: 0;
   display: grid;
   gap: 16px;
 }
@@ -417,7 +434,7 @@ body[data-page="dashboard"] .stats article {
 }
 .wallet-tab-list {
   display: inline-grid;
-  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   width: min(420px, 100%);
   padding: 6px;
@@ -438,6 +455,7 @@ body[data-page="dashboard"] .stats article {
 }
 .wallet-tab-panel { display: none; }
 .wallet-tab-panel {
+  min-width: 0;
   gap: 18px;
 }
 .wallet-receive-fields {
@@ -712,6 +730,9 @@ th { color: var(--muted); font-size: 12px; }
   .list div, .switch-row, .wallet-address {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .wallet-address .btn {
+    width: 100%;
   }
   .info-grid { grid-template-columns: 1fr; }
   .maintenance-card h1 { font-size: 30px; }
