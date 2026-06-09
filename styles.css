@@ -391,6 +391,7 @@ body[data-page="dashboard"] .stats article {
 .list { display: grid; gap: 10px; }
 .list div, .switch-row, .wallet-address { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 8px; background: var(--panel2); }
 .list span, .wallet-address span { display: block; color: var(--muted); font-size: 13px; }
+.wallet-address small { display: block; margin-top: 6px; color: var(--muted); }
 .list small { display: block; margin-top: 4px; color: var(--muted); }
 .info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
 .compact-info { grid-template-columns: repeat(2, 1fr); margin-top: 16px; }
@@ -405,6 +406,76 @@ body[data-page="dashboard"] .stats article {
 .progress { height: 12px; overflow: hidden; border-radius: 999px; background: #071210; }
 .progress span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--green), var(--cyan), var(--gold)); }
 .copy-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 16px; }
+.wallet-tabs {
+  display: grid;
+  gap: 16px;
+}
+.wallet-tabs > input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.wallet-tab-list {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 8px;
+  width: min(420px, 100%);
+  padding: 6px;
+  border: 1px solid rgba(55, 217, 209, .24);
+  border-radius: 8px;
+  background: rgba(7, 18, 16, .72);
+}
+.wallet-tab-list label {
+  display: grid;
+  place-items: center;
+  min-height: 42px;
+  margin: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.wallet-tab-panel { display: none; }
+.wallet-tab-panel {
+  gap: 18px;
+}
+.wallet-receive-fields {
+  display: grid;
+  gap: 14px;
+}
+.wallet-receive-fields[hidden] {
+  display: none;
+}
+.conversion-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid rgba(233, 189, 99, .32);
+  border-radius: 8px;
+  background: rgba(233, 189, 99, .1);
+}
+.conversion-card[hidden] {
+  display: none;
+}
+.conversion-card span,
+.conversion-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.conversion-card strong {
+  color: var(--gold);
+  font-size: 24px;
+}
+#wallet-deposit:checked ~ .wallet-tab-list label[for="wallet-deposit"],
+#wallet-withdraw:checked ~ .wallet-tab-list label[for="wallet-withdraw"] {
+  color: #04130b;
+  background: var(--green);
+}
+#wallet-deposit:checked ~ .wallet-deposit-panel,
+#wallet-withdraw:checked ~ .wallet-withdraw-panel {
+  display: grid;
+}
 .plans { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .plans article { min-height: 230px; display: flex; flex-direction: column; gap: 12px; }
 .plans strong { font-size: 32px; }

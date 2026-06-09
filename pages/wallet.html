@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wallet - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body data-protected data-page="wallet">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+    <section class="wallet-tabs">
+      <input id="wallet-deposit" name="wallet-section" type="radio" checked>
+      <input id="wallet-withdraw" name="wallet-section" type="radio">
+      <div class="wallet-tab-list" aria-label="Sections wallet">
+        <label for="wallet-deposit">Dépôt</label>
+        <label for="wallet-withdraw">Retrait</label>
+      </div>
+      <div class="wallet-tab-panel wallet-deposit-panel">
+        <section class="panel wallet-address">
+          <div>
+            <span data-deposit-target-label>Adresse de dépôt TRC20</span>
+            <strong data-deposit-target>TRX9AFRIX2026USDT001</strong>
+            <small data-deposit-target-note>Envoyez uniquement des USDT TRC20 vers cette adresse.</small>
+          </div>
+          <button class="btn secondary" data-copy-wallet>Copier</button>
+        </section>
+        <form class="panel" data-deposit-form>
+          <h1>Dépôt USDT manuel</h1>
+          <label>Montant minimum 10 USDT<input name="amount" type="number" min="10" step="0.01" value="10" data-deposit-amount></label>
+          <label>Moyen de paiement<select name="method" data-deposit-method><option value="trc20">USDT TRC20</option><option value="bep20">USDT BEP20</option><option value="mobile">Mobile Money</option><option value="airtel">Airtel Money</option></select></label>
+          <div class="conversion-card" data-deposit-conversion hidden>
+            <span>Taux dépôt Mobile Money / Airtel Money</span>
+            <strong data-deposit-local-amount>6 500 XAF</strong>
+            <small>1 USDT = 650 XAF</small>
+          </div>
+          <label>Référence transaction<input name="txRef" required placeholder="Hash ou référence Binance Pay"></label>
+          <label>Preuve de paiement<input name="proof" type="file" accept="image/png,image/jpeg,image/webp"></label>
+          <button class="btn primary full" type="submit">Enregistrer la demande</button>
+        </form>
+        <section class="panel">
+          <h2>Instructions dépôt manuel</h2>
+          <div class="info-grid">
+            <div><span>Minimum</span><strong>10 USDT</strong></div>
+            <div><span>Réseaux</span><strong>TRC20 / BEP20</strong></div>
+            <div><span>Validation</span><strong>Admin</strong></div>
+            <div><span>Statut</span><strong>Pending → Completed</strong></div>
+          </div>
+          <p class="muted">Après paiement, l'utilisateur renseigne la référence et ajoute une capture. L'admin vérifie manuellement avant de créditer le solde.</p>
+        </section>
+      </div>
+      <div class="wallet-tab-panel wallet-withdraw-panel">
+        <form class="panel" data-withdraw-form>
+          <h1>Retrait USDT</h1>
+          <label>Moyen de réception<select name="method" data-withdraw-method><option value="trc20">USDT TRC20</option><option value="bep20">USDT BEP20</option><option value="mobile">Mobile Money</option><option value="airtel">Airtel Money</option></select></label>
+          <div class="wallet-receive-fields" data-receive-crypto>
+            <label>Adresse wallet<input name="address" placeholder="Adresse USDT"></label>
+          </div>
+          <div class="wallet-receive-fields" data-receive-mobile hidden>
+            <label>Numéro de réception<input name="phone" placeholder="Ex: +242 06 000 0000"></label>
+            <label>Nom du bénéficiaire<input name="beneficiary" placeholder="Nom lié au compte"></label>
+          </div>
+          <label>Montant<input name="amount" type="number" min="1" step="0.01" value="10" data-withdraw-amount></label>
+          <div class="conversion-card" data-withdraw-conversion hidden>
+            <span>Taux retrait Mobile Money / Airtel Money</span>
+            <strong data-withdraw-local-amount>5 500 XAF</strong>
+            <small>1 USDT = 550 XAF</small>
+          </div>
+          <button class="btn primary full" type="submit">Soumettre le retrait</button>
+        </form>
+        <section class="panel">
+          <h2>Conditions de retrait</h2>
+          <div class="info-grid">
+            <div><span>Minimum</span><strong>10 USDT</strong></div>
+            <div><span>Réseaux</span><strong>TRC20 / BEP20</strong></div>
+            <div><span>Traitement</span><strong>24h - 48h</strong></div>
+            <div><span>Statut</span><strong>Pending → Paid</strong></div>
+          </div>
+          <p class="muted">Le retrait est soumis à vérification avant envoi vers l'adresse USDT renseignée.</p>
+        </section>
+      </div>
+    </section>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>
