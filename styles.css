@@ -448,6 +448,12 @@ body[data-page="wallet"] select {
 }
 .wallet-tabs > input {
   position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
   opacity: 0;
   pointer-events: none;
 }
@@ -595,8 +601,20 @@ th { color: var(--muted); font-size: 12px; }
   .info-grid { grid-template-columns: 1fr 1fr; }
   .queue-row { grid-template-columns: 1fr !important; }
   .merchant-card { grid-template-columns: 1fr !important; }
-  .sidebar { transform: translateX(-100%); transition: .2s ease; z-index: 20; }
-  .sidebar.open { transform: translateX(0); }
+  .sidebar {
+    width: min(260px, 86vw);
+    transform: none;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .2s ease, visibility .2s ease;
+    z-index: 20;
+  }
+  .sidebar.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
   .side-card { position: static; margin-top: 18px; }
   .app {
     width: 100%;
