@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AFRIX Money - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body data-protected data-page="afrix-money">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+    <section class="hero-card">
+      <span class="pill">AFRIX Money</span>
+      <h1>Infrastructure de paiement digitale intégrée.</h1>
+      <p>Transferts P2P, Cash In et Cash Out avec agents agréés pour connecter USDT, blockchain et monnaie locale.</p>
+    </section>
+    <section class="grid two">
+      <form class="panel" data-p2p-form>
+        <h1>P2P entre utilisateurs</h1>
+        <label>Email du destinataire<input name="recipient" type="email" required></label>
+        <label>Montant minimum 1 USDT<input name="amount" type="number" min="1" step="0.01" value="1"></label>
+        <button class="btn primary full" type="submit">Envoyer</button>
+        <p class="muted">Frais P2P: 2,5%. Disponible 24h/24 et 7j/7.</p>
+      </form>
+      <form class="panel" data-cico-form>
+        <h1>Merchant CICO</h1>
+        <label>Type d'opération<select name="operation"><option>Cash In</option><option>Cash Out</option></select></label>
+        <label>Code merchant<input name="merchant" required placeholder="AFX-MERCHANT-001"></label>
+        <label>Montant minimum 1 USDT<input name="amount" type="number" min="1" step="0.01" value="1"></label>
+        <button class="btn primary full" type="submit">Créer demande CICO</button>
+        <p class="muted">Frais CICO: 5%. Merchant: 3%. Plateforme: 2%.</p>
+      </form>
+    </section>
+    <section class="panel">
+      <h1>Répartition des frais CICO</h1>
+      <div class="info-grid">
+        <div><span>Frais total</span><strong>5%</strong></div>
+        <div><span>Gain merchant</span><strong>3%</strong></div>
+        <div><span>Part plateforme</span><strong>2%</strong></div>
+        <div><span>Minimum</span><strong>1 USDT</strong></div>
+      </div>
+      <p class="muted">Pour une opération CICO de 100 USDT, le merchant gagne 3 USDT et AFRIX conserve 2 USDT comme frais plateforme.</p>
+    </section>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

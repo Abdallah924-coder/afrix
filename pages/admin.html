@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body data-protected data-page="admin">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+    <section class="grid two">
+      <article class="panel">
+        <h1>Contrôles plateforme</h1>
+        <div class="switch-row"><span>Dépôts manuels</span><input type="checkbox" checked></div>
+        <div class="switch-row"><span>Retraits manuels</span><input type="checkbox" checked></div>
+        <div class="switch-row"><span>Validation KYC</span><input type="checkbox" checked></div>
+        <div class="switch-row"><span>Mode maintenance</span><input type="checkbox"></div>
+      </article>
+      <article class="panel">
+        <h1>Résumé admin</h1>
+        <div class="list">
+          <div><span>Total dépôts</span><strong data-admin-deposits>0 USDT</strong></div>
+          <div><span>Total retraits</span><strong data-admin-withdrawals>0 USDT</strong></div>
+          <div><span>Transactions</span><strong data-admin-tx>0</strong></div>
+          <div><span>Membres équipe</span><strong data-admin-team>0</strong></div>
+        </div>
+      </article>
+    </section>
+    <section class="grid two admin-queues">
+      <article class="panel">
+        <div class="panel-head"><h1>Dépôts en attente</h1><span class="badge" data-pending-deposits-count>0</span></div>
+        <div class="list" data-admin-pending-deposits></div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h1>Retraits en attente</h1><span class="badge" data-pending-withdrawals-count>0</span></div>
+        <div class="list" data-admin-pending-withdrawals></div>
+      </article>
+    </section>
+    <section class="grid two admin-queues">
+      <article class="panel">
+        <div class="panel-head"><h1>Demandes merchant</h1><span class="badge" data-merchant-applications-count>0</span></div>
+        <div class="list" data-admin-merchant-applications></div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h1>Litiges ouverts</h1><span class="badge" data-disputes-count>0</span></div>
+        <div class="list" data-admin-disputes></div>
+      </article>
+    </section>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

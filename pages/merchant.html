@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Merchant - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body data-protected data-page="merchant">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+    <section class="hero-card">
+      <span class="pill">Merchant AFRIX Money</span>
+      <h1>Devenir agent Cash In / Cash Out agréé.</h1>
+      <p>Les merchants facilitent la conversion entre USDT, Mobile Money et cash local. La validation admin est obligatoire.</p>
+    </section>
+
+    <section class="stats">
+      <article><span>Plans actifs requis</span><strong>500 USDT</strong><small>activité personnelle minimum</small></article>
+      <article><span>Garantie minimum</span><strong>100 USDT</strong><small>dépôt merchant</small></article>
+      <article><span>Gain merchant</span><strong>3%</strong><small>sur chaque CICO</small></article>
+      <article><span>Statut</span><strong data-merchant-application-status>Aucune demande</strong><small>validation admin</small></article>
+    </section>
+
+    <section class="grid two">
+      <form class="panel" data-merchant-application-form>
+        <h1>Demande d'agrément</h1>
+        <label>Nom commercial<input name="businessName" required placeholder="AFRIX Agent Brazzaville"></label>
+        <label>Pays<input name="country" required placeholder="Congo"></label>
+        <label>Ville / zone<input name="city" required placeholder="Brazzaville, Poto-Poto"></label>
+        <label>Téléphone WhatsApp<input name="phone" required placeholder="+242..."></label>
+        <label>Méthodes disponibles<input name="methods" required placeholder="Cash, MTN, Airtel, Banque"></label>
+        <label>Dépôt de garantie<input name="guarantee" type="number" min="100" step="0.01" value="100"></label>
+        <button class="btn primary full" type="submit">Envoyer la demande</button>
+      </form>
+
+      <form class="panel" data-dispute-form>
+        <h1>Signaler un litige</h1>
+        <label>Type<select name="type"><option>CICO</option><option>P2P</option><option>Dépôt</option><option>Retrait</option></select></label>
+        <label>Référence opération<input name="reference" required placeholder="AFX-..."></label>
+        <label>Motif<input name="reason" required placeholder="Décrivez le problème"></label>
+        <button class="btn secondary full" type="submit">Envoyer au support</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h1>Merchants approuvés</h1><span class="badge">CICO</span></div>
+      <div class="list" data-merchants-list></div>
+    </section>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

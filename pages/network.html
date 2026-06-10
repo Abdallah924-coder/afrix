@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Réseau - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body data-protected data-page="network">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+    <section class="grid two">
+      <article class="panel">
+        <div class="panel-head"><h1>Bonus sur 20 niveaux</h1><span class="badge">50% total</span></div>
+        <div class="levels" data-levels-list></div>
+      </article>
+      <article class="panel">
+        <h1>Lien partenaire</h1>
+        <p class="muted">Les partenaires sont ajoutés uniquement lorsqu'ils s'inscrivent avec votre lien. Les bonus sont calculés par le backend après validation de leur activité réelle.</p>
+        <div class="copy-row"><input data-ref-link readonly><button class="btn secondary" data-copy-ref>Copier</button></div>
+        <div class="info-grid compact-info">
+          <div><span>Auto-crédit</span><strong>Interdit</strong></div>
+          <div><span>Validation</span><strong>Backend</strong></div>
+        </div>
+      </article>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h1>Partenaires directs</h1><span class="badge" data-direct-partners-count>0</span></div>
+      <div class="list" data-direct-partners-list></div>
+    </section>
+  </main>
+  <script src="../app.js"></script>
+</body>
+</html>

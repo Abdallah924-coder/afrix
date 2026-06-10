@@ -39,13 +39,32 @@ const mockUser = {
     { date: "2026-06-07", type: "Bonus", description: "Bonus reseau niveau 2", amount: "+35.00 USDT", status: "Completed" },
     { date: "2026-06-06", type: "Plan", description: "Activation pack croissance", amount: "-500.00 USDT", status: "Active" },
     { date: "2026-06-05", type: "Retrait", description: "Demande de retrait USDT", amount: "-120.00 USDT", status: "Pending" }
+  ],
+  directPartners: [
+    { fullName: "Grace Mbemba", email: "grace@example.com", activity: 160 },
+    { fullName: "Junior Mavoungou", email: "junior@example.com", activity: 95 },
+    { fullName: "Prisca Okemba", email: "prisca@example.com", activity: 310 }
+  ],
+  merchants: [
+    { businessName: "AFRIX Agent Brazzaville", city: "Brazzaville", country: "Congo", methods: "Cash, MTN, Airtel", phone: "+242 06 000 2026", status: "Approuve" }
+  ],
+  merchantApplications: [
+    { businessName: "AFRIX Agent Pointe-Noire", userEmail: "agent@example.com", city: "Pointe-Noire", country: "Congo", guarantee: 100, status: "pending" }
+  ],
+  disputes: [
+    { reason: "Verification Cash Out", userEmail: "client@example.com", reference: "AFX-20260609", type: "CICO", status: "open" }
   ]
 };
 
 const pageTitles = {
   dashboard: "Tableau de bord",
   wallet: "Wallet USDT",
+  "afrix-money": "AFRIX Money",
+  merchant: "Merchant",
+  plans: "Plans",
+  network: "Reseau",
   transactions: "Historique",
+  admin: "Admin",
   login: "Connexion",
   register: "Inscription"
 };
@@ -53,11 +72,23 @@ const pageTitles = {
 const navItems = [
   ["dashboard", "Dashboard", "dashboard.html"],
   ["wallet", "Wallet USDT", "wallet.html"],
-  ["transactions", "Transactions", "transactions.html"]
+  ["afrix-money", "AFRIX Money", "afrix-money.html"],
+  ["merchant", "Merchant", "merchant.html"],
+  ["plans", "Plans", "plans.html"],
+  ["network", "Reseau", "network.html"],
+  ["transactions", "Transactions", "transactions.html"],
+  ["admin", "Admin", "admin.html"]
 ];
 
 const DEPOSIT_MOBILE_RATE = 650;
 const WITHDRAW_MOBILE_RATE = 550;
+const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+const plans = [
+  { name: "Starter Plan", amount: 10, daily: "0,50%", duration: "90 jours", cycle: "jusqu'a 45%", note: "Decouvrir progressivement l'ecosysteme" },
+  { name: "Smart Plan", amount: 50, daily: "0,60%", duration: "180 jours", cycle: "jusqu'a 108%", note: "Strategie plus longue", featured: true },
+  { name: "Premium Plan", amount: 100, daily: "0,70%", duration: "270 jours", cycle: "jusqu'a 189%", note: "Renforcer l'engagement" },
+  { name: "Elite Plan", amount: 100, daily: "0,80%", duration: "365 jours", cycle: "jusqu'a 292%", note: "Vision long terme" }
+];
 
 const formatUsdt = (value) => `${Number(value).toFixed(2)} USDT`;
 const formatXaf = (value) => `${Math.round(Number(value)).toLocaleString("fr-FR")} XAF`;
@@ -263,6 +294,146 @@ function renderWallet(user) {
   updateWithdrawFields();
 }
 
+function renderPlans(user) {
+  const list = document.querySelector("[data-plans-list]");
+  if (!list) return;
+
+  list.innerHTML = plans.map((plan) => `
+    <article class="${plan.featured ? "featured" : ""}">
+      <span>${plan.name}</span>
+      <strong>${plan.amount}+ USDT</strong>
+      <small>Objectif quotidien: ${plan.daily}</small>
+      <small>Duree du cycle: ${plan.duration}</small>
+      <small>Objectif cycle: ${plan.cycle}</small>
+      <small>${plan.note}</small>
+      <small>Activite actuelle: ${Number(user.activity || 0).toFixed(0)} USDT</small>
+      <button class="btn primary" type="button" data-plan="${plan.amount}">Activer</button>
+    </article>
+  `).join("");
+}
+
+function renderNetwork(user) {
+  const levelsList = document.querySelector("[data-levels-list]");
+  const partnersList = document.querySelector("[data-direct-partners-list]");
+  const partnersCount = document.querySelector("[data-direct-partners-count]");
+  const refLink = document.querySelector("[data-ref-link]");
+  const activeLevels = Math.max(0, Math.min(20, Math.floor(Number(user.activity || 0) / 100)));
+
+  if (levelsList) {
+    levelsList.innerHTML = bonusRates.map((rate, index) => {
+      const level = index + 1;
+      return `<div class="level ${level > activeLevels ? "locked" : ""}"><strong>Niveau ${level}</strong><span>${rate}% bonus ${level > activeLevels ? "verrouille" : "actif"}</span></div>`;
+    }).join("");
+  }
+
+  if (refLink) refLink.value = user.refLink;
+  if (partnersCount) partnersCount.textContent = user.directPartners?.length || 0;
+  if (partnersList) {
+    const partners = user.directPartners || [];
+    partnersList.innerHTML = partners.length ? partners.map((partner) => `
+      <div>
+        <span>${partner.fullName}<small>${partner.email}</small></span>
+        <strong>${partner.activity} USDT</strong>
+      </div>
+    `).join("") : `<p class="muted">Aucun partenaire direct pour le moment.</p>`;
+  }
+}
+
+function renderMerchants(user) {
+  const merchantList = document.querySelector("[data-merchants-list]");
+  const applicationStatus = document.querySelector("[data-merchant-application-status]");
+
+  if (applicationStatus) applicationStatus.textContent = "Aucune demande";
+  if (!merchantList) return;
+
+  const merchants = user.merchants || mockUser.merchants;
+  merchantList.innerHTML = merchants.length ? merchants.map((merchant) => `
+    <div class="merchant-card">
+      <span>${merchant.businessName}<small>${merchant.city}, ${merchant.country} - ${merchant.methods}</small></span>
+      <strong>${merchant.phone}</strong>
+      <span class="badge">${merchant.status}</span>
+    </div>
+  `).join("") : `<p class="muted">Aucun merchant approuve pour le moment.</p>`;
+}
+
+function renderAdmin(user) {
+  const pendingDeposits = user.transactions.filter((item) => item.type === "Depot" && item.status === "Pending");
+  const pendingWithdrawals = user.transactions.filter((item) => item.type === "Retrait" && item.status === "Pending");
+  const merchantApplications = user.merchantApplications || mockUser.merchantApplications;
+  const disputes = user.disputes || mockUser.disputes;
+
+  const depositTotal = user.transactions
+    .filter((item) => item.type === "Depot")
+    .reduce((total, item) => total + Number(String(item.amount).replace(/[^\d.-]/g, "")), 0);
+  const withdrawalTotal = user.transactions
+    .filter((item) => item.type === "Retrait")
+    .reduce((total, item) => total + Math.abs(Number(String(item.amount).replace(/[^\d.-]/g, ""))), 0);
+
+  const adminDeposits = document.querySelector("[data-admin-deposits]");
+  const adminWithdrawals = document.querySelector("[data-admin-withdrawals]");
+  const adminTx = document.querySelector("[data-admin-tx]");
+  const adminTeam = document.querySelector("[data-admin-team]");
+  const pendingDepositsCount = document.querySelector("[data-pending-deposits-count]");
+  const pendingWithdrawalsCount = document.querySelector("[data-pending-withdrawals-count]");
+  const merchantApplicationsCount = document.querySelector("[data-merchant-applications-count]");
+  const disputesCount = document.querySelector("[data-disputes-count]");
+
+  if (adminDeposits) adminDeposits.textContent = formatUsdt(depositTotal);
+  if (adminWithdrawals) adminWithdrawals.textContent = formatUsdt(withdrawalTotal);
+  if (adminTx) adminTx.textContent = user.transactions.length;
+  if (adminTeam) adminTeam.textContent = user.team;
+  if (pendingDepositsCount) pendingDepositsCount.textContent = pendingDeposits.length;
+  if (pendingWithdrawalsCount) pendingWithdrawalsCount.textContent = pendingWithdrawals.length;
+  if (merchantApplicationsCount) merchantApplicationsCount.textContent = merchantApplications.length;
+  if (disputesCount) disputesCount.textContent = disputes.length;
+
+  renderQueue("[data-admin-pending-deposits]", pendingDeposits);
+  renderQueue("[data-admin-pending-withdrawals]", pendingWithdrawals);
+  renderMerchantApplications(merchantApplications);
+  renderDisputes(disputes);
+}
+
+function renderQueue(selector, rows) {
+  const list = document.querySelector(selector);
+  if (!list) return;
+
+  list.innerHTML = rows.length ? rows.map((item, index) => `
+    <div class="queue-row">
+      <span>${item.description}<small>${item.date}</small></span>
+      <strong>${item.amount}</strong>
+      <button class="btn primary" type="button" data-admin-approve="${index}">Valider</button>
+      <button class="btn secondary" type="button" data-admin-reject="${index}">Rejeter</button>
+    </div>
+  `).join("") : `<p class="muted">Aucune demande en attente.</p>`;
+}
+
+function renderMerchantApplications(applications) {
+  const list = document.querySelector("[data-admin-merchant-applications]");
+  if (!list) return;
+
+  list.innerHTML = applications.length ? applications.map((item, index) => `
+    <div class="queue-row">
+      <span>${item.businessName}<small>${item.userEmail} - ${item.city}, ${item.country}</small></span>
+      <strong>${formatUsdt(item.guarantee)}</strong>
+      <button class="btn primary" type="button" data-merchant-approve="${index}">Approuver</button>
+      <button class="btn secondary" type="button" data-merchant-reject="${index}">Rejeter</button>
+    </div>
+  `).join("") : `<p class="muted">Aucune demande merchant en attente.</p>`;
+}
+
+function renderDisputes(disputes) {
+  const list = document.querySelector("[data-admin-disputes]");
+  if (!list) return;
+
+  list.innerHTML = disputes.length ? disputes.map((item, index) => `
+    <div class="queue-row">
+      <span>${item.reason}<small>${item.userEmail} - ${item.reference}</small></span>
+      <strong>${item.type}</strong>
+      <button class="btn primary" type="button" data-dispute-close="${index}">Cloturer</button>
+    </div>
+  `).join("") : `<p class="muted">Aucun litige ouvert.</p>`;
+}
+
 function setupAuthForms() {
   const loginForm = document.querySelector("[data-login-form]");
   const registerForm = document.querySelector("[data-register-form]");
@@ -271,7 +442,15 @@ function setupAuthForms() {
     loginForm.addEventListener("submit", (event) => {
       event.preventDefault();
       const formData = new FormData(loginForm);
-      setUser({ email: formData.get("email") || mockUser.email });
+      const email = String(formData.get("email") || mockUser.email).trim().toLowerCase();
+      const password = String(formData.get("password") || "").trim();
+
+      if (!email || !password) {
+        showToast("Email et mot de passe requis.", "error");
+        return;
+      }
+
+      setUser({ email, password });
       window.location.href = "dashboard.html";
     });
   }
@@ -280,10 +459,18 @@ function setupAuthForms() {
     registerForm.addEventListener("submit", (event) => {
       event.preventDefault();
       const formData = new FormData(registerForm);
+      const email = String(formData.get("email") || mockUser.email).trim().toLowerCase();
+      const password = String(formData.get("password") || "").trim();
+
+      if (!email || password.length < 4) {
+        showToast("Renseignez un email et un mot de passe d'au moins 4 caracteres.", "error");
+        return;
+      }
+
       setUser({
-        fullName: formData.get("fullName") || mockUser.fullName,
-        email: formData.get("email") || mockUser.email,
-        refCode: formData.get("refCode") || mockUser.refCode
+        fullName: email.split("@")[0] || mockUser.fullName,
+        email,
+        password
       });
       window.location.href = "dashboard.html";
     });
@@ -315,6 +502,43 @@ function setupActions(user) {
     event.preventDefault();
     showToast("Demande de retrait soumise en mode maquette.");
   });
+
+  document.querySelector("[data-plans-list]")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-plan]");
+    if (!button) return;
+    showToast(`Activation du plan ${button.dataset.plan} USDT simulee.`);
+  });
+
+  document.querySelector("[data-p2p-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    showToast("Transfert P2P enregistre en mode maquette.");
+  });
+
+  document.querySelector("[data-cico-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    showToast("Demande Merchant CICO enregistree en mode maquette.");
+  });
+
+  document.querySelector("[data-merchant-application-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    showToast("Demande merchant envoyee en mode maquette.");
+  });
+
+  document.querySelector("[data-dispute-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    showToast("Litige envoye au support en mode maquette.");
+  });
+
+  document.querySelector("[data-admin-pending-deposits]")?.addEventListener("click", handleAdminClick);
+  document.querySelector("[data-admin-pending-withdrawals]")?.addEventListener("click", handleAdminClick);
+  document.querySelector("[data-admin-merchant-applications]")?.addEventListener("click", handleAdminClick);
+  document.querySelector("[data-admin-disputes]")?.addEventListener("click", handleAdminClick);
+}
+
+function handleAdminClick(event) {
+  const action = event.target.closest("[data-admin-approve], [data-admin-reject], [data-merchant-approve], [data-merchant-reject], [data-dispute-close]");
+  if (!action) return;
+  showToast("Action admin simulee en mode maquette.");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -326,6 +550,10 @@ document.addEventListener("DOMContentLoaded", () => {
   renderDashboard(user);
   renderTransactions(user);
   renderWallet(user);
+  renderPlans(user);
+  renderNetwork(user);
+  renderMerchants(user);
+  renderAdmin(user);
   setupAuthForms();
   setupActions(user);
 });
