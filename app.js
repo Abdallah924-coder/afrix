@@ -63,6 +63,7 @@ const pageTitles = {
   merchant: "Merchant",
   plans: "Plans",
   network: "Reseau",
+  elite: "Programme Elite",
   transactions: "Historique",
   admin: "Admin",
   login: "Connexion",
@@ -76,6 +77,7 @@ const navItems = [
   ["merchant", "Merchant", "merchant.html"],
   ["plans", "Plans", "plans.html"],
   ["network", "Reseau", "network.html"],
+  ["elite", "Elite", "elite.html"],
   ["transactions", "Transactions", "transactions.html"],
   ["admin", "Admin", "admin.html"]
 ];
@@ -84,10 +86,10 @@ const DEPOSIT_MOBILE_RATE = 650;
 const WITHDRAW_MOBILE_RATE = 550;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 const plans = [
-  { name: "Starter Plan", amount: 10, daily: "0,50%", duration: "90 jours", cycle: "jusqu'a 45%", note: "Decouvrir progressivement l'ecosysteme" },
-  { name: "Smart Plan", amount: 50, daily: "0,60%", duration: "180 jours", cycle: "jusqu'a 108%", note: "Strategie plus longue", featured: true },
-  { name: "Premium Plan", amount: 100, daily: "0,70%", duration: "270 jours", cycle: "jusqu'a 189%", note: "Renforcer l'engagement" },
-  { name: "Elite Plan", amount: 100, daily: "0,80%", duration: "365 jours", cycle: "jusqu'a 292%", note: "Vision long terme" }
+  { tier: "Bronze", name: "Starter Plan", amount: "10 USDT", daily: "0,50%", duration: "90 jours", cycle: "jusqu'a 45%", note: "Ideal pour decouvrir progressivement l'ecosysteme." },
+  { tier: "Silver", name: "Smart Plan", amount: "50 USDT", daily: "0,60%", duration: "180 jours", cycle: "jusqu'a 108%", note: "Adapte aux membres recherchant une strategie plus longue.", featured: true },
+  { tier: "Gold", name: "Premium Plan", amount: "100 USDT", daily: "0,70%", duration: "270 jours", cycle: "jusqu'a 189%", note: "Concu pour les participants souhaitant renforcer leur engagement." },
+  { tier: "Elite", name: "Elite Plan", amount: "100 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "jusqu'a 292%", note: "Destine aux partenaires et investisseurs ayant une vision long terme." }
 ];
 
 const formatUsdt = (value) => `${Number(value).toFixed(2)} USDT`;
@@ -300,14 +302,17 @@ function renderPlans(user) {
 
   list.innerHTML = plans.map((plan) => `
     <article class="${plan.featured ? "featured" : ""}">
-      <span>${plan.name}</span>
-      <strong>${plan.amount}+ USDT</strong>
-      <small>Objectif quotidien: ${plan.daily}</small>
-      <small>Duree du cycle: ${plan.duration}</small>
-      <small>Objectif cycle: ${plan.cycle}</small>
-      <small>${plan.note}</small>
+      <span class="plan-tier">${plan.tier}</span>
+      <h2>${plan.name}</h2>
+      <strong>${plan.amount}</strong>
+      <div class="plan-metrics">
+        <small><span>Objectif quotidien</span>${plan.daily}</small>
+        <small><span>Duree du cycle</span>${plan.duration}</small>
+        <small><span>Objectif cycle</span>${plan.cycle}</small>
+      </div>
+      <p>${plan.note}</p>
       <small>Activite actuelle: ${Number(user.activity || 0).toFixed(0)} USDT</small>
-      <button class="btn primary" type="button" data-plan="${plan.amount}">Activer</button>
+      <button class="btn primary" type="button" data-plan="${plan.name}">Activer</button>
     </article>
   `).join("");
 }

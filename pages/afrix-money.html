@@ -10,18 +10,55 @@
   <aside class="sidebar" data-sidebar></aside>
   <main class="app">
     <header class="topbar" data-topbar></header>
-    <section class="hero-card">
+    <section class="hero-card money-hero">
       <span class="pill">AFRIX Money</span>
-      <h1>Infrastructure de paiement digitale intégrée.</h1>
-      <p>Transferts P2P, Cash In et Cash Out avec agents agréés pour connecter USDT, blockchain et monnaie locale.</p>
+      <h1>Structure des frais de transaction & performance agents.</h1>
+      <p>AFRIX Money permet aux utilisateurs d'effectuer des operations financieres numeriques simples, rapides et accessibles au sein de l'ecosysteme AFRIX Capital Investment.</p>
+      <div class="principle-strip" aria-label="Modele AFRIX Money">
+        <span>Transactions digitales securisees</span>
+        <span>Paiements entre utilisateurs</span>
+        <span>Reseau d'agents agrees</span>
+        <span>Connexion actifs numeriques et economie locale</span>
+      </div>
     </section>
+
+    <section class="money-fees" aria-label="Frais AFRIX Money">
+      <article class="panel money-fee-card">
+        <span class="plan-tier">P2P</span>
+        <h2>Transfert entre utilisateurs</h2>
+        <p>Envoyer et recevoir des fonds directement entre comptes AFRIX Money.</p>
+        <div class="info-grid compact-info">
+          <div><span>Disponibilite</span><strong>24H/24</strong></div>
+          <div><span>Frais transaction</span><strong>1%</strong></div>
+        </div>
+      </article>
+      <article class="panel money-fee-card">
+        <span class="plan-tier">Cash In</span>
+        <h2>Depot via agent agree</h2>
+        <p>L'utilisateur approvisionne son compte via un agent AFRIX Money.</p>
+        <div class="info-grid compact-info">
+          <div><span>Frais utilisateur</span><strong>0%</strong></div>
+          <div><span>Commission agent</span><strong>0,5%</strong></div>
+        </div>
+      </article>
+      <article class="panel money-fee-card">
+        <span class="plan-tier">Cash Out</span>
+        <h2>Retrait via agent agree</h2>
+        <p>L'utilisateur retire ses fonds aupres d'un agent agree.</p>
+        <div class="info-grid compact-info">
+          <div><span>Frais utilisateur</span><strong>10%</strong></div>
+          <div><span>Commission agent</span><strong>3%</strong></div>
+        </div>
+      </article>
+    </section>
+
     <section class="grid two">
       <form class="panel" data-p2p-form>
         <h1>P2P entre utilisateurs</h1>
         <label>Email du destinataire<input name="recipient" type="email" required></label>
         <label>Montant minimum 1 USDT<input name="amount" type="number" min="1" step="0.01" value="1"></label>
         <button class="btn primary full" type="submit">Envoyer</button>
-        <p class="muted">Frais P2P: 2,5%. Disponible 24h/24 et 7j/7.</p>
+        <p class="muted">Frais P2P: 1%. Disponible 24h/24 et 7j/7.</p>
       </form>
       <form class="panel" data-cico-form>
         <h1>Merchant CICO</h1>
@@ -29,18 +66,60 @@
         <label>Code merchant<input name="merchant" required placeholder="AFX-MERCHANT-001"></label>
         <label>Montant minimum 1 USDT<input name="amount" type="number" min="1" step="0.01" value="1"></label>
         <button class="btn primary full" type="submit">Créer demande CICO</button>
-        <p class="muted">Frais CICO: 5%. Merchant: 3%. Plateforme: 2%.</p>
+        <p class="muted">Cash In: 0% utilisateur et 0,5% agent. Cash Out: 10% utilisateur et 3% agent.</p>
       </form>
     </section>
+
+    <section class="grid two money-performance">
+      <article class="panel">
+        <span class="pill">Commission d'approvisionnement</span>
+        <h1>Volume mensuel agent</h1>
+        <div class="commission-table">
+          <div><span>1 000 - 4 999 USDT</span><strong>0,5%</strong></div>
+          <div><span>5 000 - 24 999 USDT</span><strong>0,6%</strong></div>
+          <div><span>25 000 - 99 999 USDT</span><strong>0,7%</strong></div>
+          <div><span>100 000 USDT et plus</span><strong>0,8%</strong></div>
+        </div>
+      </article>
+      <article class="panel">
+        <span class="pill">Commission de performance</span>
+        <h1>Volume d'activite zone</h1>
+        <div class="commission-table">
+          <div><span>1 000 - 9 999 USDT</span><strong>0,25%</strong></div>
+          <div><span>10 000 - 49 999 USDT</span><strong>0,36%</strong></div>
+          <div><span>50 000 - 99 999 USDT</span><strong>0,47%</strong></div>
+          <div><span>100 000 USDT et plus</span><strong>0,58%</strong></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid two money-vision">
+      <article class="panel">
+        <span class="pill">Vision AFRIX Money</span>
+        <h1>Relier les paiements digitaux a l'economie locale.</h1>
+        <div class="principle-list">
+          <span>Utilisateurs</span>
+          <span>Agents agrees</span>
+          <span>Blockchain</span>
+          <span>Actifs numeriques</span>
+          <span>Economie locale africaine</span>
+        </div>
+      </article>
+      <article class="panel ecosystem-note">
+        <h1>Connecter les paiements. Simplifier la finance digitale.</h1>
+        <p>AFRIX Money construit un reseau de paiement digital moderne integre a AFRIX Capital Investment.</p>
+      </article>
+    </section>
+
     <section class="panel">
-      <h1>Répartition des frais CICO</h1>
+      <h1>Résumé opérationnel CICO</h1>
       <div class="info-grid">
-        <div><span>Frais total</span><strong>5%</strong></div>
-        <div><span>Gain merchant</span><strong>3%</strong></div>
-        <div><span>Part plateforme</span><strong>2%</strong></div>
-        <div><span>Minimum</span><strong>1 USDT</strong></div>
+        <div><span>Cash In utilisateur</span><strong>0%</strong></div>
+        <div><span>Cash In agent</span><strong>0,5%</strong></div>
+        <div><span>Cash Out utilisateur</span><strong>10%</strong></div>
+        <div><span>Cash Out agent</span><strong>3%</strong></div>
       </div>
-      <p class="muted">Pour une opération CICO de 100 USDT, le merchant gagne 3 USDT et AFRIX conserve 2 USDT comme frais plateforme.</p>
+      <p class="muted">Les commissions agents dependent du type d'operation, du volume d'approvisionnement et de l'activite generee dans leur zone.</p>
     </section>
   </main>
   <script src="../app.js"></script>

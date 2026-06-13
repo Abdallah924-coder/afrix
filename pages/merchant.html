@@ -10,17 +10,91 @@
   <aside class="sidebar" data-sidebar></aside>
   <main class="app">
     <header class="topbar" data-topbar></header>
-    <section class="hero-card">
-      <span class="pill">Merchant AFRIX Money</span>
-      <h1>Devenir agent Cash In / Cash Out agréé.</h1>
-      <p>Les merchants facilitent la conversion entre USDT, Mobile Money et cash local. La validation admin est obligatoire.</p>
+    <section class="hero-card merchant-hero">
+      <span class="pill">Agent agree AFRIX Money - Point CICO</span>
+      <h1>Devenir point de proximite Cash In / Cash Out.</h1>
+      <p>AFRIX Money met en place un reseau d'agents agrees charges d'accompagner les utilisateurs dans leurs operations financieres digitales.</p>
+      <div class="principle-strip" aria-label="Role agent agree AFRIX Money">
+        <span>Cash In et Cash Out</span>
+        <span>Assistance utilisateurs</span>
+        <span>Liquidite locale</span>
+        <span>Service de proximite</span>
+      </div>
     </section>
 
     <section class="stats">
       <article><span>Plans actifs requis</span><strong>500 USDT</strong><small>activité personnelle minimum</small></article>
-      <article><span>Garantie minimum</span><strong>100 USDT</strong><small>dépôt merchant</small></article>
-      <article><span>Gain merchant</span><strong>3%</strong><small>sur chaque CICO</small></article>
+      <article><span>Fonds minimum</span><strong>1 000 USDT</strong><small>capital de fonctionnement</small></article>
+      <article><span>Cash In agent</span><strong>0,5%</strong><small>commission approvisionnement</small></article>
+      <article><span>Cash Out agent</span><strong>3%</strong><small>commission retrait</small></article>
       <article><span>Statut</span><strong data-merchant-application-status>Aucune demande</strong><small>validation admin</small></article>
+    </section>
+
+    <section class="merchant-access-grid" aria-label="Conditions d'acces agent agree">
+      <article class="panel merchant-condition">
+        <span class="plan-tier">1</span>
+        <h2>Compte AFRIX actif</h2>
+        <p>Le candidat doit disposer d'un compte AFRIX Capital Investment actif.</p>
+        <strong>Investissement minimum requis : 500 USDT</strong>
+      </article>
+      <article class="panel merchant-condition featured">
+        <span class="plan-tier">2</span>
+        <h2>Fonds de fonctionnement</h2>
+        <p>L'agent doit assurer la disponibilite des services avec un capital operationnel minimum.</p>
+        <div class="partner-requirements">
+          <span><small>Solde digital</small><strong>500 USDT</strong></span>
+          <span><small>Liquidite locale</small><strong>500 USDT</strong></span>
+        </div>
+      </article>
+      <article class="panel merchant-condition">
+        <span class="plan-tier">3</span>
+        <h2>Developpement communautaire</h2>
+        <p>L'agent doit disposer d'une base communautaire active.</p>
+        <strong>Minimum 10 membres actifs</strong>
+      </article>
+      <article class="panel merchant-condition">
+        <span class="plan-tier">4</span>
+        <h2>Presence communautaire</h2>
+        <p>Un canal local permet d'informer, accompagner et relayer les mises a jour officielles.</p>
+        <strong>Groupe WhatsApp ou canal Telegram</strong>
+      </article>
+      <article class="panel merchant-condition featured">
+        <span class="plan-tier">5</span>
+        <h2>Competences techniques</h2>
+        <p>Bonne comprehension des outils numeriques lies aux operations financieres digitales.</p>
+        <div class="principle-list">
+          <span>Portefeuilles crypto</span>
+          <span>Stablecoins</span>
+          <span>Applications financieres digitales</span>
+          <span>Plateformes d'echange crypto reconnues</span>
+          <span>Securite des transactions numeriques</span>
+        </div>
+      </article>
+      <article class="panel merchant-condition">
+        <span class="plan-tier">6</span>
+        <h2>Disponibilite operationnelle</h2>
+        <p>L'agent doit etre disponible pendant les heures d'activite recommandees.</p>
+        <strong>09H00 - 18H00</strong>
+      </article>
+    </section>
+
+    <section class="grid two merchant-benefits">
+      <article class="panel">
+        <span class="pill">Avantages agent AFRIX Money</span>
+        <h1>Developper un point CICO local.</h1>
+        <div class="principle-list">
+          <span>Commissions sur transactions</span>
+          <span>Bonus de performance</span>
+          <span>Developpement d'un reseau local</span>
+          <span>Opportunite de croissance dans la finance digitale</span>
+          <span>Acces a un ecosysteme Web3 moderne</span>
+        </div>
+      </article>
+      <article class="panel ecosystem-note">
+        <span class="pill">AFRIX Money</span>
+        <h1>Paiement digital • Blockchain • Finance moderne</h1>
+        <p>Un agent agree AFRIX Money represente un point de proximite pour faciliter les operations digitales et connecter les utilisateurs a l'economie locale.</p>
+      </article>
     </section>
 
     <section class="grid two">
@@ -31,7 +105,7 @@
         <label>Ville / zone<input name="city" required placeholder="Brazzaville, Poto-Poto"></label>
         <label>Téléphone WhatsApp<input name="phone" required placeholder="+242..."></label>
         <label>Méthodes disponibles<input name="methods" required placeholder="Cash, MTN, Airtel, Banque"></label>
-        <label>Dépôt de garantie<input name="guarantee" type="number" min="100" step="0.01" value="100"></label>
+        <label>Fonds de fonctionnement<input name="guarantee" type="number" min="1000" step="0.01" value="1000"></label>
         <button class="btn primary full" type="submit">Envoyer la demande</button>
       </form>
 
