@@ -269,16 +269,35 @@ async function readDb(session = null) {
   await ensureStorage();
   if (useMongo) {
     const queryOptions = session ? { session } : {};
-    const [users, transactions, cicoRequests, merchantApplications, disputes, ledgerEntries, settings, platformAccount] = await Promise.all([
-      UserModel.find({}, null, queryOptions).lean(),
-      TransactionModel.find({}, null, queryOptions).lean(),
-      CicoRequestModel.find({}, null, queryOptions).lean(),
-      MerchantApplicationModel.find({}, null, queryOptions).lean(),
-      DisputeModel.find({}, null, queryOptions).lean(),
-      LedgerEntryModel.find({}, null, queryOptions).lean(),
-      SettingModel.find({}, null, queryOptions).lean(),
-      PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).lean()
-    ]);
+    let users;
+    let transactions;
+    let cicoRequests;
+    let merchantApplications;
+    let disputes;
+    let ledgerEntries;
+    let settings;
+    let platformAccount;
+    if (session) {
+      users = await UserModel.find({}, null, queryOptions).lean();
+      transactions = await TransactionModel.find({}, null, queryOptions).lean();
+      cicoRequests = await CicoRequestModel.find({}, null, queryOptions).lean();
+      merchantApplications = await MerchantApplicationModel.find({}, null, queryOptions).lean();
+      disputes = await DisputeModel.find({}, null, queryOptions).lean();
+      ledgerEntries = await LedgerEntryModel.find({}, null, queryOptions).lean();
+      settings = await SettingModel.find({}, null, queryOptions).lean();
+      platformAccount = await PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).lean();
+    } else {
+      [users, transactions, cicoRequests, merchantApplications, disputes, ledgerEntries, settings, platformAccount] = await Promise.all([
+        UserModel.find({}, null, queryOptions).lean(),
+        TransactionModel.find({}, null, queryOptions).lean(),
+        CicoRequestModel.find({}, null, queryOptions).lean(),
+        MerchantApplicationModel.find({}, null, queryOptions).lean(),
+        DisputeModel.find({}, null, queryOptions).lean(),
+        LedgerEntryModel.find({}, null, queryOptions).lean(),
+        SettingModel.find({}, null, queryOptions).lean(),
+        PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).lean()
+      ]);
+    }
     const settingMap = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
     return normalizeDb({
       users,
@@ -329,11 +348,17 @@ async function writeDb(db, session = null) {
     await syncCollection(MerchantApplicationModel, db.merchantApplications, "id", session, keepExisting);
     await syncCollection(DisputeModel, db.disputes, "id", session, keepExisting);
     await syncCollection(LedgerEntryModel, db.ledgerEntries, "id", session, { removeMissing: false });
-    await Promise.all([
-      SettingModel.updateOne({ key: "platformControls" }, { $set: { value: db.platformControls } }, { upsert: true, session }),
-      SettingModel.updateOne({ key: "paymentTargets" }, { $set: { value: db.paymentTargets } }, { upsert: true, session }),
-      PlatformAccountModel.updateOne({ id: "platform" }, { $set: db.platformAccount }, { upsert: true, session })
-    ]);
+    if (session) {
+      await SettingModel.updateOne({ key: "platformControls" }, { $set: { value: db.platformControls } }, { upsert: true, session });
+      await SettingModel.updateOne({ key: "paymentTargets" }, { $set: { value: db.paymentTargets } }, { upsert: true, session });
+      await PlatformAccountModel.updateOne({ id: "platform" }, { $set: db.platformAccount }, { upsert: true, session });
+    } else {
+      await Promise.all([
+        SettingModel.updateOne({ key: "platformControls" }, { $set: { value: db.platformControls } }, { upsert: true, session }),
+        SettingModel.updateOne({ key: "paymentTargets" }, { $set: { value: db.paymentTargets } }, { upsert: true, session }),
+        PlatformAccountModel.updateOne({ id: "platform" }, { $set: db.platformAccount }, { upsert: true, session })
+      ]);
+    }
     return;
   }
 
@@ -1858,8 +1883,6 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ message: "Erreur serveur." });
 });
 
-await ensureStorage();
-await ensureAdminUser();
 function runDailyPlanEarnings() {
   processDailyPlanEarnings()
     .then((result) => {
@@ -1867,10 +1890,25 @@ function runDailyPlanEarnings() {
     })
     .catch((error) => logger.error({ err: error }, "Daily plan earnings failed"));
 }
-const initialPlanEarningsTimer = setTimeout(runDailyPlanEarnings, 5 * 60 * 1000);
-initialPlanEarningsTimer.unref?.();
-const planEarningsTimer = setInterval(runDailyPlanEarnings, 6 * 60 * 60 * 1000);
-planEarningsTimer.unref?.();
-app.listen(PORT, () => {
-  logger.info(`AFRIX server listening on http://localhost:${PORT}`);
+
+async function bootstrapServer() {
+  await ensureStorage();
+  const server = app.listen(PORT, () => {
+    logger.info(`AFRIX server listening on http://localhost:${PORT}`);
+  });
+
+  ensureAdminUser().catch((error) => {
+    logger.error({ err: error }, "Admin bootstrap failed");
+    if (isProduction) server.close(() => process.exit(1));
+  });
+
+  const initialPlanEarningsTimer = setTimeout(runDailyPlanEarnings, 5 * 60 * 1000);
+  initialPlanEarningsTimer.unref?.();
+  const planEarningsTimer = setInterval(runDailyPlanEarnings, 6 * 60 * 60 * 1000);
+  planEarningsTimer.unref?.();
+}
+
+bootstrapServer().catch((error) => {
+  logger.error({ err: error }, "Server bootstrap failed");
+  process.exit(1);
 });
