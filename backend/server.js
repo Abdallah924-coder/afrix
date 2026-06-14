@@ -214,6 +214,7 @@ function normalizeDb(db = {}) {
 }
 
 function normalizeUserRecord(user = {}) {
+  if (!user) return null;
   return {
     ...user,
     balance: money(user.balance),

@@ -176,6 +176,20 @@ function showToast(message, type = "info") {
   window.setTimeout(() => toast.remove(), 3200);
 }
 
+function setButtonLoading(button, label) {
+  if (!button) return () => {};
+  if (!button.dataset.originalLabel) {
+    button.dataset.originalLabel = button.textContent || "";
+  }
+  button.disabled = true;
+  if (label) button.textContent = label;
+  return () => {
+    button.disabled = false;
+    button.textContent = button.dataset.originalLabel || "";
+    delete button.dataset.originalLabel;
+  };
+}
+
 function showLoadError(message) {
   const app = document.querySelector(".app");
   if (!app) return;
@@ -569,12 +583,15 @@ function setupAuthForms() {
   if (loginForm) {
     loginForm.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const submitButton = loginForm.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, "Connexion...");
       const data = formToObject(loginForm);
       const email = String(data.email || "").trim().toLowerCase();
       const password = String(data.password || "").trim();
 
       if (!email || !password) {
         showToast("Email et mot de passe requis.", "error");
+        restoreButton();
         return;
       }
 
@@ -583,6 +600,7 @@ function setupAuthForms() {
         setAuthToken(response.token);
         window.location.href = "/dashboard";
       } catch (error) {
+        restoreButton();
         showToast(error.message, "error");
       }
     });
@@ -591,12 +609,15 @@ function setupAuthForms() {
   if (registerForm) {
     registerForm.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const submitButton = registerForm.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, "Creation...");
       const data = formToObject(registerForm);
       const email = String(data.email || "").trim().toLowerCase();
       const password = String(data.password || "").trim();
 
       if (!email || password.length < 10) {
         showToast("Renseignez un email et un mot de passe d'au moins 10 caracteres.", "error");
+        restoreButton();
         return;
       }
 
@@ -605,6 +626,7 @@ function setupAuthForms() {
         setAuthToken(response.token);
         window.location.href = "/dashboard";
       } catch (error) {
+        restoreButton();
         showToast(error.message, "error");
       }
     });
@@ -643,6 +665,8 @@ function setupActions(user) {
 
   document.querySelector("[data-deposit-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Traitement...");
     try {
       const response = await apiRequest("/deposits", {
         method: "POST",
@@ -652,19 +676,27 @@ function setupActions(user) {
       if (response.reference) showCicoReference(response.reference, "Depot", response.amount, response.fee || 0);
       showToast("Demande de depot enregistree.");
     } catch (error) {
+      restoreButton();
       showToast(error.message, "error");
+      return;
     }
+    restoreButton();
   });
 
   document.querySelector("[data-withdraw-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Traitement...");
     try {
       const response = await apiJson("/withdrawals", formToObject(event.currentTarget));
       if (response.reference) showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0);
       showToast("Demande de retrait soumise.");
     } catch (error) {
+      restoreButton();
       showToast(error.message, "error");
+      return;
     }
+    restoreButton();
   });
 
   document.querySelector("[data-plans-list]")?.addEventListener("click", async (event) => {
@@ -676,55 +708,79 @@ function setupActions(user) {
       showToast("Montant minimum investissement: 10 USDT.", "error");
       return;
     }
+    const restoreButton = setButtonLoading(button, "Activation...");
     try {
       const response = await apiJson("/plans/activate", { amount });
       showToast(`Activation ${formatUsdt(amount)} - ${response.activePlan?.name || "plan"} soumise.`);
     } catch (error) {
+      restoreButton();
       showToast(error.message, "error");
+      return;
     }
+    restoreButton();
   });
 
   document.querySelector("[data-p2p-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Envoi...");
     try {
       await apiJson("/p2p-transfers", formToObject(event.currentTarget));
       showToast("Transfert P2P envoye.");
     } catch (error) {
+      restoreButton();
       showToast(error.message, "error");
+      return;
     }
+    restoreButton();
   });
 
   document.querySelector("[data-cico-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Creation...");
     try {
       const response = await apiJson("/cico-requests", formToObject(event.currentTarget));
       if (response.reference) showCicoReference(response.reference, response.operation || "CICO", response.amount, response.fee || 0);
       showToast("Reference CICO creee.");
     } catch (error) {
+      restoreButton();
       showToast(error.message, "error");
+      return;
     }
+    restoreButton();
   });
 
   document.querySelector("[data-merchant-application-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Envoi...");
     try {
       await apiJson("/merchant/applications", formToObject(event.currentTarget));
       event.currentTarget.reset();
       showToast("Profil merchant envoye pour validation.");
     } catch (error) {
+      restoreButton();
       showToast(error.message, "error");
+      return;
     }
+    restoreButton();
   });
 
   document.querySelector("[data-dispute-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Envoi...");
     try {
       await apiJson("/disputes", formToObject(event.currentTarget));
       event.currentTarget.reset();
       showToast("Litige envoye au support.");
     } catch (error) {
+      restoreButton();
       showToast(error.message, "error");
+      return;
     }
+    restoreButton();
   });
 
   document.querySelector("[data-admin-pending-deposits]")?.addEventListener("click", handleAdminClick);
@@ -749,6 +805,8 @@ function setupActions(user) {
 
   document.querySelector("[data-merchant-code-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Recherche...");
     const reference = String(new FormData(event.currentTarget).get("reference") || "").trim().toUpperCase();
     const result = document.querySelector("[data-merchant-code-result]");
 
@@ -770,28 +828,41 @@ function setupActions(user) {
           </div>
         `;
         result.querySelector("[data-merchant-confirm-code]")?.addEventListener("click", async (clickEvent) => {
+          const confirmButton = clickEvent.currentTarget;
+          const restoreConfirm = setButtonLoading(confirmButton, "Validation...");
           try {
             await apiJson(`/merchant/cico-requests/${encodeURIComponent(clickEvent.currentTarget.dataset.merchantConfirmCode)}/confirm`, {});
             showToast("Operation validee.");
           } catch (error) {
+            restoreConfirm();
             showToast(error.message, "error");
+            return;
           }
+          restoreConfirm();
         });
       }
     } catch (error) {
+      restoreButton();
       if (result) result.innerHTML = `<p class="muted">Reference introuvable ou deja traitee.</p>`;
       showToast(error.message, "error");
+      return;
     }
+    restoreButton();
   });
 
   document.querySelector("[data-merchant-transfer-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Transfert...");
     try {
       await apiJson("/merchant/transfers", formToObject(event.currentTarget));
       showToast("Transfert du wallet merchant envoye.");
     } catch (error) {
+      restoreButton();
       showToast(error.message, "error");
+      return;
     }
+    restoreButton();
   });
 }
 
