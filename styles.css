@@ -945,6 +945,7 @@ body[data-page="wallet"] select {
 .info-grid strong { display: block; margin-top: 6px; }
 .admin-queues { margin-top: 14px; }
 .queue-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center !important; }
+.admin-inline-input { width: 120px; min-height: 42px; }
 .merchant-card { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center !important; }
 .positive { color: var(--green); }
 .negative { color: var(--red); }
@@ -1335,6 +1336,11 @@ th { color: var(--muted); font-size: 12px; }
 .toast.info { border-left-color: var(--cyan); }
 .toast.info .toast-icon { color: #07837d; background: rgba(55, 217, 209, .16); }
 @keyframes slideIn { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+.app-error {
+  margin-bottom: 18px;
+  border-color: rgba(251, 113, 133, .38);
+}
 
 .maintenance-page {
   display: grid;

@@ -1,72 +1,5 @@
-const STORAGE_KEY = "afrix_mock_user";
-
-const mockUser = {
-  fullName: "Partenaire AFRIX",
-  email: "partenaire@afrix.capital",
-  balance: 1240,
-  activity: 500,
-  team: 24,
-  bonus: 185.5,
-  rank: "Niveau 3",
-  progress: 46,
-  wallet: "TRX9AFRIX2026USDT001",
-  paymentTargets: {
-    trc20: {
-      label: "Adresse de depot TRC20",
-      value: "TRX9AFRIX2026USDT001",
-      note: "Envoyez uniquement des USDT TRC20 vers cette adresse."
-    },
-    bep20: {
-      label: "Adresse de depot BEP20",
-      value: "BNB9AFRIX2026USDT002",
-      note: "Envoyez uniquement des USDT BEP20 vers cette adresse."
-    },
-    mobile: {
-      label: "Compte Mobile Money",
-      value: "+242 06 000 2026",
-      note: "Effectuez le paiement Mobile Money, puis renseignez la reference."
-    },
-    airtel: {
-      label: "Compte Airtel Money",
-      value: "+242 05 000 2026",
-      note: "Effectuez le paiement Airtel Money, puis renseignez la reference."
-    }
-  },
-  refCode: "AFX2026",
-  refLink: "https://afrix.capital/ref/AFX2026",
-  transactions: [
-    { date: "2026-06-08", type: "Depot", description: "Depot wallet TRC20", amount: "+250.00 USDT", status: "Completed" },
-    { date: "2026-06-07", type: "Bonus", description: "Bonus reseau niveau 2", amount: "+35.00 USDT", status: "Completed" },
-    { date: "2026-06-06", type: "Plan", description: "Activation pack croissance", amount: "-500.00 USDT", status: "Active" },
-    { date: "2026-06-05", type: "Retrait", description: "Demande de retrait USDT", amount: "-120.00 USDT", status: "Pending" }
-  ],
-  directPartners: [
-    { fullName: "Grace Mbemba", email: "grace@example.com", activity: 160 },
-    { fullName: "Junior Mavoungou", email: "junior@example.com", activity: 95 },
-    { fullName: "Prisca Okemba", email: "prisca@example.com", activity: 310 }
-  ],
-  merchants: [
-    { code: "AFX-MER-BZV-001", businessName: "AFRIX Agent Brazzaville", city: "Brazzaville", country: "Congo", methods: "MTN, Airtel, Cash", phone: "+242060002026", status: "Disponible", rating: "Nouveau", limits: "10 - 2 000 USDT", source: "merchant" },
-    { code: "AFX-MER-PNR-002", businessName: "AFRIX Agent Pointe-Noire", city: "Pointe-Noire", country: "Congo", methods: "Airtel, Banque, Cash", phone: "+242050002026", status: "Disponible", rating: "Nouveau", limits: "20 - 1 500 USDT", source: "merchant" },
-    { code: "AFX-MER-KIN-003", businessName: "AFRIX Agent Kinshasa", city: "Kinshasa", country: "RDC", methods: "Mobile Money, Cash", phone: "+243810002026", status: "Disponible", rating: "Nouveau", limits: "10 - 1 000 USDT", source: "merchant" }
-  ],
-  merchantWallet: {
-    available: 860,
-    pending: 200,
-    bonus: 18.5,
-    mainBalance: 1240
-  },
-  cicoRequests: [
-    { reference: "AFX-WD-260614-200", type: "Retrait", customer: "client@example.com", country: "Congo", amount: 200, fee: 20, merchantBonus: 6, method: "Mobile Money", phone: "+242 06 111 2026", status: "En attente merchant" },
-    { reference: "AFX-DP-260614-050", type: "Depot", customer: "client2@example.com", country: "Congo", amount: 50, fee: 0, merchantBonus: 0.25, method: "Airtel Money", phone: "+242 05 111 2026", status: "En attente merchant" }
-  ],
-  merchantApplications: [
-    { businessName: "AFRIX Agent Dolisie", userEmail: "agent@example.com", city: "Dolisie", country: "Congo", phone: "+242060003030", guarantee: 1000, status: "pending" }
-  ],
-  disputes: [
-    { reason: "Verification Cash Out", userEmail: "client@example.com", reference: "AFX-20260609", type: "CICO", status: "open" }
-  ]
-};
+const API_BASE = window.AFRIX_API_BASE || "/api";
+const AUTH_TOKEN_KEY = "afrix_auth_token";
 
 const pageTitles = {
   dashboard: "Tableau de bord",
@@ -83,67 +16,147 @@ const pageTitles = {
 };
 
 const navItems = [
-  ["dashboard", "Dashboard", "dashboard.html"],
-  ["wallet", "Wallet USDT", "wallet.html"],
-  ["afrix-money", "AFRIX Money", "afrix-money.html"],
-  ["merchant", "Merchant", "merchant.html"],
-  ["plans", "Plans", "plans.html"],
-  ["network", "Reseau", "network.html"],
-  ["elite", "Elite", "elite.html"],
-  ["transactions", "Transactions", "transactions.html"],
-  ["admin", "Admin", "admin.html"]
+  ["dashboard", "Dashboard", "/dashboard"],
+  ["wallet", "Wallet USDT", "/wallet"],
+  ["afrix-money", "AFRIX Money", "/afrix-money"],
+  ["merchant", "Merchant", "/merchant"],
+  ["plans", "Plans", "/plans"],
+  ["network", "Reseau", "/network"],
+  ["elite", "Elite", "/elite"],
+  ["transactions", "Transactions", "/transactions"],
+  ["admin", "Admin", "/admin"]
 ];
 
 const DEPOSIT_MOBILE_RATE = 650;
 const WITHDRAW_MOBILE_RATE = 550;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 const plans = [
-  { tier: "Bronze", name: "Starter Plan", amount: "10 USDT", daily: "0,50%", duration: "90 jours", cycle: "jusqu'a 45%", note: "Ideal pour decouvrir progressivement l'ecosysteme." },
-  { tier: "Silver", name: "Smart Plan", amount: "50 USDT", daily: "0,60%", duration: "180 jours", cycle: "jusqu'a 108%", note: "Adapte aux membres recherchant une strategie plus longue.", featured: true },
-  { tier: "Gold", name: "Premium Plan", amount: "100 USDT", daily: "0,70%", duration: "270 jours", cycle: "jusqu'a 189%", note: "Concu pour les participants souhaitant renforcer leur engagement." },
-  { tier: "Elite", name: "Elite Plan", amount: "100 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "jusqu'a 292%", note: "Destine aux partenaires et investisseurs ayant une vision long terme." }
+  { tier: "Bronze", name: "Starter Plan", minAmount: 10, amount: "10 a 49,99 USDT", daily: "0,50%", duration: "90 jours", cycle: "capital + jusqu'a 45% de benefices", note: "Ideal pour decouvrir progressivement l'ecosysteme." },
+  { tier: "Silver", name: "Smart Plan", minAmount: 50, amount: "50 a 99,99 USDT", daily: "0,60%", duration: "180 jours", cycle: "capital + jusqu'a 108% de benefices", note: "Adapte aux membres recherchant une strategie plus longue.", featured: true },
+  { tier: "Gold", name: "Premium Plan", minAmount: 100, amount: "100 a 499,99 USDT", daily: "0,70%", duration: "270 jours", cycle: "capital + jusqu'a 189% de benefices", note: "Concu pour les participants souhaitant renforcer leur engagement." },
+  { tier: "Elite", name: "Elite Plan", minAmount: 500, amount: "500 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "capital + jusqu'a 292% de benefices", note: "Destine aux partenaires et investisseurs ayant une vision long terme." }
 ];
 
-const formatUsdt = (value) => `${Number(value).toFixed(2)} USDT`;
-const formatXaf = (value) => `${Math.round(Number(value)).toLocaleString("fr-FR")} XAF`;
+const emptyUser = {
+  fullName: "",
+  email: "",
+  balance: 0,
+  activity: 0,
+  team: 0,
+  bonus: 0,
+  rank: "Niveau 0",
+  progress: 0,
+  wallet: "",
+  paymentTargets: {},
+  refLink: "",
+  transactions: [],
+  directPartners: [],
+  merchants: [],
+  merchantWallet: {
+    available: 0,
+    pending: 0,
+    bonus: 0,
+    mainBalance: 0
+  },
+  cicoRequests: [],
+  merchantApplications: [],
+  disputes: [],
+  platformControls: {},
+  role: "user"
+};
 
-function getUser() {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (!stored) return null;
+const formatUsdt = (value) => `${Number(value || 0).toFixed(2)} USDT`;
+const formatXaf = (value) => `${Math.round(Number(value || 0)).toLocaleString("fr-FR")} XAF`;
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function getAuthToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+function setAuthToken(token) {
+  if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+function clearAuthToken() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+function authHeaders(extraHeaders = {}) {
+  const token = getAuthToken();
+  return {
+    ...extraHeaders,
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  };
+}
+
+async function apiRequest(path, options = {}) {
+  const headers = authHeaders(options.headers || {});
+  let response;
 
   try {
-    const parsed = JSON.parse(stored);
-    const merchantsAreCurrent = Array.isArray(parsed.merchants) && parsed.merchants.some((merchant) => merchant.code);
-
-    return {
-      ...mockUser,
-      ...parsed,
-      paymentTargets: { ...mockUser.paymentTargets, ...(parsed.paymentTargets || {}) },
-      merchants: merchantsAreCurrent ? parsed.merchants : mockUser.merchants,
-      merchantWallet: { ...mockUser.merchantWallet, ...(parsed.merchantWallet || {}) },
-      cicoRequests: Array.isArray(parsed.cicoRequests) ? parsed.cicoRequests : mockUser.cicoRequests
-    };
+    response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers
+    });
   } catch {
-    localStorage.removeItem(STORAGE_KEY);
-    return null;
-  }
-}
-
-function setUser(user) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...mockUser, ...user }));
-}
-
-function ensureMockSession() {
-  const body = document.body;
-  if (!body.matches("[data-protected]")) return getUser();
-
-  let user = getUser();
-  if (!user) {
-    setUser(mockUser);
-    user = getUser();
+    throw new Error("API AFRIX indisponible. Verifiez la configuration du backend.");
   }
 
-  return user;
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json") ? await response.json() : await response.text();
+
+  if (response.status === 401) {
+    clearAuthToken();
+    if (document.body.matches("[data-protected]")) window.location.href = "/login";
+  }
+
+  if (!response.ok) {
+    const message = typeof payload === "object" && payload?.message ? payload.message : "Operation impossible pour le moment.";
+    throw new Error(message);
+  }
+
+  return payload;
+}
+
+async function apiJson(path, data, options = {}) {
+  return apiRequest(path, {
+    method: options.method || "POST",
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    body: JSON.stringify(data)
+  });
+}
+
+function formToObject(form) {
+  return Object.fromEntries(new FormData(form).entries());
+}
+
+async function loadCurrentUser() {
+  const data = await apiRequest("/me");
+  return normalizeUser(data.user || data);
+}
+
+function normalizeUser(user) {
+  return {
+    ...emptyUser,
+    ...(user || {}),
+    paymentTargets: user?.paymentTargets || {},
+    transactions: Array.isArray(user?.transactions) ? user.transactions : [],
+    directPartners: Array.isArray(user?.directPartners) ? user.directPartners : [],
+    merchants: Array.isArray(user?.merchants) ? user.merchants : [],
+    merchantWallet: { ...emptyUser.merchantWallet, ...(user?.merchantWallet || {}) },
+    cicoRequests: Array.isArray(user?.cicoRequests) ? user.cicoRequests : [],
+    merchantApplications: Array.isArray(user?.merchantApplications) ? user.merchantApplications : [],
+    disputes: Array.isArray(user?.disputes) ? user.disputes : [],
+    platformControls: user?.platformControls || {}
+  };
 }
 
 function showToast(message, type = "info") {
@@ -154,7 +167,7 @@ function showToast(message, type = "info") {
   toast.className = `toast ${type}`;
   toast.innerHTML = `
     <span class="toast-icon">${type === "error" ? "!" : "✓"}</span>
-    <span class="toast-message">${message}</span>
+    <span class="toast-message">${escapeHtml(message)}</span>
     <button class="toast-close" type="button" aria-label="Fermer">×</button>
   `;
   document.body.appendChild(toast);
@@ -163,27 +176,39 @@ function showToast(message, type = "info") {
   window.setTimeout(() => toast.remove(), 3200);
 }
 
-function renderSidebar(page) {
+function showLoadError(message) {
+  const app = document.querySelector(".app");
+  if (!app) return;
+  app.insertAdjacentHTML("afterbegin", `
+    <section class="panel app-error">
+      <h1>Connexion aux donnees impossible</h1>
+      <p class="muted">${escapeHtml(message)}</p>
+    </section>
+  `);
+}
+
+function renderSidebar(page, user = emptyUser) {
   const sidebar = document.querySelector("[data-sidebar]");
   if (!sidebar) return;
+  const visibleNavItems = navItems.filter(([key]) => key !== "admin" || user.role === "admin");
 
   sidebar.innerHTML = `
-    <a class="brand" href="../index.html">
+    <a class="brand" href="/">
       <span class="brand-mark">A</span>
       <span><strong>AFRIX</strong><small>Capital Investment</small></span>
     </a>
     <nav class="nav">
-      ${navItems.map(([key, label, href]) => `<a class="${page === key ? "active" : ""}" href="${href}">${label}</a>`).join("")}
+      ${visibleNavItems.map(([key, label, href]) => `<a class="${page === key ? "active" : ""}" href="${href}">${label}</a>`).join("")}
     </nav>
     <div class="side-card">
       <span>Rang partenaire</span>
-      <strong>Niveau 3</strong>
+      <strong>${escapeHtml(user.rank || "Niveau 0")}</strong>
       <small>Progression Web3 active</small>
     </div>
   `;
 }
 
-function renderTopbar(page, user) {
+function renderTopbar(page, user = emptyUser) {
   const topbar = document.querySelector("[data-topbar]");
   if (!topbar) return;
 
@@ -194,7 +219,7 @@ function renderTopbar(page, user) {
       <h1>${pageTitles[page] || "AFRIX"}</h1>
     </div>
     <div class="user-box">
-      <span>${user.email}</span>
+      <span>${escapeHtml(user.email || "Compte AFRIX")}</span>
       <strong>USDT</strong>
     </div>
   `;
@@ -217,25 +242,26 @@ function renderDashboard(user) {
   const progressText = document.querySelector("[data-progress-text]");
   const refLink = document.querySelector("[data-ref-link]");
   const recentList = document.querySelector("[data-recent-list]");
+  const activeLevels = Math.max(0, Math.min(20, Math.floor(Number(user.activity || 0) / 100)));
 
   if (balance) balance.textContent = formatUsdt(user.balance);
-  if (activity) activity.textContent = `${user.activity} USDT`;
-  if (levelNote) levelNote.textContent = "3 niveaux actives";
-  if (team) team.textContent = user.team;
+  if (activity) activity.textContent = `${Number(user.activity || 0).toFixed(0)} USDT`;
+  if (levelNote) levelNote.textContent = `${activeLevels} niveau${activeLevels > 1 ? "x" : ""} actif${activeLevels > 1 ? "s" : ""}`;
+  if (team) team.textContent = Number(user.team || 0);
   if (bonus) bonus.textContent = formatUsdt(user.bonus);
-  if (rank) rank.textContent = user.rank;
-  if (progress) progress.style.width = `${user.progress}%`;
-  if (progressText) progressText.textContent = "Encore 270 USDT d'activite pour atteindre le niveau suivant.";
-  if (refLink) refLink.value = user.refLink;
+  if (rank) rank.textContent = user.rank || "Niveau 0";
+  if (progress) progress.style.width = `${Math.max(0, Math.min(100, Number(user.progress || 0)))}%`;
+  if (progressText) progressText.textContent = user.progressText || "Progression calculee selon votre activite validee.";
+  if (refLink) refLink.value = user.refLink || "";
 
   if (recentList) {
-    recentList.innerHTML = user.transactions.slice(0, 3).map((item) => `
+    recentList.innerHTML = user.transactions.length ? user.transactions.slice(0, 3).map((item) => `
       <div>
-        <span>${item.type}</span>
-        <strong class="${item.amount.startsWith("+") ? "positive" : ""}">${item.amount}</strong>
-        <small>${item.description}</small>
+        <span>${escapeHtml(item.type)}</span>
+        <strong class="${String(item.amount || "").startsWith("+") ? "positive" : ""}">${escapeHtml(item.amount)}</strong>
+        <small>${escapeHtml(item.description)}</small>
       </div>
-    `).join("");
+    `).join("") : `<p class="muted">Aucune activite recente.</p>`;
   }
 }
 
@@ -243,15 +269,15 @@ function renderTransactions(user) {
   const table = document.querySelector("[data-transaction-table]");
   if (!table) return;
 
-  table.innerHTML = user.transactions.map((item) => `
+  table.innerHTML = user.transactions.length ? user.transactions.map((item) => `
     <tr>
-      <td>${item.date}</td>
-      <td>${item.type}</td>
-      <td>${item.description}</td>
-      <td>${item.amount}</td>
-      <td>${item.status}</td>
+      <td>${escapeHtml(item.date)}</td>
+      <td>${escapeHtml(item.type)}</td>
+      <td>${escapeHtml(item.description)}</td>
+      <td>${escapeHtml(item.amount)}</td>
+      <td>${escapeHtml(item.status)}</td>
     </tr>
-  `).join("");
+  `).join("") : `<tr><td colspan="5">Aucune transaction.</td></tr>`;
 }
 
 function renderWallet(user) {
@@ -293,11 +319,11 @@ function renderWallet(user) {
 
   function updateDepositTarget() {
     const method = depositMethod?.value || "trc20";
-    const target = user.paymentTargets?.[method] || mockUser.paymentTargets.trc20;
+    const target = user.paymentTargets?.[method];
 
-    if (targetLabel) targetLabel.textContent = target.label;
-    if (targetValue) targetValue.textContent = target.value;
-    if (targetNote) targetNote.textContent = target.note;
+    if (targetLabel) targetLabel.textContent = target?.label || "Coordonnees de depot indisponibles";
+    if (targetValue) targetValue.textContent = target?.value || "Indisponible";
+    if (targetNote) targetNote.textContent = target?.note || "Connectez le backend pour charger les coordonnees officielles.";
     updateDepositConversion();
   }
 
@@ -334,7 +360,11 @@ function renderPlans(user) {
       </div>
       <p>${plan.note}</p>
       <small>Activite actuelle: ${Number(user.activity || 0).toFixed(0)} USDT</small>
-      <button class="btn primary" type="button" data-plan="${plan.name}">Activer</button>
+      <label class="plan-investment-input">
+        Montant a investir
+        <input type="number" min="10" step="0.01" value="${plan.minAmount}" data-plan-amount>
+      </label>
+      <button class="btn primary" type="button" data-plan="${escapeHtml(plan.name)}" data-plan-min="${plan.minAmount}">Activer</button>
     </article>
   `).join("");
 }
@@ -353,17 +383,35 @@ function renderNetwork(user) {
     }).join("");
   }
 
-  if (refLink) refLink.value = user.refLink;
-  if (partnersCount) partnersCount.textContent = user.directPartners?.length || 0;
+  if (refLink) refLink.value = user.refLink || "";
+  if (partnersCount) partnersCount.textContent = user.directPartners.length;
   if (partnersList) {
-    const partners = user.directPartners || [];
-    partnersList.innerHTML = partners.length ? partners.map((partner) => `
+    partnersList.innerHTML = user.directPartners.length ? user.directPartners.map((partner) => `
       <div>
-        <span>${partner.fullName}<small>${partner.email}</small></span>
-        <strong>${partner.activity} USDT</strong>
+        <span>${escapeHtml(partner.fullName)}<small>${escapeHtml(partner.email)}</small></span>
+        <strong>${Number(partner.activity || 0).toFixed(0)} USDT</strong>
       </div>
     `).join("") : `<p class="muted">Aucun partenaire direct pour le moment.</p>`;
   }
+}
+
+function merchantCard(merchant, reference = "AFX-...") {
+  const whatsAppMessage = encodeURIComponent(`Bonjour ${merchant.businessName}, je souhaite effectuer une operation AFRIX Money. Ma reference est ${reference}`);
+  const whatsAppLink = `https://wa.me/${String(merchant.phone || "").replace(/[^\d]/g, "")}?text=${whatsAppMessage}`;
+
+  return `
+    <div class="merchant-card">
+      <span>${escapeHtml(merchant.businessName)}<small>${escapeHtml(merchant.city)}, ${escapeHtml(merchant.country)} - ${escapeHtml(merchant.methods)} - WhatsApp merchant: ${escapeHtml(merchant.phone)} - ${escapeHtml(merchant.limits)}</small></span>
+      <strong>${escapeHtml(merchant.rating || "Actif")}</strong>
+      <span class="badge">${escapeHtml(merchant.status || "Disponible")}</span>
+      <a class="btn secondary" href="${whatsAppLink}" target="_blank" rel="noopener">WhatsApp</a>
+    </div>
+  `;
+}
+
+function renderMerchantCards(container, rows) {
+  if (!container) return;
+  container.innerHTML = rows.length ? rows.map((merchant) => merchantCard(merchant)).join("") : `<p class="muted">Aucun merchant disponible pour cette recherche.</p>`;
 }
 
 function renderMerchants(user) {
@@ -377,57 +425,45 @@ function renderMerchants(user) {
   const merchantMainBalance = document.querySelector("[data-merchant-main-balance]");
   const requestList = document.querySelector("[data-merchant-request-list]");
 
-  if (applicationStatus) applicationStatus.textContent = "Aucune demande";
+  if (applicationStatus) applicationStatus.textContent = user.merchantApplicationStatus || "Aucun profil";
 
-  const wallet = user.merchantWallet || mockUser.merchantWallet;
+  const wallet = user.merchantWallet;
   if (merchantWalletAvailable) merchantWalletAvailable.textContent = formatUsdt(wallet.available);
   if (merchantWalletPending) merchantWalletPending.textContent = formatUsdt(wallet.pending);
   if (merchantWalletBonus) merchantWalletBonus.textContent = formatUsdt(wallet.bonus);
   if (merchantMainBalance) merchantMainBalance.textContent = formatUsdt(wallet.mainBalance);
 
-  const merchants = user.merchants || mockUser.merchants;
-  const renderMerchantCards = (rows) => rows.length ? rows.map((merchant) => {
-    const whatsAppMessage = encodeURIComponent(`Bonjour ${merchant.businessName}, je souhaite effectuer une operation AFRIX Money. Ma reference est AFX-...`);
-    const whatsAppLink = `https://wa.me/${String(merchant.phone).replace(/[^\d]/g, "")}?text=${whatsAppMessage}`;
-    return `
-    <div class="merchant-card">
-      <span>${merchant.businessName}<small>${merchant.city}, ${merchant.country} - ${merchant.methods} - WhatsApp merchant: ${merchant.phone} - ${merchant.limits}</small></span>
-      <strong>${merchant.rating}</strong>
-      <span class="badge">${merchant.status}</span>
-      <a class="btn secondary" href="${whatsAppLink}" target="_blank" rel="noopener">WhatsApp</a>
-    </div>
-  `;
-  }).join("") : `<p class="muted">Aucun merchant disponible pour cette recherche.</p>`;
+  renderMerchantCards(merchantList, user.merchants);
+  renderMerchantCards(merchantResults, user.merchants);
 
-  if (merchantList) merchantList.innerHTML = renderMerchantCards(merchants);
-  if (merchantResults) merchantResults.innerHTML = renderMerchantCards(merchants.filter((merchant) => merchant.country.toLowerCase() === "congo"));
   if (merchantSearch && merchantResults) {
-    merchantSearch.addEventListener("input", () => {
-      const query = merchantSearch.value.trim().toLowerCase();
-      const results = query
-        ? merchants.filter((merchant) => merchant.country.toLowerCase().includes(query) || merchant.city.toLowerCase().includes(query))
-        : merchants.filter((merchant) => merchant.country.toLowerCase() === "congo");
-      merchantResults.innerHTML = renderMerchantCards(results);
+    merchantSearch.addEventListener("input", async () => {
+      const query = merchantSearch.value.trim();
+      try {
+        const data = await apiRequest(`/merchants?query=${encodeURIComponent(query)}`);
+        renderMerchantCards(merchantResults, Array.isArray(data.merchants) ? data.merchants : []);
+      } catch (error) {
+        renderMerchantCards(merchantResults, []);
+        showToast(error.message, "error");
+      }
     });
   }
 
   if (requestList) {
-    const requests = user.cicoRequests || mockUser.cicoRequests;
-    requestList.innerHTML = requests.map((item) => `
+    requestList.innerHTML = user.cicoRequests.length ? user.cicoRequests.map((item) => `
       <div>
-        <span>${item.reference}<small>${item.type} ${item.method} - ${item.customer}</small></span>
+        <span>${escapeHtml(item.reference)}<small>${escapeHtml(item.type)} ${escapeHtml(item.method)} - ${escapeHtml(item.customer)}</small></span>
         <strong>${formatUsdt(item.amount)}</strong>
       </div>
-    `).join("");
+    `).join("") : `<p class="muted">Aucune reference CICO recue.</p>`;
   }
 }
 
 function renderAdmin(user) {
+  if (user.role !== "admin") return;
   const pendingDeposits = user.transactions.filter((item) => item.type === "Depot" && item.status === "Pending");
   const pendingWithdrawals = user.transactions.filter((item) => item.type === "Retrait" && item.status === "Pending");
-  const merchantApplications = user.merchantApplications || mockUser.merchantApplications;
-  const disputes = user.disputes || mockUser.disputes;
-  const cicoRequests = user.cicoRequests || mockUser.cicoRequests;
+  const platformControls = user.platformControls || {};
 
   const depositTotal = user.transactions
     .filter((item) => item.type === "Depot")
@@ -448,29 +484,33 @@ function renderAdmin(user) {
   if (adminDeposits) adminDeposits.textContent = formatUsdt(depositTotal);
   if (adminWithdrawals) adminWithdrawals.textContent = formatUsdt(withdrawalTotal);
   if (adminTx) adminTx.textContent = user.transactions.length;
-  if (adminTeam) adminTeam.textContent = user.team;
-  if (pendingDepositsCount) pendingDepositsCount.textContent = cicoRequests.length;
+  if (adminTeam) adminTeam.textContent = Number(user.team || 0);
+  if (pendingDepositsCount) pendingDepositsCount.textContent = user.cicoRequests.length;
   if (pendingWithdrawalsCount) pendingWithdrawalsCount.textContent = "Merchant";
-  if (merchantApplicationsCount) merchantApplicationsCount.textContent = merchantApplications.length;
-  if (disputesCount) disputesCount.textContent = disputes.length;
+  if (merchantApplicationsCount) merchantApplicationsCount.textContent = user.merchantApplications.length;
+  if (disputesCount) disputesCount.textContent = user.disputes.length;
 
   renderQueue("[data-admin-pending-deposits]", pendingDeposits);
   renderQueue("[data-admin-pending-withdrawals]", pendingWithdrawals);
-  renderCicoAdminRequests(cicoRequests);
-  renderMerchantApplications(merchantApplications);
-  renderDisputes(disputes);
+  renderCicoAdminRequests(user.cicoRequests);
+  renderMerchantApplications(user.merchantApplications);
+  renderDisputes(user.disputes);
+
+  document.querySelectorAll("[data-admin-control]").forEach((control) => {
+    control.checked = Boolean(platformControls[control.dataset.adminControl]);
+  });
 }
 
 function renderQueue(selector, rows) {
   const list = document.querySelector(selector);
   if (!list) return;
 
-  list.innerHTML = rows.length ? rows.map((item, index) => `
+  list.innerHTML = rows.length ? rows.map((item) => `
     <div class="queue-row">
-      <span>${item.description}<small>${item.date}</small></span>
-      <strong>${item.amount}</strong>
-      <button class="btn primary" type="button" data-admin-approve="${index}">Valider</button>
-      <button class="btn secondary" type="button" data-admin-reject="${index}">Rejeter</button>
+      <span>${escapeHtml(item.description)}<small>${escapeHtml(item.date)}</small></span>
+      <strong>${escapeHtml(item.amount)}</strong>
+      <button class="btn primary" type="button" data-admin-approve="${escapeHtml(item.id || item.reference || "")}">Valider</button>
+      <button class="btn secondary" type="button" data-admin-reject="${escapeHtml(item.id || item.reference || "")}">Rejeter</button>
     </div>
   `).join("") : `<p class="muted">Aucune demande en attente.</p>`;
 }
@@ -481,7 +521,7 @@ function renderCicoAdminRequests(rows) {
 
   list.innerHTML = rows.length ? rows.map((item) => `
     <div>
-      <span>${item.reference}<small>${item.type} ${item.method} - ${item.country} - ${item.status}</small></span>
+      <span>${escapeHtml(item.reference)}<small>${escapeHtml(item.type)} ${escapeHtml(item.method)} - ${escapeHtml(item.country)} - ${escapeHtml(item.status)}</small></span>
       <strong>${formatUsdt(item.amount)}</strong>
     </div>
   `).join("") : `<p class="muted">Aucune operation CICO merchant.</p>`;
@@ -491,25 +531,33 @@ function renderMerchantApplications(applications) {
   const list = document.querySelector("[data-admin-merchant-applications]");
   if (!list) return;
 
-  list.innerHTML = applications.length ? applications.map((item, index) => `
+  list.innerHTML = applications.length ? applications.map((item) => {
+    const isApproved = item.status === "approved";
+    return `
     <div class="queue-row">
-      <span>${item.businessName}<small>${item.userEmail} - ${item.city}, ${item.country}</small></span>
+      <span>${escapeHtml(item.businessName)}<small>${escapeHtml(item.userEmail)} - ${escapeHtml(item.city)}, ${escapeHtml(item.country)} - ${escapeHtml(item.status)}</small></span>
       <strong>${formatUsdt(item.guarantee)}</strong>
-      <button class="btn primary" type="button" data-merchant-approve="${index}">Approuver</button>
-      <button class="btn secondary" type="button" data-merchant-reject="${index}">Rejeter</button>
+      ${isApproved ? `
+        <input class="admin-inline-input" type="number" min="1" step="0.01" value="${Number(item.guarantee || 1000)}" data-merchant-fund-amount>
+        <button class="btn primary" type="button" data-merchant-fund="${escapeHtml(item.id || item.userId || "")}">Approvisionner</button>
+      ` : `
+        <button class="btn primary" type="button" data-merchant-approve="${escapeHtml(item.id || item.reference || "")}">Approuver</button>
+        <button class="btn secondary" type="button" data-merchant-reject="${escapeHtml(item.id || item.reference || "")}">Rejeter</button>
+      `}
     </div>
-  `).join("") : `<p class="muted">Aucune demande merchant en attente.</p>`;
+  `;
+  }).join("") : `<p class="muted">Aucune demande merchant en attente.</p>`;
 }
 
 function renderDisputes(disputes) {
   const list = document.querySelector("[data-admin-disputes]");
   if (!list) return;
 
-  list.innerHTML = disputes.length ? disputes.map((item, index) => `
+  list.innerHTML = disputes.length ? disputes.map((item) => `
     <div class="queue-row">
-      <span>${item.reason}<small>${item.userEmail} - ${item.reference}</small></span>
-      <strong>${item.type}</strong>
-      <button class="btn primary" type="button" data-dispute-close="${index}">Cloturer</button>
+      <span>${escapeHtml(item.reason)}<small>${escapeHtml(item.userEmail)} - ${escapeHtml(item.reference)}</small></span>
+      <strong>${escapeHtml(item.type)}</strong>
+      <button class="btn primary" type="button" data-dispute-close="${escapeHtml(item.id || item.reference || "")}">Cloturer</button>
     </div>
   `).join("") : `<p class="muted">Aucun litige ouvert.</p>`;
 }
@@ -519,168 +567,164 @@ function setupAuthForms() {
   const registerForm = document.querySelector("[data-register-form]");
 
   if (loginForm) {
-    loginForm.addEventListener("submit", (event) => {
+    loginForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const formData = new FormData(loginForm);
-      const email = String(formData.get("email") || mockUser.email).trim().toLowerCase();
-      const password = String(formData.get("password") || "").trim();
+      const data = formToObject(loginForm);
+      const email = String(data.email || "").trim().toLowerCase();
+      const password = String(data.password || "").trim();
 
       if (!email || !password) {
         showToast("Email et mot de passe requis.", "error");
         return;
       }
 
-      setUser({ email, password });
-      window.location.href = "dashboard.html";
+      try {
+        const response = await apiJson("/auth/login", { email, password });
+        setAuthToken(response.token);
+        window.location.href = "/dashboard";
+      } catch (error) {
+        showToast(error.message, "error");
+      }
     });
   }
 
   if (registerForm) {
-    registerForm.addEventListener("submit", (event) => {
+    registerForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const formData = new FormData(registerForm);
-      const email = String(formData.get("email") || mockUser.email).trim().toLowerCase();
-      const password = String(formData.get("password") || "").trim();
+      const data = formToObject(registerForm);
+      const email = String(data.email || "").trim().toLowerCase();
+      const password = String(data.password || "").trim();
 
-      if (!email || password.length < 4) {
-        showToast("Renseignez un email et un mot de passe d'au moins 4 caracteres.", "error");
+      if (!email || password.length < 10) {
+        showToast("Renseignez un email et un mot de passe d'au moins 10 caracteres.", "error");
         return;
       }
 
-      setUser({
-        fullName: email.split("@")[0] || mockUser.fullName,
-        email,
-        password
-      });
-      window.location.href = "dashboard.html";
+      try {
+        const response = await apiJson("/auth/register", { email, password });
+        setAuthToken(response.token);
+        window.location.href = "/dashboard";
+      } catch (error) {
+        showToast(error.message, "error");
+      }
     });
   }
 }
 
 function setupActions(user) {
   document.querySelector("[data-copy-ref]")?.addEventListener("click", () => {
+    if (!user.refLink) {
+      showToast("Lien de parrainage indisponible.", "error");
+      return;
+    }
     navigator.clipboard?.writeText(user.refLink);
     showToast("Lien de parrainage copie.");
   });
 
   document.querySelector("[data-copy-wallet]")?.addEventListener("click", () => {
     const activeTarget = document.querySelector("[data-deposit-target]")?.textContent || user.wallet;
+    if (!activeTarget || activeTarget === "Indisponible") {
+      showToast("Coordonnees de depot indisponibles.", "error");
+      return;
+    }
     navigator.clipboard?.writeText(activeTarget);
     showToast("Coordonnees de depot copiees.");
   });
 
-  document.querySelector("[data-export]")?.addEventListener("click", () => {
-    showToast("Export CSV simule pour la maquette.");
-  });
-
-  document.querySelector("[data-deposit-form]")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const method = String(formData.get("method") || "trc20");
-    if (method === "mobile" || method === "airtel") {
-      const amount = Number(formData.get("amount") || 0);
-      const reference = createCicoReference("DP", amount);
-      showCicoReference(reference, "Depot", amount, 0);
-      showToast("Reference depot generee. Contactez un merchant disponible.");
-      return;
+  document.querySelector("[data-export]")?.addEventListener("click", async () => {
+    try {
+      const response = await apiRequest("/transactions/export");
+      if (response.url) window.location.href = response.url;
+      else showToast("Export prepare.");
+    } catch (error) {
+      showToast(error.message, "error");
     }
-    showToast("Demande de depot crypto enregistree en mode maquette.");
   });
 
-  document.querySelector("[data-withdraw-form]")?.addEventListener("submit", (event) => {
+  document.querySelector("[data-deposit-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const method = String(formData.get("method") || "trc20");
-    const amount = Number(formData.get("amount") || 0);
-    if (method === "mobile" || method === "airtel") {
-      const reference = createCicoReference("WD", amount);
-      showCicoReference(reference, "Retrait", amount, amount * 0.1);
-      showToast("Reference retrait generee. Envoyez-la au merchant par WhatsApp.");
-      return;
+    try {
+      const response = await apiRequest("/deposits", {
+        method: "POST",
+        headers: authHeaders(),
+        body: new FormData(event.currentTarget)
+      });
+      if (response.reference) showCicoReference(response.reference, "Depot", response.amount, response.fee || 0);
+      showToast("Demande de depot enregistree.");
+    } catch (error) {
+      showToast(error.message, "error");
     }
-    showToast("Demande de retrait crypto soumise en mode maquette.");
   });
 
-  document.querySelector("[data-plans-list]")?.addEventListener("click", (event) => {
+  document.querySelector("[data-withdraw-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const response = await apiJson("/withdrawals", formToObject(event.currentTarget));
+      if (response.reference) showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0);
+      showToast("Demande de retrait soumise.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  document.querySelector("[data-plans-list]")?.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-plan]");
     if (!button) return;
-    showToast(`Activation du plan ${button.dataset.plan} USDT simulee.`);
-  });
-
-  document.querySelector("[data-p2p-form]")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    showToast("Transfert P2P enregistre en mode maquette.");
-  });
-
-  document.querySelector("[data-cico-form]")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const operation = String(formData.get("operation") || "Retrait");
-    const amount = Number(formData.get("amount") || 0);
-    const reference = createCicoReference(operation === "Depot" ? "DP" : "WD", amount);
-    showCicoReference(reference, operation, amount, operation === "Depot" ? 0 : amount * 0.1);
-    showToast("Reference CICO generee.");
-  });
-
-  document.querySelector("[data-merchant-application-form]")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const businessName = String(formData.get("businessName") || "").trim();
-    const country = String(formData.get("country") || "").trim();
-    const city = String(formData.get("city") || "").trim();
-    const methods = String(formData.get("methods") || "").trim();
-    const phone = String(formData.get("phone") || "").replace(/[^\d+]/g, "");
-    const guarantee = Number(formData.get("guarantee") || 0);
-
-    if (!businessName || !country || !city || !methods) {
-      showToast("Completez les informations du merchant.", "error");
+    const article = button.closest("article");
+    const amount = Number(article?.querySelector("[data-plan-amount]")?.value || 0);
+    if (!Number.isFinite(amount) || amount < 10) {
+      showToast("Montant minimum investissement: 10 USDT.", "error");
       return;
     }
-
-    if (phone.length < 8) {
-      showToast("Le numero WhatsApp du merchant est obligatoire.", "error");
-      return;
+    try {
+      const response = await apiJson("/plans/activate", { amount });
+      showToast(`Activation ${formatUsdt(amount)} - ${response.activePlan?.name || "plan"} soumise.`);
+    } catch (error) {
+      showToast(error.message, "error");
     }
-
-    const existingMerchants = user.merchants || mockUser.merchants;
-    const merchant = {
-      code: `AFX-MER-${Date.now().toString().slice(-6)}`,
-      businessName,
-      city,
-      country,
-      methods,
-      phone,
-      status: "Disponible",
-      rating: "Nouveau",
-      limits: `10 - ${Math.max(100, guarantee).toLocaleString("fr-FR")} USDT`,
-      source: "merchant"
-    };
-    const nextUser = {
-      ...user,
-      merchants: [merchant, ...existingMerchants.filter((item) => item.phone !== phone)],
-      merchantApplications: [
-        {
-          businessName,
-          userEmail: user.email,
-          city,
-          country,
-          phone,
-          guarantee,
-          status: "registered"
-        },
-        ...(user.merchantApplications || mockUser.merchantApplications)
-      ]
-    };
-
-    setUser(nextUser);
-    renderMerchants(nextUser);
-    event.currentTarget.reset();
-    showToast("Merchant enregistre. Son WhatsApp apparait maintenant dans la recherche.");
   });
 
-  document.querySelector("[data-dispute-form]")?.addEventListener("submit", (event) => {
+  document.querySelector("[data-p2p-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    showToast("Litige envoye au support en mode maquette.");
+    try {
+      await apiJson("/p2p-transfers", formToObject(event.currentTarget));
+      showToast("Transfert P2P envoye.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  document.querySelector("[data-cico-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const response = await apiJson("/cico-requests", formToObject(event.currentTarget));
+      if (response.reference) showCicoReference(response.reference, response.operation || "CICO", response.amount, response.fee || 0);
+      showToast("Reference CICO creee.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  document.querySelector("[data-merchant-application-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await apiJson("/merchant/applications", formToObject(event.currentTarget));
+      event.currentTarget.reset();
+      showToast("Profil merchant envoye pour validation.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  document.querySelector("[data-dispute-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await apiJson("/disputes", formToObject(event.currentTarget));
+      event.currentTarget.reset();
+      showToast("Litige envoye au support.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
   });
 
   document.querySelector("[data-admin-pending-deposits]")?.addEventListener("click", handleAdminClick);
@@ -688,49 +732,67 @@ function setupActions(user) {
   document.querySelector("[data-admin-merchant-applications]")?.addEventListener("click", handleAdminClick);
   document.querySelector("[data-admin-disputes]")?.addEventListener("click", handleAdminClick);
 
-  document.querySelector("[data-merchant-code-form]")?.addEventListener("submit", (event) => {
+  document.querySelectorAll("[data-admin-control]").forEach((control) => {
+    control.addEventListener("change", async (event) => {
+      try {
+        await apiJson("/admin/settings", {
+          key: event.currentTarget.dataset.adminControl,
+          value: event.currentTarget.checked
+        });
+        showToast("Parametre admin enregistre.");
+      } catch (error) {
+        event.currentTarget.checked = !event.currentTarget.checked;
+        showToast(error.message, "error");
+      }
+    });
+  });
+
+  document.querySelector("[data-merchant-code-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const reference = String(formData.get("reference") || "").trim().toUpperCase();
-    const request = (user.cicoRequests || mockUser.cicoRequests).find((item) => item.reference.toUpperCase() === reference);
+    const reference = String(new FormData(event.currentTarget).get("reference") || "").trim().toUpperCase();
     const result = document.querySelector("[data-merchant-code-result]");
 
-    if (!request) {
-      if (result) result.innerHTML = `<p class="muted">Reference introuvable ou deja traitee.</p>`;
-      showToast("Reference introuvable.", "error");
-      return;
-    }
+    try {
+      const response = await apiRequest(`/merchant/cico-requests/${encodeURIComponent(reference)}`);
+      const request = response.request || response;
 
-    if (result) {
-      result.innerHTML = `
-        <div class="merchant-code-card">
-          <span>${request.reference}</span>
-          <h2>${request.type} ${formatUsdt(request.amount)}</h2>
-          <p>${request.customer} - ${request.method} - ${request.phone}</p>
-          <div class="info-grid compact-info">
-            <div><span>Frais client</span><strong>${formatUsdt(request.fee)}</strong></div>
-            <div><span>Bonus merchant</span><strong>${formatUsdt(request.merchantBonus)}</strong></div>
+      if (result) {
+        result.innerHTML = `
+          <div class="merchant-code-card">
+            <span>${escapeHtml(request.reference)}</span>
+            <h2>${escapeHtml(request.type)} ${formatUsdt(request.amount)}</h2>
+            <p>${escapeHtml(request.customer)} - ${escapeHtml(request.method)} - ${escapeHtml(request.phone)}</p>
+            <div class="info-grid compact-info">
+              <div><span>Frais client</span><strong>${formatUsdt(request.fee)}</strong></div>
+              <div><span>Bonus merchant</span><strong>${formatUsdt(request.merchantBonus)}</strong></div>
+            </div>
+            <button class="btn primary full" type="button" data-merchant-confirm-code="${escapeHtml(request.reference)}">Valider l'operation</button>
           </div>
-          <button class="btn primary full" type="button" data-merchant-confirm-code>Valider l'operation</button>
-        </div>
-      `;
-      result.querySelector("[data-merchant-confirm-code]")?.addEventListener("click", () => {
-        showToast("Operation validee: le solde client et le wallet merchant sont mis a jour en maquette.");
-      });
+        `;
+        result.querySelector("[data-merchant-confirm-code]")?.addEventListener("click", async (clickEvent) => {
+          try {
+            await apiJson(`/merchant/cico-requests/${encodeURIComponent(clickEvent.currentTarget.dataset.merchantConfirmCode)}/confirm`, {});
+            showToast("Operation validee.");
+          } catch (error) {
+            showToast(error.message, "error");
+          }
+        });
+      }
+    } catch (error) {
+      if (result) result.innerHTML = `<p class="muted">Reference introuvable ou deja traitee.</p>`;
+      showToast(error.message, "error");
     }
   });
 
-  document.querySelector("[data-merchant-transfer-form]")?.addEventListener("submit", (event) => {
+  document.querySelector("[data-merchant-transfer-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    showToast("Transfert du wallet merchant vers le compte principal simule.");
+    try {
+      await apiJson("/merchant/transfers", formToObject(event.currentTarget));
+      showToast("Transfert du wallet merchant envoye.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
   });
-}
-
-function createCicoReference(prefix, amount) {
-  const date = new Date();
-  const stamp = `${String(date.getFullYear()).slice(2)}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
-  const cleanAmount = Math.max(0, Math.round(Number(amount || 0))).toString().padStart(3, "0");
-  return `AFX-${prefix}-${stamp}-${cleanAmount}`;
 }
 
 function showCicoReference(reference, operation, amount, fee) {
@@ -750,17 +812,33 @@ function showCicoReference(reference, operation, amount, fee) {
   });
 }
 
-function handleAdminClick(event) {
-  const action = event.target.closest("[data-admin-approve], [data-admin-reject], [data-merchant-approve], [data-merchant-reject], [data-dispute-close]");
+async function handleAdminClick(event) {
+  const action = event.target.closest("[data-admin-approve], [data-admin-reject], [data-merchant-approve], [data-merchant-reject], [data-merchant-fund], [data-dispute-close]");
   if (!action) return;
-  showToast("Action admin simulee en mode maquette.");
+
+  const actionMap = [
+    ["adminApprove", "approve"],
+    ["adminReject", "reject"],
+    ["merchantApprove", "merchant-approve"],
+    ["merchantReject", "merchant-reject"],
+    ["merchantFund", "merchant-fund"],
+    ["disputeClose", "dispute-close"]
+  ];
+  const [datasetKey, actionName] = actionMap.find(([key]) => action.dataset[key] !== undefined) || [];
+  const id = datasetKey ? action.dataset[datasetKey] : "";
+  const amountInput = action.closest(".queue-row")?.querySelector("[data-merchant-fund-amount]");
+  const amount = amountInput ? Number(amountInput.value || 0) : undefined;
+
+  try {
+    await apiJson("/admin/actions", { action: actionName, id, ...(amount ? { amount } : {}) });
+    showToast("Action admin enregistree.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  const page = document.body.dataset.page;
-  const user = ensureMockSession() || mockUser;
-
-  renderSidebar(page);
+function renderProtectedShell(page, user) {
+  renderSidebar(page, user);
   renderTopbar(page, user);
   renderDashboard(user);
   renderTransactions(user);
@@ -769,6 +847,33 @@ document.addEventListener("DOMContentLoaded", () => {
   renderNetwork(user);
   renderMerchants(user);
   renderAdmin(user);
-  setupAuthForms();
   setupActions(user);
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const page = document.body.dataset.page;
+  const isProtected = document.body.matches("[data-protected]");
+
+  setupAuthForms();
+
+  if (!isProtected) return;
+
+  renderSidebar(page);
+  renderTopbar(page);
+
+  if (!getAuthToken()) {
+    window.location.href = "/login";
+    return;
+  }
+
+  try {
+    const user = await loadCurrentUser();
+    if (page === "admin" && user.role !== "admin") {
+      window.location.href = "/dashboard";
+      return;
+    }
+    renderProtectedShell(page, user);
+  } catch (error) {
+    showLoadError(error.message);
+  }
 });

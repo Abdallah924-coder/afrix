@@ -13,10 +13,9 @@
     <section class="grid two">
       <article class="panel">
         <h1>Contrôles plateforme</h1>
-        <div class="switch-row"><span>CICO via merchants</span><input type="checkbox" checked></div>
-        <div class="switch-row"><span>WhatsApp merchant obligatoire</span><input type="checkbox" checked></div>
-        <div class="switch-row"><span>Validation KYC</span><input type="checkbox" checked></div>
-        <div class="switch-row"><span>Mode maintenance</span><input type="checkbox"></div>
+        <div class="switch-row"><span>CICO via merchants</span><input type="checkbox" data-admin-control="cicoMerchants"></div>
+        <div class="switch-row"><span>WhatsApp merchant obligatoire</span><input type="checkbox" data-admin-control="merchantWhatsappRequired"></div>
+        <div class="switch-row"><span>Mode maintenance</span><input type="checkbox" data-admin-control="maintenanceMode"></div>
       </article>
       <article class="panel">
         <h1>Résumé admin</h1>
@@ -35,7 +34,7 @@
       </article>
       <article class="panel">
         <div class="panel-head"><h1>Règle opérationnelle</h1><span class="badge">Merchant</span></div>
-        <p class="muted">Les dépôts et retraits Mobile Money sont traités entre l'utilisateur et le merchant avec une référence AFRIX Money. L'admin suit les volumes, les merchants, les litiges et les agréments.</p>
+        <p class="muted">Les dépôts et retraits sont traités entre utilisateurs et merchants. L'admin suit les volumes, les merchants, les litiges et les agréments; il intervient uniquement en cas d'urgence ou pour approvisionner un wallet merchant après encaissement réel.</p>
       </article>
     </section>
     <section class="grid two admin-queues">

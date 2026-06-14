@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: afrix-platform
+    env: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: PUBLIC_ORIGIN
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: TOKEN_TTL
+        value: 7d
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        value: Administrateur AFRIX
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: BREVO_SENDER_NAME
+        value: AFRIX
+      - key: SUPPORT_EMAIL
+        sync: false
+      - key: ADMIN_ALERT_EMAIL
+        sync: false
+      - key: TRC20_DEPOSIT_ADDRESS
+        sync: false
+      - key: BEP20_DEPOSIT_ADDRESS
+        sync: false
+      - key: LOG_LEVEL
+        value: info
