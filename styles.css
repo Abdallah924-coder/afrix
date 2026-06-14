@@ -945,7 +945,7 @@ body[data-page="wallet"] select {
 .info-grid strong { display: block; margin-top: 6px; }
 .admin-queues { margin-top: 14px; }
 .queue-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center !important; }
-.merchant-card { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center !important; }
+.merchant-card { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center !important; }
 .positive { color: var(--green); }
 .negative { color: var(--red); }
 .progress { height: 12px; overflow: hidden; border-radius: 999px; background: #071210; }
@@ -1259,6 +1259,43 @@ body[data-page="wallet"] select {
   background: linear-gradient(180deg, rgba(233, 189, 99, .1), rgba(16, 31, 28, .94));
 }
 .merchant-benefits { margin-bottom: 18px; }
+.merchant-dashboard { margin-bottom: 18px; }
+.merchant-results { margin-top: 14px; }
+.cico-reference-card {
+  border-color: rgba(233, 189, 99, .5);
+  background:
+    radial-gradient(circle at 88% 18%, rgba(233, 189, 99, .16), transparent 28%),
+    rgba(16, 31, 28, .94);
+}
+.cico-reference-card[hidden] {
+  display: none;
+}
+.cico-reference-card h1 {
+  margin: 12px 0 8px;
+  color: var(--gold);
+  overflow-wrap: anywhere;
+}
+.merchant-code-result {
+  margin-top: 14px;
+}
+.merchant-code-card {
+  padding: 14px;
+  border: 1px solid rgba(55, 217, 209, .24);
+  border-radius: 8px;
+  background: var(--panel2);
+}
+.merchant-code-card > span {
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 900;
+}
+.merchant-code-card h2 {
+  margin: 8px 0;
+  color: var(--gold);
+}
+.merchant-code-card p {
+  color: var(--muted);
+}
 .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .level { padding: 12px; border-radius: 8px; background: var(--panel2); }
 .level.locked { opacity: .44; }

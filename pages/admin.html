@@ -13,16 +13,16 @@
     <section class="grid two">
       <article class="panel">
         <h1>Contrôles plateforme</h1>
-        <div class="switch-row"><span>Dépôts manuels</span><input type="checkbox" checked></div>
-        <div class="switch-row"><span>Retraits manuels</span><input type="checkbox" checked></div>
+        <div class="switch-row"><span>CICO via merchants</span><input type="checkbox" checked></div>
+        <div class="switch-row"><span>WhatsApp merchant obligatoire</span><input type="checkbox" checked></div>
         <div class="switch-row"><span>Validation KYC</span><input type="checkbox" checked></div>
         <div class="switch-row"><span>Mode maintenance</span><input type="checkbox"></div>
       </article>
       <article class="panel">
         <h1>Résumé admin</h1>
         <div class="list">
-          <div><span>Total dépôts</span><strong data-admin-deposits>0 USDT</strong></div>
-          <div><span>Total retraits</span><strong data-admin-withdrawals>0 USDT</strong></div>
+          <div><span>Volume dépôts</span><strong data-admin-deposits>0 USDT</strong></div>
+          <div><span>Volume retraits</span><strong data-admin-withdrawals>0 USDT</strong></div>
           <div><span>Transactions</span><strong data-admin-tx>0</strong></div>
           <div><span>Membres équipe</span><strong data-admin-team>0</strong></div>
         </div>
@@ -30,12 +30,12 @@
     </section>
     <section class="grid two admin-queues">
       <article class="panel">
-        <div class="panel-head"><h1>Dépôts en attente</h1><span class="badge" data-pending-deposits-count>0</span></div>
-        <div class="list" data-admin-pending-deposits></div>
+        <div class="panel-head"><h1>Suivi CICO merchants</h1><span class="badge" data-pending-deposits-count>0</span></div>
+        <div class="list" data-admin-cico-requests></div>
       </article>
       <article class="panel">
-        <div class="panel-head"><h1>Retraits en attente</h1><span class="badge" data-pending-withdrawals-count>0</span></div>
-        <div class="list" data-admin-pending-withdrawals></div>
+        <div class="panel-head"><h1>Règle opérationnelle</h1><span class="badge">Merchant</span></div>
+        <p class="muted">Les dépôts et retraits Mobile Money sont traités entre l'utilisateur et le merchant avec une référence AFRIX Money. L'admin suit les volumes, les merchants, les litiges et les agréments.</p>
       </article>
     </section>
     <section class="grid two admin-queues">

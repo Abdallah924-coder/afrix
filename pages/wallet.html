@@ -17,6 +17,12 @@
         <label for="wallet-deposit">Dépôt</label>
         <label for="wallet-withdraw">Retrait</label>
       </div>
+      <section class="panel cico-reference-card" data-cico-reference-output hidden>
+        <span class="pill">Référence générée</span>
+        <h1 data-cico-reference>AFX-WD-000000-000</h1>
+        <p class="muted" data-cico-reference-summary></p>
+        <p class="muted">Copiez cette référence et envoyez-la au merchant sélectionné sur WhatsApp.</p>
+      </section>
       <div class="wallet-tab-panel wallet-deposit-panel">
         <section class="panel wallet-address">
           <div>
@@ -27,7 +33,7 @@
           <button class="btn secondary" data-copy-wallet>Copier</button>
         </section>
         <form class="panel" data-deposit-form>
-          <h1>Dépôt USDT manuel</h1>
+          <h1>Dépôt USDT</h1>
           <label>Montant minimum 10 USDT<input name="amount" type="number" min="10" step="0.01" value="10" data-deposit-amount></label>
           <label>Moyen de paiement<select name="method" data-deposit-method><option value="trc20">USDT TRC20</option><option value="bep20">USDT BEP20</option><option value="mobile">Mobile Money</option><option value="airtel">Airtel Money</option></select></label>
           <div class="conversion-card" data-deposit-conversion hidden>
@@ -35,24 +41,24 @@
             <strong data-deposit-local-amount>6 500 XAF</strong>
             <small>1 USDT = 650 XAF</small>
           </div>
-          <label>Référence transaction<input name="txRef" required placeholder="Hash ou référence Binance Pay"></label>
+          <label>Référence transaction crypto<input name="txRef" placeholder="Hash TRC20/BEP20 si dépôt crypto"></label>
           <label>Preuve de paiement<input name="proof" type="file" accept="image/png,image/jpeg,image/webp"></label>
-          <button class="btn primary full" type="submit">Enregistrer la demande</button>
+          <button class="btn primary full" type="submit">Créer la référence dépôt</button>
         </form>
         <section class="panel">
-          <h2>Instructions dépôt manuel</h2>
+          <h2>Instructions dépôt</h2>
           <div class="info-grid">
             <div><span>Minimum</span><strong>10 USDT</strong></div>
             <div><span>Réseaux</span><strong>TRC20 / BEP20</strong></div>
-            <div><span>Validation</span><strong>Admin</strong></div>
-            <div><span>Statut</span><strong>Pending → Completed</strong></div>
+            <div><span>Dépôt merchant</span><strong>0% frais</strong></div>
+            <div><span>Validation</span><strong>Merchant</strong></div>
           </div>
-          <p class="muted">Après paiement, l'utilisateur renseigne la référence et ajoute une capture. L'admin vérifie manuellement avant de créditer le solde.</p>
+          <p class="muted">Pour Mobile Money ou Airtel Money, créez une référence puis contactez un merchant disponible. Aucun frais n'est prélevé sur les dépôts.</p>
         </section>
       </div>
       <div class="wallet-tab-panel wallet-withdraw-panel">
         <form class="panel" data-withdraw-form>
-          <h1>Retrait USDT</h1>
+          <h1>Retrait Mobile Money ou USDT</h1>
           <label>Moyen de réception<select name="method" data-withdraw-method><option value="trc20">USDT TRC20</option><option value="bep20">USDT BEP20</option><option value="mobile">Mobile Money</option><option value="airtel">Airtel Money</option></select></label>
           <div class="wallet-receive-fields" data-receive-crypto>
             <label>Adresse wallet<input name="address" placeholder="Adresse USDT"></label>
@@ -67,17 +73,22 @@
             <strong data-withdraw-local-amount>5 500 XAF</strong>
             <small>1 USDT = 550 XAF</small>
           </div>
-          <button class="btn primary full" type="submit">Soumettre le retrait</button>
+          <button class="btn primary full" type="submit">Créer la référence retrait</button>
         </form>
+        <section class="panel">
+          <div class="panel-head"><h2>Rechercher un merchant</h2><span class="badge">Mobile Money</span></div>
+          <label>Pays ou ville<input data-merchant-search placeholder="Congo"></label>
+          <div class="list merchant-results" data-merchant-results></div>
+        </section>
         <section class="panel">
           <h2>Conditions de retrait</h2>
           <div class="info-grid">
             <div><span>Minimum</span><strong>10 USDT</strong></div>
-            <div><span>Réseaux</span><strong>TRC20 / BEP20</strong></div>
-            <div><span>Traitement</span><strong>24h - 48h</strong></div>
-            <div><span>Statut</span><strong>Pending → Paid</strong></div>
+            <div><span>Frais retrait</span><strong>10%</strong></div>
+            <div><span>Traitement</span><strong>Merchant</strong></div>
+            <div><span>Contact</span><strong>WhatsApp</strong></div>
           </div>
-          <p class="muted">Le retrait est soumis à vérification avant envoi vers l'adresse USDT renseignée.</p>
+          <p class="muted">Pour un retrait Mobile Money, le code de référence est présenté au merchant. Le compte client est débité après validation du code par le merchant.</p>
         </section>
       </div>
     </section>

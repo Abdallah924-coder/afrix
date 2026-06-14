@@ -38,7 +38,7 @@
         <p>L'utilisateur approvisionne son compte via un agent AFRIX Money.</p>
         <div class="info-grid compact-info">
           <div><span>Frais utilisateur</span><strong>0%</strong></div>
-          <div><span>Commission agent</span><strong>0,5%</strong></div>
+          <div><span>Validation</span><strong>Merchant</strong></div>
         </div>
       </article>
       <article class="panel money-fee-card">
@@ -62,12 +62,19 @@
       </form>
       <form class="panel" data-cico-form>
         <h1>Merchant CICO</h1>
-        <label>Type d'opération<select name="operation"><option>Cash In</option><option>Cash Out</option></select></label>
-        <label>Code merchant<input name="merchant" required placeholder="AFX-MERCHANT-001"></label>
+        <label>Type d'opération<select name="operation"><option>Depot</option><option>Retrait</option></select></label>
+        <label>Pays du merchant<input name="country" required placeholder="Congo"></label>
         <label>Montant minimum 1 USDT<input name="amount" type="number" min="1" step="0.01" value="1"></label>
-        <button class="btn primary full" type="submit">Créer demande CICO</button>
-        <p class="muted">Cash In: 0% utilisateur et 0,5% agent. Cash Out: 10% utilisateur et 3% agent.</p>
+        <button class="btn primary full" type="submit">Créer la référence CICO</button>
+        <p class="muted">Depot: aucun frais utilisateur. Retrait: 10% utilisateur et bonus merchant 3%.</p>
       </form>
+    </section>
+
+    <section class="panel cico-reference-card" data-cico-reference-output hidden>
+      <span class="pill">Référence générée</span>
+      <h1 data-cico-reference>AFX-WD-000000-000</h1>
+      <p class="muted" data-cico-reference-summary></p>
+      <p class="muted">Présentez cette référence au merchant AFRIX Money avec votre numéro WhatsApp.</p>
     </section>
 
     <section class="grid two money-performance">
@@ -115,11 +122,11 @@
       <h1>Résumé opérationnel CICO</h1>
       <div class="info-grid">
         <div><span>Cash In utilisateur</span><strong>0%</strong></div>
-        <div><span>Cash In agent</span><strong>0,5%</strong></div>
+        <div><span>Cash In validation</span><strong>Merchant</strong></div>
         <div><span>Cash Out utilisateur</span><strong>10%</strong></div>
         <div><span>Cash Out agent</span><strong>3%</strong></div>
       </div>
-      <p class="muted">Les commissions agents dependent du type d'operation, du volume d'approvisionnement et de l'activite generee dans leur zone.</p>
+      <p class="muted">Les dépôts et retraits Mobile Money sont traités entre l'utilisateur et le merchant via une référence AFRIX Money et un contact WhatsApp.</p>
     </section>
   </main>
   <script src="../app.js"></script>

@@ -46,10 +46,22 @@ const mockUser = {
     { fullName: "Prisca Okemba", email: "prisca@example.com", activity: 310 }
   ],
   merchants: [
-    { businessName: "AFRIX Agent Brazzaville", city: "Brazzaville", country: "Congo", methods: "Cash, MTN, Airtel", phone: "+242 06 000 2026", status: "Approuve" }
+    { code: "AFX-MER-BZV-001", businessName: "AFRIX Agent Brazzaville", city: "Brazzaville", country: "Congo", methods: "MTN, Airtel, Cash", phone: "+242060002026", status: "Disponible", rating: "Nouveau", limits: "10 - 2 000 USDT", source: "merchant" },
+    { code: "AFX-MER-PNR-002", businessName: "AFRIX Agent Pointe-Noire", city: "Pointe-Noire", country: "Congo", methods: "Airtel, Banque, Cash", phone: "+242050002026", status: "Disponible", rating: "Nouveau", limits: "20 - 1 500 USDT", source: "merchant" },
+    { code: "AFX-MER-KIN-003", businessName: "AFRIX Agent Kinshasa", city: "Kinshasa", country: "RDC", methods: "Mobile Money, Cash", phone: "+243810002026", status: "Disponible", rating: "Nouveau", limits: "10 - 1 000 USDT", source: "merchant" }
+  ],
+  merchantWallet: {
+    available: 860,
+    pending: 200,
+    bonus: 18.5,
+    mainBalance: 1240
+  },
+  cicoRequests: [
+    { reference: "AFX-WD-260614-200", type: "Retrait", customer: "client@example.com", country: "Congo", amount: 200, fee: 20, merchantBonus: 6, method: "Mobile Money", phone: "+242 06 111 2026", status: "En attente merchant" },
+    { reference: "AFX-DP-260614-050", type: "Depot", customer: "client2@example.com", country: "Congo", amount: 50, fee: 0, merchantBonus: 0.25, method: "Airtel Money", phone: "+242 05 111 2026", status: "En attente merchant" }
   ],
   merchantApplications: [
-    { businessName: "AFRIX Agent Pointe-Noire", userEmail: "agent@example.com", city: "Pointe-Noire", country: "Congo", guarantee: 100, status: "pending" }
+    { businessName: "AFRIX Agent Dolisie", userEmail: "agent@example.com", city: "Dolisie", country: "Congo", phone: "+242060003030", guarantee: 1000, status: "pending" }
   ],
   disputes: [
     { reason: "Verification Cash Out", userEmail: "client@example.com", reference: "AFX-20260609", type: "CICO", status: "open" }
@@ -100,7 +112,17 @@ function getUser() {
   if (!stored) return null;
 
   try {
-    return { ...mockUser, ...JSON.parse(stored) };
+    const parsed = JSON.parse(stored);
+    const merchantsAreCurrent = Array.isArray(parsed.merchants) && parsed.merchants.some((merchant) => merchant.code);
+
+    return {
+      ...mockUser,
+      ...parsed,
+      paymentTargets: { ...mockUser.paymentTargets, ...(parsed.paymentTargets || {}) },
+      merchants: merchantsAreCurrent ? parsed.merchants : mockUser.merchants,
+      merchantWallet: { ...mockUser.merchantWallet, ...(parsed.merchantWallet || {}) },
+      cicoRequests: Array.isArray(parsed.cicoRequests) ? parsed.cicoRequests : mockUser.cicoRequests
+    };
   } catch {
     localStorage.removeItem(STORAGE_KEY);
     return null;
@@ -346,19 +368,58 @@ function renderNetwork(user) {
 
 function renderMerchants(user) {
   const merchantList = document.querySelector("[data-merchants-list]");
+  const merchantResults = document.querySelector("[data-merchant-results]");
+  const merchantSearch = document.querySelector("[data-merchant-search]");
   const applicationStatus = document.querySelector("[data-merchant-application-status]");
+  const merchantWalletAvailable = document.querySelector("[data-merchant-wallet-available]");
+  const merchantWalletPending = document.querySelector("[data-merchant-wallet-pending]");
+  const merchantWalletBonus = document.querySelector("[data-merchant-wallet-bonus]");
+  const merchantMainBalance = document.querySelector("[data-merchant-main-balance]");
+  const requestList = document.querySelector("[data-merchant-request-list]");
 
   if (applicationStatus) applicationStatus.textContent = "Aucune demande";
-  if (!merchantList) return;
+
+  const wallet = user.merchantWallet || mockUser.merchantWallet;
+  if (merchantWalletAvailable) merchantWalletAvailable.textContent = formatUsdt(wallet.available);
+  if (merchantWalletPending) merchantWalletPending.textContent = formatUsdt(wallet.pending);
+  if (merchantWalletBonus) merchantWalletBonus.textContent = formatUsdt(wallet.bonus);
+  if (merchantMainBalance) merchantMainBalance.textContent = formatUsdt(wallet.mainBalance);
 
   const merchants = user.merchants || mockUser.merchants;
-  merchantList.innerHTML = merchants.length ? merchants.map((merchant) => `
+  const renderMerchantCards = (rows) => rows.length ? rows.map((merchant) => {
+    const whatsAppMessage = encodeURIComponent(`Bonjour ${merchant.businessName}, je souhaite effectuer une operation AFRIX Money. Ma reference est AFX-...`);
+    const whatsAppLink = `https://wa.me/${String(merchant.phone).replace(/[^\d]/g, "")}?text=${whatsAppMessage}`;
+    return `
     <div class="merchant-card">
-      <span>${merchant.businessName}<small>${merchant.city}, ${merchant.country} - ${merchant.methods}</small></span>
-      <strong>${merchant.phone}</strong>
+      <span>${merchant.businessName}<small>${merchant.city}, ${merchant.country} - ${merchant.methods} - WhatsApp merchant: ${merchant.phone} - ${merchant.limits}</small></span>
+      <strong>${merchant.rating}</strong>
       <span class="badge">${merchant.status}</span>
+      <a class="btn secondary" href="${whatsAppLink}" target="_blank" rel="noopener">WhatsApp</a>
     </div>
-  `).join("") : `<p class="muted">Aucun merchant approuve pour le moment.</p>`;
+  `;
+  }).join("") : `<p class="muted">Aucun merchant disponible pour cette recherche.</p>`;
+
+  if (merchantList) merchantList.innerHTML = renderMerchantCards(merchants);
+  if (merchantResults) merchantResults.innerHTML = renderMerchantCards(merchants.filter((merchant) => merchant.country.toLowerCase() === "congo"));
+  if (merchantSearch && merchantResults) {
+    merchantSearch.addEventListener("input", () => {
+      const query = merchantSearch.value.trim().toLowerCase();
+      const results = query
+        ? merchants.filter((merchant) => merchant.country.toLowerCase().includes(query) || merchant.city.toLowerCase().includes(query))
+        : merchants.filter((merchant) => merchant.country.toLowerCase() === "congo");
+      merchantResults.innerHTML = renderMerchantCards(results);
+    });
+  }
+
+  if (requestList) {
+    const requests = user.cicoRequests || mockUser.cicoRequests;
+    requestList.innerHTML = requests.map((item) => `
+      <div>
+        <span>${item.reference}<small>${item.type} ${item.method} - ${item.customer}</small></span>
+        <strong>${formatUsdt(item.amount)}</strong>
+      </div>
+    `).join("");
+  }
 }
 
 function renderAdmin(user) {
@@ -366,6 +427,7 @@ function renderAdmin(user) {
   const pendingWithdrawals = user.transactions.filter((item) => item.type === "Retrait" && item.status === "Pending");
   const merchantApplications = user.merchantApplications || mockUser.merchantApplications;
   const disputes = user.disputes || mockUser.disputes;
+  const cicoRequests = user.cicoRequests || mockUser.cicoRequests;
 
   const depositTotal = user.transactions
     .filter((item) => item.type === "Depot")
@@ -387,13 +449,14 @@ function renderAdmin(user) {
   if (adminWithdrawals) adminWithdrawals.textContent = formatUsdt(withdrawalTotal);
   if (adminTx) adminTx.textContent = user.transactions.length;
   if (adminTeam) adminTeam.textContent = user.team;
-  if (pendingDepositsCount) pendingDepositsCount.textContent = pendingDeposits.length;
-  if (pendingWithdrawalsCount) pendingWithdrawalsCount.textContent = pendingWithdrawals.length;
+  if (pendingDepositsCount) pendingDepositsCount.textContent = cicoRequests.length;
+  if (pendingWithdrawalsCount) pendingWithdrawalsCount.textContent = "Merchant";
   if (merchantApplicationsCount) merchantApplicationsCount.textContent = merchantApplications.length;
   if (disputesCount) disputesCount.textContent = disputes.length;
 
   renderQueue("[data-admin-pending-deposits]", pendingDeposits);
   renderQueue("[data-admin-pending-withdrawals]", pendingWithdrawals);
+  renderCicoAdminRequests(cicoRequests);
   renderMerchantApplications(merchantApplications);
   renderDisputes(disputes);
 }
@@ -410,6 +473,18 @@ function renderQueue(selector, rows) {
       <button class="btn secondary" type="button" data-admin-reject="${index}">Rejeter</button>
     </div>
   `).join("") : `<p class="muted">Aucune demande en attente.</p>`;
+}
+
+function renderCicoAdminRequests(rows) {
+  const list = document.querySelector("[data-admin-cico-requests]");
+  if (!list) return;
+
+  list.innerHTML = rows.length ? rows.map((item) => `
+    <div>
+      <span>${item.reference}<small>${item.type} ${item.method} - ${item.country} - ${item.status}</small></span>
+      <strong>${formatUsdt(item.amount)}</strong>
+    </div>
+  `).join("") : `<p class="muted">Aucune operation CICO merchant.</p>`;
 }
 
 function renderMerchantApplications(applications) {
@@ -500,12 +575,30 @@ function setupActions(user) {
 
   document.querySelector("[data-deposit-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    showToast("Demande de depot enregistree en mode maquette.");
+    const formData = new FormData(event.currentTarget);
+    const method = String(formData.get("method") || "trc20");
+    if (method === "mobile" || method === "airtel") {
+      const amount = Number(formData.get("amount") || 0);
+      const reference = createCicoReference("DP", amount);
+      showCicoReference(reference, "Depot", amount, 0);
+      showToast("Reference depot generee. Contactez un merchant disponible.");
+      return;
+    }
+    showToast("Demande de depot crypto enregistree en mode maquette.");
   });
 
   document.querySelector("[data-withdraw-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    showToast("Demande de retrait soumise en mode maquette.");
+    const formData = new FormData(event.currentTarget);
+    const method = String(formData.get("method") || "trc20");
+    const amount = Number(formData.get("amount") || 0);
+    if (method === "mobile" || method === "airtel") {
+      const reference = createCicoReference("WD", amount);
+      showCicoReference(reference, "Retrait", amount, amount * 0.1);
+      showToast("Reference retrait generee. Envoyez-la au merchant par WhatsApp.");
+      return;
+    }
+    showToast("Demande de retrait crypto soumise en mode maquette.");
   });
 
   document.querySelector("[data-plans-list]")?.addEventListener("click", (event) => {
@@ -521,12 +614,68 @@ function setupActions(user) {
 
   document.querySelector("[data-cico-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    showToast("Demande Merchant CICO enregistree en mode maquette.");
+    const formData = new FormData(event.currentTarget);
+    const operation = String(formData.get("operation") || "Retrait");
+    const amount = Number(formData.get("amount") || 0);
+    const reference = createCicoReference(operation === "Depot" ? "DP" : "WD", amount);
+    showCicoReference(reference, operation, amount, operation === "Depot" ? 0 : amount * 0.1);
+    showToast("Reference CICO generee.");
   });
 
   document.querySelector("[data-merchant-application-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    showToast("Demande merchant envoyee en mode maquette.");
+    const formData = new FormData(event.currentTarget);
+    const businessName = String(formData.get("businessName") || "").trim();
+    const country = String(formData.get("country") || "").trim();
+    const city = String(formData.get("city") || "").trim();
+    const methods = String(formData.get("methods") || "").trim();
+    const phone = String(formData.get("phone") || "").replace(/[^\d+]/g, "");
+    const guarantee = Number(formData.get("guarantee") || 0);
+
+    if (!businessName || !country || !city || !methods) {
+      showToast("Completez les informations du merchant.", "error");
+      return;
+    }
+
+    if (phone.length < 8) {
+      showToast("Le numero WhatsApp du merchant est obligatoire.", "error");
+      return;
+    }
+
+    const existingMerchants = user.merchants || mockUser.merchants;
+    const merchant = {
+      code: `AFX-MER-${Date.now().toString().slice(-6)}`,
+      businessName,
+      city,
+      country,
+      methods,
+      phone,
+      status: "Disponible",
+      rating: "Nouveau",
+      limits: `10 - ${Math.max(100, guarantee).toLocaleString("fr-FR")} USDT`,
+      source: "merchant"
+    };
+    const nextUser = {
+      ...user,
+      merchants: [merchant, ...existingMerchants.filter((item) => item.phone !== phone)],
+      merchantApplications: [
+        {
+          businessName,
+          userEmail: user.email,
+          city,
+          country,
+          phone,
+          guarantee,
+          status: "registered"
+        },
+        ...(user.merchantApplications || mockUser.merchantApplications)
+      ]
+    };
+
+    setUser(nextUser);
+    renderMerchants(nextUser);
+    event.currentTarget.reset();
+    showToast("Merchant enregistre. Son WhatsApp apparait maintenant dans la recherche.");
   });
 
   document.querySelector("[data-dispute-form]")?.addEventListener("submit", (event) => {
@@ -538,6 +687,67 @@ function setupActions(user) {
   document.querySelector("[data-admin-pending-withdrawals]")?.addEventListener("click", handleAdminClick);
   document.querySelector("[data-admin-merchant-applications]")?.addEventListener("click", handleAdminClick);
   document.querySelector("[data-admin-disputes]")?.addEventListener("click", handleAdminClick);
+
+  document.querySelector("[data-merchant-code-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const reference = String(formData.get("reference") || "").trim().toUpperCase();
+    const request = (user.cicoRequests || mockUser.cicoRequests).find((item) => item.reference.toUpperCase() === reference);
+    const result = document.querySelector("[data-merchant-code-result]");
+
+    if (!request) {
+      if (result) result.innerHTML = `<p class="muted">Reference introuvable ou deja traitee.</p>`;
+      showToast("Reference introuvable.", "error");
+      return;
+    }
+
+    if (result) {
+      result.innerHTML = `
+        <div class="merchant-code-card">
+          <span>${request.reference}</span>
+          <h2>${request.type} ${formatUsdt(request.amount)}</h2>
+          <p>${request.customer} - ${request.method} - ${request.phone}</p>
+          <div class="info-grid compact-info">
+            <div><span>Frais client</span><strong>${formatUsdt(request.fee)}</strong></div>
+            <div><span>Bonus merchant</span><strong>${formatUsdt(request.merchantBonus)}</strong></div>
+          </div>
+          <button class="btn primary full" type="button" data-merchant-confirm-code>Valider l'operation</button>
+        </div>
+      `;
+      result.querySelector("[data-merchant-confirm-code]")?.addEventListener("click", () => {
+        showToast("Operation validee: le solde client et le wallet merchant sont mis a jour en maquette.");
+      });
+    }
+  });
+
+  document.querySelector("[data-merchant-transfer-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    showToast("Transfert du wallet merchant vers le compte principal simule.");
+  });
+}
+
+function createCicoReference(prefix, amount) {
+  const date = new Date();
+  const stamp = `${String(date.getFullYear()).slice(2)}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
+  const cleanAmount = Math.max(0, Math.round(Number(amount || 0))).toString().padStart(3, "0");
+  return `AFX-${prefix}-${stamp}-${cleanAmount}`;
+}
+
+function showCicoReference(reference, operation, amount, fee) {
+  const output = document.querySelector("[data-cico-reference-output]");
+  const refValue = document.querySelector("[data-cico-reference]");
+  const refSummary = document.querySelector("[data-cico-reference-summary]");
+  if (!output || !refValue || !refSummary) return;
+
+  refValue.textContent = reference;
+  refSummary.textContent = `${operation}: ${formatUsdt(amount)}${fee ? ` + ${formatUsdt(fee)} de frais` : " sans frais"}.`;
+  output.hidden = false;
+
+  document.querySelectorAll(".merchant-card a[href^='https://wa.me/']").forEach((link) => {
+    const phone = link.href.split("?")[0];
+    const text = encodeURIComponent(`Bonjour, voici ma reference AFRIX Money: ${reference}. Operation: ${operation} ${formatUsdt(amount)}.`);
+    link.href = `${phone}?text=${text}`;
+  });
 }
 
 function handleAdminClick(event) {

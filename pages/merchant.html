@@ -27,7 +27,38 @@
       <article><span>Fonds minimum</span><strong>1 000 USDT</strong><small>capital de fonctionnement</small></article>
       <article><span>Cash In agent</span><strong>0,5%</strong><small>commission approvisionnement</small></article>
       <article><span>Cash Out agent</span><strong>3%</strong><small>commission retrait</small></article>
-      <article><span>Statut</span><strong data-merchant-application-status>Aucune demande</strong><small>validation admin</small></article>
+      <article><span>Statut</span><strong data-merchant-application-status>Aucun profil</strong><small>profil merchant visible</small></article>
+    </section>
+
+    <section class="grid two merchant-dashboard">
+      <article class="panel">
+        <div class="panel-head"><h1>Tableau de bord merchant</h1><span class="badge">CICO</span></div>
+        <div class="info-grid">
+          <div><span>Wallet merchant</span><strong data-merchant-wallet-available>0.00 USDT</strong></div>
+          <div><span>Opérations en attente</span><strong data-merchant-wallet-pending>0.00 USDT</strong></div>
+          <div><span>Bonus cumulés</span><strong data-merchant-wallet-bonus>0.00 USDT</strong></div>
+          <div><span>Compte principal</span><strong data-merchant-main-balance>0.00 USDT</strong></div>
+        </div>
+        <p class="muted">Lors d'un dépôt client, le wallet merchant diminue. Lors d'un retrait client, il augmente avec le bonus prévu, puis le merchant peut transférer ce solde vers son compte principal.</p>
+        <form data-merchant-transfer-form>
+          <label>Montant à transférer vers le compte principal<input name="amount" type="number" min="1" step="0.01" value="100"></label>
+          <button class="btn secondary full" type="submit">Transférer vers mon compte principal</button>
+        </form>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h1>Valider une référence client</h1><span class="badge">WhatsApp</span></div>
+        <form data-merchant-code-form>
+          <label>Code de référence<input name="reference" required placeholder="AFX-WD-260614-200"></label>
+          <button class="btn primary full" type="submit">Rechercher le code</button>
+        </form>
+        <div class="merchant-code-result" data-merchant-code-result></div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h1>Références CICO reçues</h1><span class="badge">À traiter</span></div>
+      <div class="list" data-merchant-request-list></div>
     </section>
 
     <section class="merchant-access-grid" aria-label="Conditions d'acces agent agree">
@@ -99,14 +130,15 @@
 
     <section class="grid two">
       <form class="panel" data-merchant-application-form>
-        <h1>Demande d'agrément</h1>
+        <h1>Enregistrer mon profil merchant</h1>
         <label>Nom commercial<input name="businessName" required placeholder="AFRIX Agent Brazzaville"></label>
         <label>Pays<input name="country" required placeholder="Congo"></label>
         <label>Ville / zone<input name="city" required placeholder="Brazzaville, Poto-Poto"></label>
-        <label>Téléphone WhatsApp<input name="phone" required placeholder="+242..."></label>
+        <label>Mon numéro WhatsApp public<input name="phone" required placeholder="+242..." autocomplete="tel"></label>
         <label>Méthodes disponibles<input name="methods" required placeholder="Cash, MTN, Airtel, Banque"></label>
         <label>Fonds de fonctionnement<input name="guarantee" type="number" min="1000" step="0.01" value="1000"></label>
-        <button class="btn primary full" type="submit">Envoyer la demande</button>
+        <button class="btn primary full" type="submit">Publier mon profil merchant</button>
+        <p class="muted">Ce numéro WhatsApp sera celui affiché aux utilisateurs qui recherchent un merchant dans votre pays ou votre ville.</p>
       </form>
 
       <form class="panel" data-dispute-form>
