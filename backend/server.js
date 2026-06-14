@@ -1038,6 +1038,42 @@ async function ensureAdminUser() {
     return null;
   }
 
+  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
+  if (useMongo) {
+    await ensureStorage();
+    const adminId = nanoid();
+    const refCode = `AFX-${nanoid(8).toUpperCase()}`;
+    const admin = normalizeUserRecord(await UserModel.findOneAndUpdate(
+      { email: ADMIN_EMAIL },
+      {
+        $set: {
+          email: ADMIN_EMAIL,
+          fullName: ADMIN_NAME,
+          passwordHash,
+          role: "admin",
+          status: "active"
+        },
+        $setOnInsert: {
+          id: adminId,
+          balance: 0,
+          reservedBalance: 0,
+          activity: 0,
+          bonus: 0,
+          wallet: "",
+          refCode,
+          referrerId: null,
+          merchantWallet: { available: 0, pending: 0, bonus: 0 },
+          activePlans: [],
+          createdAt: nowIso()
+        }
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean());
+
+    logger.info({ email: maskEmail(admin.email), userId: admin.id }, "Admin account ready");
+    return sanitizeUser(admin);
+  }
+
   return updateDb(async (db) => {
     let admin = db.users.find((user) => user.email === ADMIN_EMAIL);
     if (!admin) {
@@ -1045,7 +1081,7 @@ async function ensureAdminUser() {
         id: nanoid(),
         email: ADMIN_EMAIL,
         fullName: ADMIN_NAME,
-        passwordHash: await bcrypt.hash(ADMIN_PASSWORD, 12),
+        passwordHash,
         role: "admin",
         status: "active",
         balance: 0,
@@ -1197,7 +1233,7 @@ app.post("/api/auth/login", validate(z.object({
   const normalizedEmail = req.body.email.trim().toLowerCase();
   if (useMongo) await ensureStorage();
   const user = useMongo
-    ? normalizeUserRecord(await UserModel.findOne({ email: normalizedEmail }).lean())
+    ? normalizeUserRecord(await UserModel.findOne({ email: normalizedEmail }).sort({ updatedAt: -1, createdAt: -1 }).lean())
     : (await readDb()).users.find((candidate) => candidate.email === normalizedEmail);
   if (!user || !(await bcrypt.compare(req.body.password, user.passwordHash))) {
     return res.status(401).json({ message: "Identifiants invalides." });
