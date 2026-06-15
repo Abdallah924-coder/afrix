@@ -55,6 +55,9 @@ async function run() {
     assert(dashboard.status === 200, "/dashboard should render");
     assert((dashboard.headers.get("content-security-policy") || "").includes("default-src 'self'"), "CSP header should be present");
 
+    const resetPassword = await request("/reset-password");
+    assert(resetPassword.status === 200, "/reset-password should render");
+
     const legacy = await request("/pages/dashboard.html");
     assert(legacy.status === 301, "legacy page URL should redirect");
     assert(legacy.headers.get("location") === "/dashboard", "legacy page URL should redirect to clean route");

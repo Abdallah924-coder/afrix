@@ -62,11 +62,11 @@
       </form>
       <form class="panel" data-cico-form>
         <h1>Merchant CICO</h1>
-        <label>Type d'opération<select name="operation"><option>Depot</option><option>Retrait</option></select></label>
+        <label>Type d'opération<select name="operation" data-cico-operation><option>Depot</option><option>Retrait</option></select></label>
         <label>Pays du merchant<input name="country" required placeholder="Congo"></label>
-        <label>Montant minimum 1 USDT<input name="amount" type="number" min="1" step="0.01" value="1"></label>
+        <label>Montant<input name="amount" type="number" min="1" step="0.01" value="10" data-cico-amount></label>
         <button class="btn primary full" type="submit">Créer la référence CICO</button>
-        <p class="muted">Depot: aucun frais utilisateur. Retrait: 10% utilisateur et bonus merchant 3%.</p>
+        <p class="muted">Depot: minimum 1 USDT sans frais utilisateur. Retrait: minimum 10 USDT, frais utilisateur 10% et bonus merchant 3%.</p>
       </form>
     </section>
 

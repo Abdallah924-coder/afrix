@@ -11,9 +11,9 @@ The server exposes the existing frontend and the API under `/api`.
 
 Without `MONGODB_URI`, the server uses local JSON storage for development. With `MONGODB_URI`, it stores the application state in MongoDB Atlas.
 
-## First Account
+## Admin Account
 
-The first registered account becomes `admin`. Later accounts become regular users.
+On startup, Render creates or updates the admin account from `ADMIN_EMAIL` and `ADMIN_PASSWORD`. A registered user whose email matches `ADMIN_EMAIL` also receives the admin role.
 
 ## Main Domains
 
@@ -36,6 +36,8 @@ Required production variables:
 - `JWT_SECRET`
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD`
+- `TRC20_DEPOSIT_ADDRESS`
+- `BEP20_DEPOSIT_ADDRESS`
 
 Email delivery uses Brevo HTTP when these variables are set:
 
@@ -45,4 +47,4 @@ Email delivery uses Brevo HTTP when these variables are set:
 - `SUPPORT_EMAIL`
 - `ADMIN_ALERT_EMAIL`
 
-The first boot on Render creates or updates the admin account from `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+USDT deposits accept BEP20 and TRC20. USDT withdrawals are BEP20 only. CICO remains available through approved merchants for users who fund their account with local currency.

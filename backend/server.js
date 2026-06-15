@@ -5,197 +5,72 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import mongoose from "mongoose";
+import { createHash, randomBytes } from "crypto";
 import { nanoid } from "nanoid";
 import multer from "multer";
-import pino from "pino";
 import pinoHttp from "pino-http";
 import { z } from "zod";
 import { promises as fs } from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import {
+  ADMIN_EMAIL,
+  ADMIN_NAME,
+  ADMIN_PASSWORD,
+  APP_URL,
+  MONGODB_URI,
+  PORT,
+  PUBLIC_ORIGIN,
+  TOKEN_TTL,
+  bonusRates,
+  dataDir,
+  dbFile,
+  defaultDb,
+  isConfiguredAdminEmail,
+  isProduction,
+  jwtSecret,
+  legacyPageRoutes,
+  logger,
+  pageRoutes,
+  plans,
+  publicFiles,
+  rootDir,
+  uploadDir
+} from "./config.js";
+import {
+  addTransaction,
+  consumeReservedFunds,
+  creditMerchantAvailable,
+  creditMerchantBonus,
+  creditPlatform,
+  creditUser,
+  daysBetween,
+  debitMerchantAvailable,
+  debitPlatform,
+  debitUser,
+  ensurePlatform,
+  formatAmount,
+  makeReference,
+  money,
+  nowIso,
+  releaseReservedFunds,
+  reserveUserFunds,
+  today
+} from "./ledger.js";
+import { notifyAdmin, sendBrevoMail } from "./mailer.js";
+import {
+  CicoRequestModel,
+  DisputeModel,
+  LedgerEntryModel,
+  MerchantApplicationModel,
+  PlatformAccountModel,
+  SettingModel,
+  TransactionModel,
+  UserModel,
+  mongoose
+} from "./models.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, "..");
-const dataDir = path.join(__dirname, "data");
-const uploadDir = path.join(__dirname, "uploads");
-const dbFile = path.join(dataDir, "db.json");
-const logger = pino({ level: process.env.LOG_LEVEL || "info" });
-
-const PORT = Number(process.env.PORT || 3000);
-const JWT_SECRET = process.env.JWT_SECRET || "";
-const TOKEN_TTL = process.env.TOKEN_TTL || "7d";
-const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || "*";
-const MONGODB_URI = String(process.env.MONGODB_URI || "").trim();
-const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
-const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
-const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "");
-const ADMIN_NAME = process.env.ADMIN_NAME || "Administrateur AFRIX";
-const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
-const BREVO_API_KEY = String(process.env.BREVO_API_KEY || "");
-const BREVO_SENDER_EMAIL = String(process.env.BREVO_SENDER_EMAIL || "");
-const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || "AFRIX";
-const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || BREVO_SENDER_EMAIL;
-const ADMIN_ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL || ADMIN_EMAIL;
-const isProduction = process.env.NODE_ENV === "production";
-
-function isConfiguredAdminEmail(email) {
-  return Boolean(ADMIN_EMAIL && String(email || "").trim().toLowerCase() === ADMIN_EMAIL);
-}
-
-const pageRoutes = {
-  "/": "index.html",
-  "/login": "pages/login.html",
-  "/register": "pages/register.html",
-  "/dashboard": "pages/dashboard.html",
-  "/wallet": "pages/wallet.html",
-  "/transactions": "pages/transactions.html",
-  "/plans": "pages/plans.html",
-  "/network": "pages/network.html",
-  "/afrix-money": "pages/afrix-money.html",
-  "/merchant": "pages/merchant.html",
-  "/elite": "pages/elite.html",
-  "/admin": "pages/admin.html",
-  "/maintenance": "pages/maintenance.html"
-};
-
-const legacyPageRoutes = new Map([
-  ["/index.html", "/"],
-  ...Object.entries(pageRoutes)
-    .filter(([route]) => route !== "/")
-    .map(([route, file]) => [`/${file}`, route]),
-  ...Object.entries(pageRoutes)
-    .filter(([route]) => route !== "/")
-    .map(([route, file]) => [`/${path.basename(file)}`, route])
-]);
-
-const publicFiles = new Set([
-  "/app.js",
-  "/styles.css",
-  "/IMG-20260609-WA0003.jpg"
-]);
-
-if (isProduction && JWT_SECRET.length < 32) {
-  throw new Error("JWT_SECRET must be set to at least 32 characters in production.");
-}
-
-if (isProduction) {
-  const missing = ["MONGODB_URI", "APP_URL", "PUBLIC_ORIGIN", "ADMIN_EMAIL", "ADMIN_PASSWORD"]
-    .filter((key) => !String(process.env[key] || "").trim());
-  if (missing.length) {
-    throw new Error(`Missing production environment variables: ${missing.join(", ")}`);
-  }
-  if (ADMIN_PASSWORD.length < 12) {
-    throw new Error("ADMIN_PASSWORD must be at least 12 characters in production.");
-  }
-}
-
-const jwtSecret = JWT_SECRET || "dev-only-change-this-secret-before-production";
 let useMongo = Boolean(MONGODB_URI);
 let mongoReadyPromise = null;
-
-const flexibleOptions = { timestamps: true, minimize: false, strict: false };
-const UserModel = mongoose.models.User || mongoose.model("User", new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  email: { type: String, required: true, unique: true, index: true }
-}, flexibleOptions));
-const TransactionModel = mongoose.models.Transaction || mongoose.model("Transaction", new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  userId: { type: String, required: true, index: true },
-  status: { type: String, index: true },
-  createdAt: { type: String, index: true }
-}, flexibleOptions));
-const CicoRequestModel = mongoose.models.CicoRequest || mongoose.model("CicoRequest", new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  reference: { type: String, required: true, unique: true },
-  userId: { type: String, required: true, index: true },
-  merchantId: { type: String, index: true },
-  status: { type: String, index: true },
-  createdAt: { type: String, index: true }
-}, flexibleOptions));
-const MerchantApplicationModel = mongoose.models.MerchantApplication || mongoose.model("MerchantApplication", new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  userId: { type: String, required: true, index: true },
-  status: { type: String, index: true },
-  createdAt: { type: String, index: true }
-}, flexibleOptions));
-const DisputeModel = mongoose.models.Dispute || mongoose.model("Dispute", new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  userId: { type: String, required: true, index: true },
-  reference: { type: String, index: true },
-  status: { type: String, index: true },
-  createdAt: { type: String, index: true }
-}, flexibleOptions));
-const LedgerEntryModel = mongoose.models.LedgerEntry || mongoose.model("LedgerEntry", new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  groupId: { type: String, required: true, index: true },
-  accountType: { type: String, required: true, index: true },
-  accountId: { type: String, required: true, index: true },
-  direction: { type: String, required: true },
-  amount: { type: Number, required: true },
-  createdAt: { type: String, index: true }
-}, flexibleOptions));
-const SettingModel = mongoose.models.Setting || mongoose.model("Setting", new mongoose.Schema({
-  key: { type: String, required: true, unique: true },
-  value: { type: mongoose.Schema.Types.Mixed }
-}, { timestamps: true, minimize: false }));
-const PlatformAccountModel = mongoose.models.PlatformAccount || mongoose.model("PlatformAccount", new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  balance: { type: Number, default: 0 },
-  fees: { type: Number, default: 0 }
-}, flexibleOptions));
-
-const plans = [
-  { id: "starter", name: "Starter Plan", minAmount: 10, dailyRate: 0.005, durationDays: 90 },
-  { id: "smart", name: "Smart Plan", minAmount: 50, dailyRate: 0.006, durationDays: 180 },
-  { id: "premium", name: "Premium Plan", minAmount: 100, dailyRate: 0.007, durationDays: 270 },
-  { id: "elite", name: "Elite Plan", minAmount: 500, dailyRate: 0.008, durationDays: 365 }
-];
-
-const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-
-const defaultDb = {
-  users: [],
-  transactions: [],
-  cicoRequests: [],
-  merchantApplications: [],
-  disputes: [],
-  ledgerEntries: [],
-  platformAccount: {
-    id: "platform",
-    balance: 0,
-    fees: 0,
-    createdAt: null
-  },
-  platformControls: {
-    cicoMerchants: true,
-    merchantWhatsappRequired: true,
-    maintenanceMode: false
-  },
-  paymentTargets: {
-    trc20: {
-      label: "Adresse de depot TRC20",
-      value: process.env.TRC20_DEPOSIT_ADDRESS || "",
-      note: "Envoyez uniquement des USDT TRC20 vers cette adresse."
-    },
-    bep20: {
-      label: "Adresse de depot BEP20",
-      value: process.env.BEP20_DEPOSIT_ADDRESS || "",
-      note: "Envoyez uniquement des USDT BEP20 vers cette adresse."
-    },
-    mobile: {
-      label: "Depot Mobile Money",
-      value: "Merchant AFRIX Money",
-      note: "Creez une reference puis contactez un merchant disponible."
-    },
-    airtel: {
-      label: "Depot Airtel Money",
-      value: "Merchant AFRIX Money",
-      note: "Creez une reference puis contactez un merchant disponible."
-    }
-  }
-};
 
 function normalizeDb(db = {}) {
   return {
@@ -207,9 +82,10 @@ function normalizeDb(db = {}) {
     merchantApplications: Array.isArray(db.merchantApplications) ? db.merchantApplications : [],
     disputes: Array.isArray(db.disputes) ? db.disputes : [],
     ledgerEntries: Array.isArray(db.ledgerEntries) ? db.ledgerEntries : [],
+    passwordResetTokens: Array.isArray(db.passwordResetTokens) ? db.passwordResetTokens : [],
     platformAccount: { ...defaultDb.platformAccount, ...(db.platformAccount || {}) },
     platformControls: { ...defaultDb.platformControls, ...(db.platformControls || {}) },
-    paymentTargets: { ...defaultDb.paymentTargets, ...(db.paymentTargets || {}) }
+    paymentTargets: defaultDb.paymentTargets
   };
 }
 
@@ -245,6 +121,7 @@ async function ensureStorage() {
       await Promise.all([
         SettingModel.updateOne({ key: "platformControls" }, { $setOnInsert: { value: defaultDb.platformControls } }, { upsert: true }),
         SettingModel.updateOne({ key: "paymentTargets" }, { $setOnInsert: { value: defaultDb.paymentTargets } }, { upsert: true }),
+        SettingModel.updateOne({ key: "passwordResetTokens" }, { $setOnInsert: { value: defaultDb.passwordResetTokens } }, { upsert: true }),
         PlatformAccountModel.updateOne({ id: "platform" }, { $setOnInsert: { ...defaultDb.platformAccount, createdAt: nowIso() } }, { upsert: true })
       ]);
       return;
@@ -307,6 +184,7 @@ async function readDb(session = null) {
       merchantApplications,
       disputes,
       ledgerEntries,
+      passwordResetTokens: settingMap.passwordResetTokens,
       platformAccount,
       platformControls: settingMap.platformControls,
       paymentTargets: settingMap.paymentTargets
@@ -352,11 +230,13 @@ async function writeDb(db, session = null) {
     if (session) {
       await SettingModel.updateOne({ key: "platformControls" }, { $set: { value: db.platformControls } }, { upsert: true, session });
       await SettingModel.updateOne({ key: "paymentTargets" }, { $set: { value: db.paymentTargets } }, { upsert: true, session });
+      await SettingModel.updateOne({ key: "passwordResetTokens" }, { $set: { value: db.passwordResetTokens } }, { upsert: true, session });
       await PlatformAccountModel.updateOne({ id: "platform" }, { $set: db.platformAccount }, { upsert: true, session });
     } else {
       await Promise.all([
         SettingModel.updateOne({ key: "platformControls" }, { $set: { value: db.platformControls } }, { upsert: true, session }),
         SettingModel.updateOne({ key: "paymentTargets" }, { $set: { value: db.paymentTargets } }, { upsert: true, session }),
+        SettingModel.updateOne({ key: "passwordResetTokens" }, { $set: { value: db.passwordResetTokens } }, { upsert: true, session }),
         PlatformAccountModel.updateOne({ id: "platform" }, { $set: db.platformAccount }, { upsert: true, session })
       ]);
     }
@@ -411,349 +291,22 @@ async function updateDb(mutator) {
   throw lastError;
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function daysBetween(startDate, endDate) {
-  const start = new Date(`${startDate}T00:00:00.000Z`).getTime();
-  const end = new Date(`${endDate}T00:00:00.000Z`).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
-  return Math.floor((end - start) / 86_400_000);
-}
-
-function money(value) {
-  return Number(Number(value || 0).toFixed(2));
-}
-
-function formatAmount(value, sign = "") {
-  return `${sign}${money(value).toFixed(2)} USDT`;
-}
-
-function assertAmount(value, label = "Montant") {
-  const amount = money(value);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error(`${label} invalide.`);
-  }
-  return amount;
-}
-
-function makeReference(prefix, amount) {
-  const stamp = new Date().toISOString().slice(2, 10).replaceAll("-", "");
-  const cleanAmount = Math.max(0, Math.round(Number(amount || 0))).toString().padStart(3, "0");
-  return `AFX-${prefix}-${stamp}-${cleanAmount}-${nanoid(5).toUpperCase()}`;
-}
-
 function sanitizeUser(user) {
   const { passwordHash, ...safeUser } = user;
   return safeUser;
 }
 
-function ensurePlatform(db) {
-  db.platformAccount = {
-    ...defaultDb.platformAccount,
-    ...(db.platformAccount || {}),
-    id: "platform",
-    balance: money(db.platformAccount?.balance),
-    fees: money(db.platformAccount?.fees),
-    createdAt: db.platformAccount?.createdAt || nowIso()
-  };
-  return db.platformAccount;
-}
-
-function appendLedger(db, entries, metadata = {}) {
-  const groupId = metadata.groupId || nanoid();
-  const createdAt = nowIso();
-  db.ledgerEntries = db.ledgerEntries || [];
-  entries
-    .filter((entry) => money(entry.amount) > 0)
-    .forEach((entry) => {
-      db.ledgerEntries.push({
-        id: nanoid(),
-        groupId,
-        accountType: entry.accountType,
-        accountId: entry.accountId,
-        direction: entry.direction,
-        amount: money(entry.amount),
-        balanceAfter: money(entry.balanceAfter),
-        description: entry.description,
-        referenceId: metadata.referenceId || null,
-        source: metadata.source || "system",
-        createdAt,
-        metadata: metadata.extra || {}
-      });
-    });
-  return groupId;
-}
-
-function debitUser(db, user, amount, description, metadata = {}) {
-  amount = assertAmount(amount);
-  if (money(user.balance) < amount) throw new Error("Solde insuffisant.");
-  user.balance = money(user.balance - amount);
-  appendLedger(db, [{
-    accountType: "user",
-    accountId: user.id,
-    direction: "debit",
-    amount,
-    balanceAfter: user.balance,
-    description
-  }], metadata);
-}
-
-function creditUser(db, user, amount, description, metadata = {}) {
-  amount = assertAmount(amount);
-  user.balance = money(user.balance + amount);
-  appendLedger(db, [{
-    accountType: "user",
-    accountId: user.id,
-    direction: "credit",
-    amount,
-    balanceAfter: user.balance,
-    description
-  }], metadata);
-}
-
-function reserveUserFunds(db, user, amount, description, metadata = {}) {
-  amount = assertAmount(amount);
-  if (money(user.balance) < amount) throw new Error("Solde insuffisant.");
-  user.balance = money(user.balance - amount);
-  user.reservedBalance = money(user.reservedBalance + amount);
-  appendLedger(db, [{
-    accountType: "user",
-    accountId: user.id,
-    direction: "debit",
-    amount,
-    balanceAfter: user.balance,
-    description: `${description} - reserve`
-  }, {
-    accountType: "user_reserved",
-    accountId: user.id,
-    direction: "credit",
-    amount,
-    balanceAfter: user.reservedBalance,
-    description
-  }], metadata);
-}
-
-function releaseReservedFunds(db, user, amount, description, metadata = {}) {
-  amount = assertAmount(amount);
-  if (money(user.reservedBalance) < amount) throw new Error("Reserve insuffisante.");
-  user.reservedBalance = money(user.reservedBalance - amount);
-  user.balance = money(user.balance + amount);
-  appendLedger(db, [{
-    accountType: "user_reserved",
-    accountId: user.id,
-    direction: "debit",
-    amount,
-    balanceAfter: user.reservedBalance,
-    description
-  }, {
-    accountType: "user",
-    accountId: user.id,
-    direction: "credit",
-    amount,
-    balanceAfter: user.balance,
-    description: `${description} - retour disponible`
-  }], metadata);
-}
-
-function consumeReservedFunds(db, user, amount, description, metadata = {}) {
-  amount = assertAmount(amount);
-  if (money(user.reservedBalance) < amount) throw new Error("Reserve insuffisante.");
-  user.reservedBalance = money(user.reservedBalance - amount);
-  appendLedger(db, [{
-    accountType: "user_reserved",
-    accountId: user.id,
-    direction: "debit",
-    amount,
-    balanceAfter: user.reservedBalance,
-    description
-  }], metadata);
-}
-
-function creditPlatform(db, amount, description, metadata = {}) {
-  amount = assertAmount(amount);
-  const platform = ensurePlatform(db);
-  platform.balance = money(platform.balance + amount);
-  platform.fees = money(platform.fees + amount);
-  appendLedger(db, [{
-    accountType: "platform",
-    accountId: "platform",
-    direction: "credit",
-    amount,
-    balanceAfter: platform.balance,
-    description
-  }], metadata);
-}
-
-function debitPlatform(db, amount, description, metadata = {}) {
-  amount = assertAmount(amount);
-  const platform = ensurePlatform(db);
-  if (money(platform.balance) < amount) {
-    logger.warn({ amount, balance: platform.balance, description }, "Platform balance below debit amount");
-  }
-  platform.balance = money(platform.balance - amount);
-  appendLedger(db, [{
-    accountType: "platform",
-    accountId: "platform",
-    direction: "debit",
-    amount,
-    balanceAfter: platform.balance,
-    description
-  }], metadata);
-}
-
-function creditMerchantAvailable(db, merchant, amount, description, metadata = {}) {
-  amount = assertAmount(amount);
-  merchant.merchantWallet = merchant.merchantWallet || { available: 0, pending: 0, bonus: 0 };
-  merchant.merchantWallet.available = money(merchant.merchantWallet.available + amount);
-  appendLedger(db, [{
-    accountType: "merchant_available",
-    accountId: merchant.id,
-    direction: "credit",
-    amount,
-    balanceAfter: merchant.merchantWallet.available,
-    description
-  }], metadata);
-}
-
-function debitMerchantAvailable(db, merchant, amount, description, metadata = {}) {
-  amount = assertAmount(amount);
-  merchant.merchantWallet = merchant.merchantWallet || { available: 0, pending: 0, bonus: 0 };
-  if (money(merchant.merchantWallet.available) < amount) throw new Error("Wallet merchant insuffisant.");
-  merchant.merchantWallet.available = money(merchant.merchantWallet.available - amount);
-  appendLedger(db, [{
-    accountType: "merchant_available",
-    accountId: merchant.id,
-    direction: "debit",
-    amount,
-    balanceAfter: merchant.merchantWallet.available,
-    description
-  }], metadata);
-}
-
-function creditMerchantBonus(db, merchant, amount, description, metadata = {}) {
-  amount = money(amount);
-  if (amount <= 0) return;
-  merchant.merchantWallet = merchant.merchantWallet || { available: 0, pending: 0, bonus: 0 };
-  merchant.merchantWallet.bonus = money(merchant.merchantWallet.bonus + amount);
-  appendLedger(db, [{
-    accountType: "merchant_bonus",
-    accountId: merchant.id,
-    direction: "credit",
-    amount,
-    balanceAfter: merchant.merchantWallet.bonus,
-    description
-  }], metadata);
-}
-
-function addTransaction(db, tx) {
-  db.transactions.push({
-    id: nanoid(),
-    createdAt: nowIso(),
-    metadata: {},
-    ...tx
-  });
-  return db.transactions[db.transactions.length - 1];
-}
-
-function escapeHtml(value = "") {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function maskEmail(email = "") {
-  const normalized = String(email).trim().toLowerCase();
-  const [local, domain] = normalized.split("@");
-  if (!local || !domain) return normalized;
-  return `${local.slice(0, 2)}***@${domain}`;
-}
-
-function buildMailHtml({ title, intro, rows = [], actionLabel, actionUrl }) {
-  const rowsHtml = rows
-    .filter((row) => row?.label && row.value !== undefined && row.value !== null && row.value !== "")
-    .map((row) => `
-      <tr>
-        <td style="padding:10px 0;color:#60716b;border-bottom:1px solid #e8efec;">${escapeHtml(row.label)}</td>
-        <td style="padding:10px 0;text-align:right;font-weight:700;color:#14231f;border-bottom:1px solid #e8efec;">${escapeHtml(row.value)}</td>
-      </tr>
-    `).join("");
-
-  return `
-    <div style="margin:0;padding:28px 14px;background:#eef4f1;font-family:Arial,sans-serif;color:#14231f;">
-      <div style="max-width:620px;margin:0 auto;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #dce8e3;">
-        <div style="padding:28px;background:#0f5d43;color:#ffffff;">
-          <div style="font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.8;">AFRIX</div>
-          <h1 style="margin:12px 0 8px;font-size:26px;line-height:1.2;">${escapeHtml(title)}</h1>
-          <p style="margin:0;font-size:15px;line-height:1.6;color:rgba(255,255,255,.88);">${escapeHtml(intro)}</p>
-        </div>
-        <div style="padding:26px;">
-          ${rowsHtml ? `<table style="width:100%;border-collapse:collapse;margin-bottom:22px;">${rowsHtml}</table>` : ""}
-          ${actionLabel && actionUrl ? `
-            <a href="${escapeHtml(actionUrl)}" style="display:inline-block;background:#0f5d43;color:#ffffff;text-decoration:none;padding:13px 20px;border-radius:10px;font-weight:700;">
-              ${escapeHtml(actionLabel)}
-            </a>
-          ` : ""}
-          <p style="margin:22px 0 0;font-size:12px;line-height:1.6;color:#74837e;">
-            Support: ${escapeHtml(SUPPORT_EMAIL || "support AFRIX")}
-          </p>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-async function sendBrevoMail({ to, subject, title, intro, rows, actionLabel, actionUrl }) {
-  if (!BREVO_API_KEY || !BREVO_SENDER_EMAIL || !to) {
-    logger.warn({ to: maskEmail(to), subject }, "Brevo email skipped: provider not configured");
-    return { delivered: false };
-  }
-
-  try {
-    const response = await fetch(BREVO_API_URL, {
-      method: "POST",
-      headers: {
-        "api-key": BREVO_API_KEY,
-        "content-type": "application/json",
-        accept: "application/json"
-      },
-      body: JSON.stringify({
-        sender: { name: BREVO_SENDER_NAME, email: BREVO_SENDER_EMAIL },
-        to: [{ email: to }],
-        ...(SUPPORT_EMAIL ? { replyTo: { name: "Support AFRIX", email: SUPPORT_EMAIL } } : {}),
-        subject,
-        htmlContent: buildMailHtml({ title, intro, rows, actionLabel, actionUrl })
-      })
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Brevo ${response.status}: ${body.slice(0, 300)}`);
-    }
-
-    logger.info({ to: maskEmail(to), subject }, "Brevo email accepted");
-    return { delivered: true };
-  } catch (error) {
-    logger.error({ err: error, to: maskEmail(to), subject }, "Brevo email failed");
-    return { delivered: false, error: error.message };
-  }
-}
-
-async function notifyAdmin(subject, title, intro, rows = []) {
-  if (!ADMIN_ALERT_EMAIL) return;
-  await sendBrevoMail({ to: ADMIN_ALERT_EMAIL, subject, title, intro, rows, actionLabel: "Ouvrir AFRIX", actionUrl: `${APP_URL}/admin` });
-}
-
 function signToken(user) {
   return jwt.sign({ sub: user.id, role: user.role }, jwtSecret, { expiresIn: TOKEN_TTL });
+}
+
+function hashResetToken(token) {
+  return createHash("sha256").update(String(token || "")).digest("hex");
+}
+
+function prunePasswordResetTokens(db) {
+  const now = Date.now();
+  db.passwordResetTokens = (db.passwordResetTokens || []).filter((item) => !item.usedAt && Date.parse(item.expiresAt) > now);
 }
 
 function parsePlan(planName) {
@@ -1242,6 +795,68 @@ app.post("/api/auth/login", validate(z.object({
   res.json({ token: signToken(user), user: sanitizeUser(user) });
 });
 
+app.post("/api/auth/forgot-password", validate(z.object({
+  email: z.string().email()
+})), async (req, res) => {
+  const normalizedEmail = req.body.email.trim().toLowerCase();
+  let resetUrl = "";
+
+  await updateDb(async (db) => {
+    prunePasswordResetTokens(db);
+    const user = db.users.find((candidate) => candidate.email === normalizedEmail);
+    if (!user) return null;
+
+    const token = randomBytes(32).toString("hex");
+    resetUrl = `${APP_URL}/reset-password?token=${token}`;
+    db.passwordResetTokens = db.passwordResetTokens.filter((item) => item.userId !== user.id);
+    db.passwordResetTokens.push({
+      id: nanoid(),
+      userId: user.id,
+      tokenHash: hashResetToken(token),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      createdAt: nowIso()
+    });
+    return null;
+  });
+
+  if (resetUrl) {
+    await sendBrevoMail({
+      to: normalizedEmail,
+      subject: "AFRIX - Reinitialisation du mot de passe",
+      title: "Reinitialisation du mot de passe",
+      intro: "Utilisez ce lien pour definir un nouveau mot de passe. Il expire dans 1 heure.",
+      rows: [{ label: "Compte", value: normalizedEmail }],
+      actionLabel: "Reinitialiser le mot de passe",
+      actionUrl: resetUrl
+    });
+  }
+
+  res.json({ message: "Si ce compte existe, un lien de reinitialisation a ete envoye." });
+});
+
+app.post("/api/auth/reset-password", validate(z.object({
+  token: z.string().min(32),
+  password: z.string().min(10)
+})), async (req, res) => {
+  const result = await updateDb(async (db) => {
+    prunePasswordResetTokens(db);
+    const tokenHash = hashResetToken(req.body.token);
+    const resetToken = db.passwordResetTokens.find((item) => item.tokenHash === tokenHash);
+    if (!resetToken) return { error: "Lien de reinitialisation invalide ou expire." };
+
+    const user = db.users.find((candidate) => candidate.id === resetToken.userId);
+    if (!user) return { error: "Compte introuvable." };
+
+    user.passwordHash = await bcrypt.hash(req.body.password, 12);
+    resetToken.usedAt = nowIso();
+    db.passwordResetTokens = db.passwordResetTokens.filter((item) => item.id !== resetToken.id);
+    return { user };
+  });
+
+  if (result.error) return res.status(400).json({ message: result.error });
+  res.json({ token: signToken(result.user), user: sanitizeUser(result.user) });
+});
+
 app.get("/api/me", authenticate, (req, res) => {
   res.json({ user: composeUser(req.db, req.user) });
 });
@@ -1257,10 +872,10 @@ app.get("/api/merchants", authenticate, (req, res) => {
 
 app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("proof"), async (req, res) => {
   const amount = Number(req.body.amount || 0);
-  const method = String(req.body.method || "trc20");
+  const method = String(req.body.method || "bep20");
   if (amount < 10) return res.status(400).json({ message: "Montant minimum depot: 10 USDT." });
-  if ((method === "mobile" || method === "airtel") && req.db.platformControls?.cicoMerchants === false && req.user.role !== "admin") {
-    return res.status(403).json({ message: "Les operations CICO merchant sont temporairement indisponibles." });
+  if (!["bep20", "trc20"].includes(method)) {
+    return res.status(400).json({ message: "Seuls les depots USDT BEP20 et TRC20 sont disponibles." });
   }
 
   const result = await updateDb(async (db) => {
@@ -1331,7 +946,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
 });
 
 app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.object({
-  method: z.string().min(1),
+  method: z.literal("bep20"),
   amount: z.coerce.number().positive(),
   address: z.string().optional(),
   phone: z.string().optional(),
@@ -1339,39 +954,14 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
 })), async (req, res) => {
   const { amount, method } = req.body;
   if (amount < 10) return res.status(400).json({ message: "Montant minimum retrait: 10 USDT." });
-  if ((method === "mobile" || method === "airtel") && req.db.platformControls?.cicoMerchants === false && req.user.role !== "admin") {
-    return res.status(403).json({ message: "Les operations CICO merchant sont temporairement indisponibles." });
+  if (!String(req.body.address || "").trim()) {
+    return res.status(400).json({ message: "Adresse wallet BEP20 requise." });
   }
 
   const result = await updateDb(async (db) => {
     const user = db.users.find((candidate) => candidate.id === req.user.id);
-    const fee = method === "mobile" || method === "airtel" ? money(amount * 0.1) : 0;
+    const fee = 0;
     if (user.balance < amount + fee) return { error: "Solde insuffisant." };
-
-    if (method === "mobile" || method === "airtel") {
-      reserveUserFunds(db, user, money(amount + fee), `Retrait CICO ${method}`, {
-        source: "cico_withdrawal_request"
-      });
-      const request = {
-        id: nanoid(),
-        reference: makeReference("WD", amount),
-        type: "Retrait",
-        userId: user.id,
-        customer: user.email,
-        country: "Congo",
-        amount: money(amount),
-        fee,
-        merchantBonus: money(amount * 0.03),
-        method,
-        phone: req.body.phone || "",
-        beneficiary: req.body.beneficiary || "",
-        status: "En attente merchant",
-        reservedAmount: money(amount + fee),
-        createdAt: nowIso()
-      };
-      db.cicoRequests.push(request);
-      return { request };
-    }
 
     reserveUserFunds(db, user, amount, `Retrait wallet ${method.toUpperCase()}`, {
       source: "withdrawal_request"
@@ -1538,6 +1128,7 @@ app.post("/api/cico-requests", authenticate, requirePlatformAccess({ cico: true 
   const result = await updateDb(async (db) => {
     const user = db.users.find((candidate) => candidate.id === req.user.id);
     const isWithdrawal = req.body.operation === "Retrait";
+    if (isWithdrawal && req.body.amount < 10) return { error: "Montant minimum retrait: 10 USDT." };
     const fee = isWithdrawal ? money(req.body.amount * 0.1) : 0;
     if (isWithdrawal && user.balance < req.body.amount + fee) return { error: "Solde insuffisant." };
     if (isWithdrawal) {

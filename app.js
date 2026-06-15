@@ -309,30 +309,20 @@ function renderWallet(user) {
   const depositLocalAmount = document.querySelector("[data-deposit-local-amount]");
   const withdrawLocalAmount = document.querySelector("[data-withdraw-local-amount]");
 
-  function isMobileMethod(method) {
-    return method === "mobile" || method === "airtel";
-  }
-
   function updateDepositConversion() {
-    const method = depositMethod?.value || "trc20";
+    if (depositConversion) depositConversion.hidden = true;
     const amount = Number(depositAmount?.value || 0);
-    const showConversion = isMobileMethod(method);
-
-    if (depositConversion) depositConversion.hidden = !showConversion;
     if (depositLocalAmount) depositLocalAmount.textContent = formatXaf(amount * DEPOSIT_MOBILE_RATE);
   }
 
   function updateWithdrawConversion() {
-    const method = withdrawMethod?.value || "trc20";
+    if (withdrawConversion) withdrawConversion.hidden = true;
     const amount = Number(withdrawAmount?.value || 0);
-    const showConversion = isMobileMethod(method);
-
-    if (withdrawConversion) withdrawConversion.hidden = !showConversion;
     if (withdrawLocalAmount) withdrawLocalAmount.textContent = formatXaf(amount * WITHDRAW_MOBILE_RATE);
   }
 
   function updateDepositTarget() {
-    const method = depositMethod?.value || "trc20";
+    const method = depositMethod?.value || "bep20";
     const target = user.paymentTargets?.[method];
 
     if (targetLabel) targetLabel.textContent = target?.label || "Coordonnees de depot indisponibles";
@@ -342,11 +332,8 @@ function renderWallet(user) {
   }
 
   function updateWithdrawFields() {
-    const method = withdrawMethod?.value || "trc20";
-    const isCrypto = method === "trc20" || method === "bep20";
-
-    if (receiveCrypto) receiveCrypto.hidden = !isCrypto;
-    if (receiveMobile) receiveMobile.hidden = isCrypto;
+    if (receiveCrypto) receiveCrypto.hidden = false;
+    if (receiveMobile) receiveMobile.hidden = true;
     updateWithdrawConversion();
   }
 
@@ -373,7 +360,7 @@ function renderPlans(user) {
         <small><span>Objectif cycle</span>${plan.cycle}</small>
       </div>
       <p>${plan.note}</p>
-      <small>Activite actuelle: ${Number(user.activity || 0).toFixed(0)} USDT</small>
+      <small>Solde disponible: ${formatUsdt(user.balance)} - Activite actuelle: ${Number(user.activity || 0).toFixed(0)} USDT</small>
       <label class="plan-investment-input">
         Montant a investir
         <input type="number" min="10" step="0.01" value="${plan.minAmount}" data-plan-amount>
@@ -492,6 +479,7 @@ function renderAdmin(user) {
   const adminTeam = document.querySelector("[data-admin-team]");
   const pendingDepositsCount = document.querySelector("[data-pending-deposits-count]");
   const pendingWithdrawalsCount = document.querySelector("[data-pending-withdrawals-count]");
+  const cicoRequestsCount = document.querySelector("[data-cico-requests-count]");
   const merchantApplicationsCount = document.querySelector("[data-merchant-applications-count]");
   const disputesCount = document.querySelector("[data-disputes-count]");
 
@@ -499,8 +487,9 @@ function renderAdmin(user) {
   if (adminWithdrawals) adminWithdrawals.textContent = formatUsdt(withdrawalTotal);
   if (adminTx) adminTx.textContent = user.transactions.length;
   if (adminTeam) adminTeam.textContent = Number(user.team || 0);
-  if (pendingDepositsCount) pendingDepositsCount.textContent = user.cicoRequests.length;
-  if (pendingWithdrawalsCount) pendingWithdrawalsCount.textContent = "Merchant";
+  if (pendingDepositsCount) pendingDepositsCount.textContent = pendingDeposits.length;
+  if (pendingWithdrawalsCount) pendingWithdrawalsCount.textContent = pendingWithdrawals.length;
+  if (cicoRequestsCount) cicoRequestsCount.textContent = user.cicoRequests.length;
   if (merchantApplicationsCount) merchantApplicationsCount.textContent = user.merchantApplications.length;
   if (disputesCount) disputesCount.textContent = user.disputes.length;
 
@@ -579,6 +568,9 @@ function renderDisputes(disputes) {
 function setupAuthForms() {
   const loginForm = document.querySelector("[data-login-form]");
   const registerForm = document.querySelector("[data-register-form]");
+  const forgotPasswordForm = document.querySelector("[data-forgot-password-form]");
+  const resetPasswordForm = document.querySelector("[data-reset-password-form]");
+  const resetToken = new URLSearchParams(window.location.search).get("token");
 
   if (loginForm) {
     loginForm.addEventListener("submit", async (event) => {
@@ -628,6 +620,60 @@ function setupAuthForms() {
       } catch (error) {
         restoreButton();
         showToast(error.message, "error");
+      }
+    });
+  }
+
+  if (forgotPasswordForm && resetPasswordForm && resetToken) {
+    forgotPasswordForm.hidden = true;
+    resetPasswordForm.hidden = false;
+    resetPasswordForm.querySelector('[name="token"]').value = resetToken;
+  }
+
+  if (forgotPasswordForm) {
+    forgotPasswordForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitButton = forgotPasswordForm.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, "Envoi...");
+      const email = String(formToObject(forgotPasswordForm).email || "").trim().toLowerCase();
+
+      if (!email) {
+        showToast("Email requis.", "error");
+        restoreButton();
+        return;
+      }
+
+      try {
+        const response = await apiJson("/auth/forgot-password", { email });
+        showToast(response.message || "Lien envoye si le compte existe.");
+      } catch (error) {
+        showToast(error.message, "error");
+      }
+      restoreButton();
+    });
+  }
+
+  if (resetPasswordForm) {
+    resetPasswordForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitButton = resetPasswordForm.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, "Changement...");
+      const data = formToObject(resetPasswordForm);
+      const password = String(data.password || "").trim();
+
+      if (!data.token || password.length < 10) {
+        showToast("Lien invalide ou mot de passe trop court.", "error");
+        restoreButton();
+        return;
+      }
+
+      try {
+        const response = await apiJson("/auth/reset-password", { token: data.token, password });
+        setAuthToken(response.token);
+        window.location.href = "/dashboard";
+      } catch (error) {
+        showToast(error.message, "error");
+        restoreButton();
       }
     });
   }
@@ -708,10 +754,16 @@ function setupActions(user) {
       showToast("Montant minimum investissement: 10 USDT.", "error");
       return;
     }
+    if (amount > Number(user.balance || 0)) {
+      showToast(`Solde insuffisant. Disponible: ${formatUsdt(user.balance)}.`, "error");
+      return;
+    }
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
       const response = await apiJson("/plans/activate", { amount });
       showToast(`Activation ${formatUsdt(amount)} - ${response.activePlan?.name || "plan"} soumise.`);
+      const freshUser = await loadCurrentUser();
+      renderProtectedShell(document.body.dataset.page, freshUser);
     } catch (error) {
       restoreButton();
       showToast(error.message, "error");
@@ -737,6 +789,12 @@ function setupActions(user) {
 
   document.querySelector("[data-cico-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const operation = event.currentTarget.querySelector("[name='operation']")?.value || "Depot";
+    const amount = Number(event.currentTarget.querySelector("[name='amount']")?.value || 0);
+    if (operation === "Retrait" && amount < 10) {
+      showToast("Montant minimum retrait: 10 USDT.", "error");
+      return;
+    }
     const submitButton = event.currentTarget.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Creation...");
     try {
@@ -750,6 +808,17 @@ function setupActions(user) {
     }
     restoreButton();
   });
+
+  const cicoOperation = document.querySelector("[data-cico-operation]");
+  const cicoAmount = document.querySelector("[data-cico-amount]");
+  const updateCicoMinimum = () => {
+    if (!cicoOperation || !cicoAmount) return;
+    const minimum = cicoOperation.value === "Retrait" ? 10 : 1;
+    cicoAmount.min = String(minimum);
+    if (Number(cicoAmount.value || 0) < minimum) cicoAmount.value = String(minimum);
+  };
+  cicoOperation?.addEventListener("change", updateCicoMinimum);
+  updateCicoMinimum();
 
   document.querySelector("[data-merchant-application-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
