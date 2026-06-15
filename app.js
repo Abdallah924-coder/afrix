@@ -1,5 +1,7 @@
 const API_BASE = window.AFRIX_API_BASE || "/api";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
+const API_TIMEOUT_MS = 45_000;
+const MAX_PROOF_FILE_BYTES = 5 * 1024 * 1024;
 
 const pageTitles = {
   dashboard: "Tableau de bord",
@@ -98,16 +100,25 @@ function authHeaders(extraHeaders = {}) {
 }
 
 async function apiRequest(path, options = {}) {
-  const headers = authHeaders(options.headers || {});
+  const { timeoutMs = API_TIMEOUT_MS, ...fetchOptions } = options;
+  const headers = authHeaders(fetchOptions.headers || {});
+  const controller = fetchOptions.signal ? null : new AbortController();
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
   let response;
 
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers
+      ...fetchOptions,
+      headers,
+      ...(controller ? { signal: controller.signal } : {})
     });
-  } catch {
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("La requete prend trop de temps. Verifiez votre connexion ou utilisez une preuve de paiement plus legere.");
+    }
     throw new Error("API AFRIX indisponible. Verifiez la configuration du backend.");
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
   }
 
   const contentType = response.headers.get("content-type") || "";
@@ -191,6 +202,18 @@ function firstInvalidFieldMessage(form) {
   const fileField = collectFormFields(form).find((field) => field.required && field.type === "file" && (!field.files || field.files.length === 0));
   if (fileField) {
     return fileField.labels?.[0]?.textContent?.trim() || "Un fichier requis est manquant.";
+  }
+  return "";
+}
+
+function firstFormError(form) {
+  const requiredMessage = firstInvalidFieldMessage(form);
+  if (requiredMessage) return `${requiredMessage} requis.`;
+
+  const proof = form?.querySelector("[name='proof']");
+  const file = proof?.files?.[0];
+  if (file && file.size > MAX_PROOF_FILE_BYTES) {
+    return "Preuve de paiement trop lourde. Taille maximale: 5 Mo.";
   }
   return "";
 }
@@ -730,9 +753,9 @@ function setupActions(user) {
 
   document.querySelector("[data-deposit-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const requiredMessage = firstInvalidFieldMessage(event.currentTarget);
-    if (requiredMessage) {
-      showToast(`${requiredMessage} requis.`, "error");
+    const formError = firstFormError(event.currentTarget);
+    if (formError) {
+      showToast(formError, "error");
       return;
     }
     const submitButton = event.currentTarget.querySelector('button[type="submit"]');
@@ -744,7 +767,9 @@ function setupActions(user) {
         body: new FormData(event.currentTarget)
       });
       if (response.reference) showCicoReference(response.reference, "Depot", response.amount, response.fee || 0);
-      showToast("Demande de depot enregistree.");
+      const freshUser = await loadCurrentUser();
+      renderProtectedShell(document.body.dataset.page, freshUser);
+      showToast("Demande de depot enregistree. Elle est visible dans vos transactions.");
     } catch (error) {
       restoreButton();
       showToast(error.message, "error");
@@ -755,9 +780,9 @@ function setupActions(user) {
 
   document.querySelector("[data-withdraw-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const requiredMessage = firstInvalidFieldMessage(event.currentTarget);
-    if (requiredMessage) {
-      showToast(`${requiredMessage} requis.`, "error");
+    const formError = firstFormError(event.currentTarget);
+    if (formError) {
+      showToast(formError, "error");
       return;
     }
     const submitButton = event.currentTarget.querySelector('button[type="submit"]');
@@ -765,7 +790,9 @@ function setupActions(user) {
     try {
       const response = await apiJson("/withdrawals", formToObject(event.currentTarget));
       if (response.reference) showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0);
-      showToast("Demande de retrait soumise.");
+      const freshUser = await loadCurrentUser();
+      renderProtectedShell(document.body.dataset.page, freshUser);
+      showToast("Demande de retrait soumise. Elle est visible dans vos transactions.");
     } catch (error) {
       restoreButton();
       showToast(error.message, "error");

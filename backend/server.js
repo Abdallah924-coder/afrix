@@ -1515,6 +1515,12 @@ app.use((req, res, next) => {
 });
 
 app.use((err, _req, res, _next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ message: "Preuve de paiement trop lourde. Taille maximale: 5 Mo." });
+    }
+    return res.status(400).json({ message: "Preuve de paiement invalide." });
+  }
   logger.error(err);
   res.status(500).json({ message: "Erreur serveur." });
 });
