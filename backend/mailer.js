@@ -18,7 +18,7 @@ function escapeHtml(value = "") {
     .replaceAll("'", "&#039;");
 }
 
-function maskEmail(email = "") {
+export function maskEmail(email = "") {
   const normalized = String(email).trim().toLowerCase();
   const [local, domain] = normalized.split("@");
   if (!local || !domain) return normalized;

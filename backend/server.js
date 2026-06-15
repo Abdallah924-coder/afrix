@@ -56,7 +56,7 @@ import {
   reserveUserFunds,
   today
 } from "./ledger.js";
-import { notifyAdmin, sendBrevoMail } from "./mailer.js";
+import { maskEmail, notifyAdmin, sendBrevoMail } from "./mailer.js";
 import {
   CicoRequestModel,
   DisputeModel,
