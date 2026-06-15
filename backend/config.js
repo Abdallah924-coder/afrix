@@ -6,9 +6,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export const rootDir = path.resolve(__dirname, "..");
-export const dataDir = path.join(__dirname, "data");
-export const uploadDir = path.join(__dirname, "uploads");
-export const dbFile = path.join(dataDir, "db.json");
 export const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
 export const PORT = Number(process.env.PORT || 3000);

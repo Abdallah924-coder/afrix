@@ -10,7 +10,6 @@ import { nanoid } from "nanoid";
 import multer from "multer";
 import pinoHttp from "pino-http";
 import { z } from "zod";
-import { promises as fs } from "fs";
 import path from "path";
 import {
   ADMIN_EMAIL,
@@ -22,8 +21,6 @@ import {
   PUBLIC_ORIGIN,
   TOKEN_TTL,
   bonusRates,
-  dataDir,
-  dbFile,
   defaultDb,
   isConfiguredAdminEmail,
   isProduction,
@@ -33,8 +30,7 @@ import {
   pageRoutes,
   plans,
   publicFiles,
-  rootDir,
-  uploadDir
+  rootDir
 } from "./config.js";
 import {
   addTransaction,
@@ -69,7 +65,6 @@ import {
   mongoose
 } from "./models.js";
 
-let useMongo = Boolean(MONGODB_URI);
 let mongoReadyPromise = null;
 
 function normalizeDb(db = {}) {
@@ -107,93 +102,76 @@ function normalizeUserRecord(user = {}) {
 }
 
 async function ensureStorage() {
-  await fs.mkdir(uploadDir, { recursive: true });
-
-  if (useMongo) {
-    try {
-      if (!mongoReadyPromise) {
-        mongoose.set("strictQuery", true);
-        mongoReadyPromise = mongoose.connect(MONGODB_URI, {
-          serverSelectionTimeoutMS: 10000
-        }).then(() => logger.info("MongoDB Atlas connected"));
-      }
-      await mongoReadyPromise;
-      await Promise.all([
-        SettingModel.updateOne({ key: "platformControls" }, { $setOnInsert: { value: defaultDb.platformControls } }, { upsert: true }),
-        SettingModel.updateOne({ key: "paymentTargets" }, { $setOnInsert: { value: defaultDb.paymentTargets } }, { upsert: true }),
-        SettingModel.updateOne({ key: "passwordResetTokens" }, { $setOnInsert: { value: defaultDb.passwordResetTokens } }, { upsert: true }),
-        PlatformAccountModel.updateOne({ id: "platform" }, { $setOnInsert: { ...defaultDb.platformAccount, createdAt: nowIso() } }, { upsert: true })
-      ]);
-      return;
-    } catch (error) {
-      logger.error({ err: error }, "Mongo unavailable");
-      if (isProduction) {
-        throw new Error("MongoDB is required in production.");
-      }
-      useMongo = false;
-      mongoReadyPromise = null;
-    }
+  if (!MONGODB_URI) {
+    throw new Error("MONGODB_URI is required. AFRIX stores application data in MongoDB only.");
   }
 
-  await fs.mkdir(dataDir, { recursive: true });
   try {
-    await fs.access(dbFile);
-  } catch {
-    await writeDb(defaultDb);
+    if (!mongoReadyPromise) {
+      mongoose.set("strictQuery", true);
+      mongoReadyPromise = mongoose.connect(MONGODB_URI, {
+        serverSelectionTimeoutMS: 10000
+      }).then(() => logger.info("MongoDB Atlas connected"));
+    }
+    await mongoReadyPromise;
+    await Promise.all([
+      SettingModel.updateOne({ key: "platformControls" }, { $setOnInsert: { value: defaultDb.platformControls } }, { upsert: true }),
+      SettingModel.updateOne({ key: "paymentTargets" }, { $setOnInsert: { value: defaultDb.paymentTargets } }, { upsert: true }),
+      SettingModel.updateOne({ key: "passwordResetTokens" }, { $setOnInsert: { value: defaultDb.passwordResetTokens } }, { upsert: true }),
+      PlatformAccountModel.updateOne({ id: "platform" }, { $setOnInsert: { ...defaultDb.platformAccount, createdAt: nowIso() } }, { upsert: true })
+    ]);
+  } catch (error) {
+    mongoReadyPromise = null;
+    logger.error({ err: error }, "Mongo unavailable");
+    throw error;
   }
 }
 
 async function readDb(session = null) {
   await ensureStorage();
-  if (useMongo) {
-    const queryOptions = session ? { session } : {};
-    let users;
-    let transactions;
-    let cicoRequests;
-    let merchantApplications;
-    let disputes;
-    let ledgerEntries;
-    let settings;
-    let platformAccount;
-    if (session) {
-      users = await UserModel.find({}, null, queryOptions).lean();
-      transactions = await TransactionModel.find({}, null, queryOptions).lean();
-      cicoRequests = await CicoRequestModel.find({}, null, queryOptions).lean();
-      merchantApplications = await MerchantApplicationModel.find({}, null, queryOptions).lean();
-      disputes = await DisputeModel.find({}, null, queryOptions).lean();
-      ledgerEntries = await LedgerEntryModel.find({}, null, queryOptions).lean();
-      settings = await SettingModel.find({}, null, queryOptions).lean();
-      platformAccount = await PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).lean();
-    } else {
-      [users, transactions, cicoRequests, merchantApplications, disputes, ledgerEntries, settings, platformAccount] = await Promise.all([
-        UserModel.find({}, null, queryOptions).lean(),
-        TransactionModel.find({}, null, queryOptions).lean(),
-        CicoRequestModel.find({}, null, queryOptions).lean(),
-        MerchantApplicationModel.find({}, null, queryOptions).lean(),
-        DisputeModel.find({}, null, queryOptions).lean(),
-        LedgerEntryModel.find({}, null, queryOptions).lean(),
-        SettingModel.find({}, null, queryOptions).lean(),
-        PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).lean()
-      ]);
-    }
-    const settingMap = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
-    return normalizeDb({
-      users,
-      transactions,
-      cicoRequests,
-      merchantApplications,
-      disputes,
-      ledgerEntries,
-      passwordResetTokens: settingMap.passwordResetTokens,
-      platformAccount,
-      platformControls: settingMap.platformControls,
-      paymentTargets: settingMap.paymentTargets
-    });
+  const queryOptions = session ? { session } : {};
+  let users;
+  let transactions;
+  let cicoRequests;
+  let merchantApplications;
+  let disputes;
+  let ledgerEntries;
+  let settings;
+  let platformAccount;
+  if (session) {
+    users = await UserModel.find({}, null, queryOptions).lean();
+    transactions = await TransactionModel.find({}, null, queryOptions).lean();
+    cicoRequests = await CicoRequestModel.find({}, null, queryOptions).lean();
+    merchantApplications = await MerchantApplicationModel.find({}, null, queryOptions).lean();
+    disputes = await DisputeModel.find({}, null, queryOptions).lean();
+    ledgerEntries = await LedgerEntryModel.find({}, null, queryOptions).lean();
+    settings = await SettingModel.find({}, null, queryOptions).lean();
+    platformAccount = await PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).lean();
+  } else {
+    [users, transactions, cicoRequests, merchantApplications, disputes, ledgerEntries, settings, platformAccount] = await Promise.all([
+      UserModel.find({}, null, queryOptions).lean(),
+      TransactionModel.find({}, null, queryOptions).lean(),
+      CicoRequestModel.find({}, null, queryOptions).lean(),
+      MerchantApplicationModel.find({}, null, queryOptions).lean(),
+      DisputeModel.find({}, null, queryOptions).lean(),
+      LedgerEntryModel.find({}, null, queryOptions).lean(),
+      SettingModel.find({}, null, queryOptions).lean(),
+      PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).lean()
+    ]);
   }
-
-  const raw = await fs.readFile(dbFile, "utf8");
-  const parsed = JSON.parse(raw);
-  return normalizeDb(parsed);
+  const settingMap = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
+  return normalizeDb({
+    users,
+    transactions,
+    cicoRequests,
+    merchantApplications,
+    disputes,
+    ledgerEntries,
+    passwordResetTokens: settingMap.passwordResetTokens,
+    platformAccount,
+    platformControls: settingMap.platformControls,
+    paymentTargets: settingMap.paymentTargets
+  });
 }
 
 async function syncCollection(model, docs, key, session, { removeMissing = true } = {}) {
@@ -218,33 +196,27 @@ async function syncCollection(model, docs, key, session, { removeMissing = true 
 
 async function writeDb(db, session = null) {
   db = normalizeDb(db);
-  if (useMongo) {
-    await ensureStorage();
-    const keepExisting = { removeMissing: false };
-    await syncCollection(UserModel, db.users, "id", session, keepExisting);
-    await syncCollection(TransactionModel, db.transactions, "id", session, keepExisting);
-    await syncCollection(CicoRequestModel, db.cicoRequests, "id", session, keepExisting);
-    await syncCollection(MerchantApplicationModel, db.merchantApplications, "id", session, keepExisting);
-    await syncCollection(DisputeModel, db.disputes, "id", session, keepExisting);
-    await syncCollection(LedgerEntryModel, db.ledgerEntries, "id", session, { removeMissing: false });
-    if (session) {
-      await SettingModel.updateOne({ key: "platformControls" }, { $set: { value: db.platformControls } }, { upsert: true, session });
-      await SettingModel.updateOne({ key: "paymentTargets" }, { $set: { value: db.paymentTargets } }, { upsert: true, session });
-      await SettingModel.updateOne({ key: "passwordResetTokens" }, { $set: { value: db.passwordResetTokens } }, { upsert: true, session });
-      await PlatformAccountModel.updateOne({ id: "platform" }, { $set: db.platformAccount }, { upsert: true, session });
-    } else {
-      await Promise.all([
-        SettingModel.updateOne({ key: "platformControls" }, { $set: { value: db.platformControls } }, { upsert: true, session }),
-        SettingModel.updateOne({ key: "paymentTargets" }, { $set: { value: db.paymentTargets } }, { upsert: true, session }),
-        SettingModel.updateOne({ key: "passwordResetTokens" }, { $set: { value: db.passwordResetTokens } }, { upsert: true, session }),
-        PlatformAccountModel.updateOne({ id: "platform" }, { $set: db.platformAccount }, { upsert: true, session })
-      ]);
-    }
-    return;
+  await ensureStorage();
+  const keepExisting = { removeMissing: false };
+  await syncCollection(UserModel, db.users, "id", session, keepExisting);
+  await syncCollection(TransactionModel, db.transactions, "id", session, keepExisting);
+  await syncCollection(CicoRequestModel, db.cicoRequests, "id", session, keepExisting);
+  await syncCollection(MerchantApplicationModel, db.merchantApplications, "id", session, keepExisting);
+  await syncCollection(DisputeModel, db.disputes, "id", session, keepExisting);
+  await syncCollection(LedgerEntryModel, db.ledgerEntries, "id", session, { removeMissing: false });
+  if (session) {
+    await SettingModel.updateOne({ key: "platformControls" }, { $set: { value: db.platformControls } }, { upsert: true, session });
+    await SettingModel.updateOne({ key: "paymentTargets" }, { $set: { value: db.paymentTargets } }, { upsert: true, session });
+    await SettingModel.updateOne({ key: "passwordResetTokens" }, { $set: { value: db.passwordResetTokens } }, { upsert: true, session });
+    await PlatformAccountModel.updateOne({ id: "platform" }, { $set: db.platformAccount }, { upsert: true, session });
+  } else {
+    await Promise.all([
+      SettingModel.updateOne({ key: "platformControls" }, { $set: { value: db.platformControls } }, { upsert: true, session }),
+      SettingModel.updateOne({ key: "paymentTargets" }, { $set: { value: db.paymentTargets } }, { upsert: true, session }),
+      SettingModel.updateOne({ key: "passwordResetTokens" }, { $set: { value: db.passwordResetTokens } }, { upsert: true, session }),
+      PlatformAccountModel.updateOne({ id: "platform" }, { $set: db.platformAccount }, { upsert: true, session })
+    ]);
   }
-
-  await fs.mkdir(dataDir, { recursive: true });
-  await fs.writeFile(dbFile, JSON.stringify(db, null, 2));
 }
 
 function isTransientMongoError(error) {
@@ -261,13 +233,6 @@ function wait(ms) {
 }
 
 async function updateDb(mutator) {
-  if (!useMongo) {
-    const db = await readDb();
-    const result = await mutator(db);
-    await writeDb(db);
-    return result;
-  }
-
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const session = await mongoose.startSession();
@@ -593,78 +558,43 @@ async function ensureAdminUser() {
   }
 
   const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
-  if (useMongo) {
-    await ensureStorage();
-    const adminId = nanoid();
-    const refCode = `AFX-${nanoid(8).toUpperCase()}`;
-    const admin = normalizeUserRecord(await UserModel.findOneAndUpdate(
-      { email: ADMIN_EMAIL },
-      {
-        $set: {
-          email: ADMIN_EMAIL,
-          fullName: ADMIN_NAME,
-          passwordHash,
-          role: "admin",
-          status: "active"
-        },
-        $setOnInsert: {
-          id: adminId,
-          balance: 0,
-          reservedBalance: 0,
-          activity: 0,
-          bonus: 0,
-          wallet: "",
-          refCode,
-          referrerId: null,
-          merchantWallet: { available: 0, pending: 0, bonus: 0 },
-          activePlans: [],
-          createdAt: nowIso()
-        }
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    ).lean());
-
-    logger.info({ email: maskEmail(admin.email), userId: admin.id }, "Admin account ready");
-    return sanitizeUser(admin);
-  }
-
-  return updateDb(async (db) => {
-    let admin = db.users.find((user) => user.email === ADMIN_EMAIL);
-    if (!admin) {
-      admin = {
-        id: nanoid(),
+  await ensureStorage();
+  const adminId = nanoid();
+  const refCode = `AFX-${nanoid(8).toUpperCase()}`;
+  const admin = normalizeUserRecord(await UserModel.findOneAndUpdate(
+    { email: ADMIN_EMAIL },
+    {
+      $set: {
         email: ADMIN_EMAIL,
         fullName: ADMIN_NAME,
         passwordHash,
         role: "admin",
-        status: "active",
+        status: "active"
+      },
+      $setOnInsert: {
+        id: adminId,
         balance: 0,
+        reservedBalance: 0,
         activity: 0,
         bonus: 0,
         wallet: "",
-        refCode: `AFX-${nanoid(8).toUpperCase()}`,
+        refCode,
         referrerId: null,
         merchantWallet: { available: 0, pending: 0, bonus: 0 },
+        activePlans: [],
         createdAt: nowIso()
-      };
-      db.users.push(admin);
-    } else {
-      admin.role = "admin";
-      admin.status = "active";
-      admin.fullName = admin.fullName || ADMIN_NAME;
-      if (ADMIN_PASSWORD) {
-        admin.passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
       }
-    }
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean());
 
-    logger.info({ email: maskEmail(admin.email), userId: admin.id }, "Admin account ready");
-    return sanitizeUser(admin);
-  });
+  logger.info({ email: maskEmail(admin.email), userId: admin.id }, "Admin account ready");
+  return sanitizeUser(admin);
 }
 
 const app = express();
 const upload = multer({
-  dest: uploadDir,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
@@ -694,12 +624,12 @@ app.use(express.urlencoded({ extended: true }));
 app.get("/api/health", async (_req, res) => {
   try {
     await ensureStorage();
-    res.json({ status: "ok", mode: useMongo ? "mongo" : "json", time: nowIso() });
+    res.json({ status: "ok", mode: "mongo", time: nowIso() });
   } catch (error) {
     logger.error({ err: error }, "Healthcheck storage check failed");
     res.status(503).json({
       status: "degraded",
-      mode: useMongo ? "mongo" : "json",
+      mode: "mongo",
       time: nowIso(),
       message: "Storage not fully reachable."
     });
@@ -733,32 +663,20 @@ app.post("/api/auth/register", validate(z.object({
     createdAt: nowIso()
   });
 
-  const result = useMongo
-    ? await (async () => {
-      await ensureStorage();
-      if (await UserModel.exists({ email: normalizedEmail })) {
-        return { error: "Cet email est deja enregistre." };
-      }
-      const referrer = ref ? await UserModel.findOne({ refCode: ref }).lean() : null;
-      try {
-        const user = await UserModel.create(await createUserRecord(referrer?.id || null));
-        return { user: normalizeUserRecord(user.toObject()) };
-      } catch (error) {
-        if (error?.code === 11000) return { error: "Cet email est deja enregistre." };
-        throw error;
-      }
-    })()
-    : await updateDb(async (db) => {
-      if (db.users.some((user) => user.email === normalizedEmail)) {
-        return { error: "Cet email est deja enregistre." };
-      }
-
-      const referrer = ref ? db.users.find((user) => user.refCode === ref) : null;
-      const user = await createUserRecord(referrer?.id || null);
-
-      db.users.push(user);
-      return { user };
-    });
+  await ensureStorage();
+  const result = await (async () => {
+    if (await UserModel.exists({ email: normalizedEmail })) {
+      return { error: "Cet email est deja enregistre." };
+    }
+    const referrer = ref ? await UserModel.findOne({ refCode: ref }).lean() : null;
+    try {
+      const user = await UserModel.create(await createUserRecord(referrer?.id || null));
+      return { user: normalizeUserRecord(user.toObject()) };
+    } catch (error) {
+      if (error?.code === 11000) return { error: "Cet email est deja enregistre." };
+      throw error;
+    }
+  })();
 
   if (result.error) return res.status(409).json({ message: result.error });
   await sendBrevoMail({
@@ -785,10 +703,8 @@ app.post("/api/auth/login", validate(z.object({
   password: z.string().min(1)
 })), async (req, res) => {
   const normalizedEmail = req.body.email.trim().toLowerCase();
-  if (useMongo) await ensureStorage();
-  const user = useMongo
-    ? normalizeUserRecord(await UserModel.findOne({ email: normalizedEmail }).sort({ updatedAt: -1, createdAt: -1 }).lean())
-    : (await readDb()).users.find((candidate) => candidate.email === normalizedEmail);
+  await ensureStorage();
+  const user = normalizeUserRecord(await UserModel.findOne({ email: normalizedEmail }).sort({ updatedAt: -1, createdAt: -1 }).lean());
   if (!user || !(await bcrypt.compare(req.body.password, user.passwordHash))) {
     return res.status(401).json({ message: "Identifiants invalides." });
   }
@@ -881,9 +797,15 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
   if (!txRef) {
     return res.status(400).json({ message: "Reference transaction crypto requise." });
   }
-  if (!req.file?.filename) {
+  if (!req.file?.buffer?.length) {
     return res.status(400).json({ message: "Preuve de paiement requise." });
   }
+  const proof = {
+    originalName: req.file.originalname || "preuve-paiement",
+    mimeType: req.file.mimetype || "application/octet-stream",
+    size: req.file.size || req.file.buffer.length,
+    dataBase64: req.file.buffer.toString("base64")
+  };
 
   const result = await updateDb(async (db) => {
     const user = db.users.find((candidate) => candidate.id === req.user.id);
@@ -919,7 +841,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
       metadata: {
         method,
         txRef,
-        proofFile: req.file?.filename || null
+        proof
       }
     };
     db.transactions.push(tx);

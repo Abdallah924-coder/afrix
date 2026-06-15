@@ -36,7 +36,6 @@ async function run() {
       ...process.env,
       PORT: String(PORT),
       NODE_ENV: "development",
-      MONGODB_URI: "",
       JWT_SECRET: "dev-only-change-this-secret-before-production",
       ADMIN_EMAIL: "",
       ADMIN_PASSWORD: ""
@@ -68,8 +67,8 @@ async function run() {
     const backendSource = await request("/backend/server.js");
     assert(backendSource.status === 404, "backend source must not be public");
 
-    const localData = await request("/backend/data/db.json");
-    assert(localData.status === 404, "local JSON data must not be public");
+    const backendData = await request("/backend/data/db.json");
+    assert(backendData.status === 404, "backend data paths must not be public");
   } finally {
     child.kill("SIGTERM");
     await wait(250);

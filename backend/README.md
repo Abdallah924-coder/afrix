@@ -9,7 +9,7 @@ npm start
 
 The server exposes the existing frontend and the API under `/api`.
 
-Without `MONGODB_URI`, the server uses local JSON storage for development. With `MONGODB_URI`, it stores the application state in MongoDB Atlas.
+MongoDB Atlas is the only application data store. `MONGODB_URI` is required in development and production.
 
 ## Admin Account
 
