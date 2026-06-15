@@ -873,9 +873,16 @@ app.get("/api/merchants", authenticate, (req, res) => {
 app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("proof"), async (req, res) => {
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || "bep20");
+  const txRef = String(req.body.txRef || "").trim();
   if (amount < 10) return res.status(400).json({ message: "Montant minimum depot: 10 USDT." });
   if (!["bep20", "trc20"].includes(method)) {
     return res.status(400).json({ message: "Seuls les depots USDT BEP20 et TRC20 sont disponibles." });
+  }
+  if (!txRef) {
+    return res.status(400).json({ message: "Reference transaction crypto requise." });
+  }
+  if (!req.file?.filename) {
+    return res.status(400).json({ message: "Preuve de paiement requise." });
   }
 
   const result = await updateDb(async (db) => {
@@ -911,7 +918,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
       createdAt: nowIso(),
       metadata: {
         method,
-        txRef: req.body.txRef || "",
+        txRef,
         proofFile: req.file?.filename || null
       }
     };
@@ -953,8 +960,9 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
   beneficiary: z.string().optional()
 })), async (req, res) => {
   const { amount, method } = req.body;
+  const address = String(req.body.address || "").trim();
   if (amount < 10) return res.status(400).json({ message: "Montant minimum retrait: 10 USDT." });
-  if (!String(req.body.address || "").trim()) {
+  if (!address) {
     return res.status(400).json({ message: "Adresse wallet BEP20 requise." });
   }
 
@@ -975,7 +983,7 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
       displayAmount: formatAmount(amount, "-"),
       status: "Pending",
       createdAt: nowIso(),
-      metadata: { method, address: req.body.address || "", reservedAmount: money(amount) }
+      metadata: { method, address, reservedAmount: money(amount) }
     };
     db.transactions.push(tx);
     return { transaction: tx };

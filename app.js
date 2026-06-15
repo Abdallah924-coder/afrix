@@ -176,6 +176,25 @@ function showToast(message, type = "info") {
   window.setTimeout(() => toast.remove(), 3200);
 }
 
+function collectFormFields(form) {
+  return Array.from(form?.elements || []).filter((field) => {
+    if (!field.name) return false;
+    return ["input", "select", "textarea"].includes(field.tagName.toLowerCase());
+  });
+}
+
+function firstInvalidFieldMessage(form) {
+  const invalidField = collectFormFields(form).find((field) => field.required && !String(field.value || "").trim() && field.type !== "file");
+  if (invalidField) {
+    return invalidField.labels?.[0]?.textContent?.trim() || "Un champ requis est manquant.";
+  }
+  const fileField = collectFormFields(form).find((field) => field.required && field.type === "file" && (!field.files || field.files.length === 0));
+  if (fileField) {
+    return fileField.labels?.[0]?.textContent?.trim() || "Un fichier requis est manquant.";
+  }
+  return "";
+}
+
 function setButtonLoading(button, label) {
   if (!button) return () => {};
   if (!button.dataset.originalLabel) {
@@ -711,6 +730,11 @@ function setupActions(user) {
 
   document.querySelector("[data-deposit-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const requiredMessage = firstInvalidFieldMessage(event.currentTarget);
+    if (requiredMessage) {
+      showToast(`${requiredMessage} requis.`, "error");
+      return;
+    }
     const submitButton = event.currentTarget.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Traitement...");
     try {
@@ -731,6 +755,11 @@ function setupActions(user) {
 
   document.querySelector("[data-withdraw-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const requiredMessage = firstInvalidFieldMessage(event.currentTarget);
+    if (requiredMessage) {
+      showToast(`${requiredMessage} requis.`, "error");
+      return;
+    }
     const submitButton = event.currentTarget.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Traitement...");
     try {
