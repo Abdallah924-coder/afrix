@@ -257,6 +257,42 @@ async function updateDb(mutator) {
   throw lastError;
 }
 
+async function withMongoRetry(operation) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientMongoError(error) || attempt === 3) throw error;
+      logger.warn({ err: error, attempt }, "Transient Mongo write error, retrying");
+      await wait(100 * attempt);
+    }
+  }
+  throw lastError;
+}
+
+function buildLedgerEntries(entries, metadata = {}) {
+  const groupId = metadata.groupId || nanoid();
+  const createdAt = nowIso();
+  return entries
+    .filter((entry) => money(entry.amount) > 0)
+    .map((entry) => ({
+      id: nanoid(),
+      groupId,
+      accountType: entry.accountType,
+      accountId: entry.accountId,
+      direction: entry.direction,
+      amount: money(entry.amount),
+      balanceAfter: money(entry.balanceAfter),
+      description: entry.description,
+      referenceId: metadata.referenceId || null,
+      source: metadata.source || "system",
+      createdAt,
+      metadata: metadata.extra || {}
+    }));
+}
+
 function sanitizeUser(user) {
   const { passwordHash, ...safeUser } = user;
   return safeUser;
@@ -807,31 +843,10 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
     size: req.file.size || req.file.buffer.length
   };
 
-  const result = await updateDb(async (db) => {
-    const user = db.users.find((candidate) => candidate.id === req.user.id);
-    if (method === "mobile" || method === "airtel") {
-      const request = {
-        id: nanoid(),
-        reference: makeReference("DP", amount),
-        type: "Depot",
-        userId: user.id,
-        customer: user.email,
-        country: req.body.country || "Congo",
-        amount: money(amount),
-        fee: 0,
-        merchantBonus: money(amount * 0.005),
-        method,
-        phone: req.body.phone || "",
-        status: "En attente merchant",
-        createdAt: nowIso()
-      };
-      db.cicoRequests.push(request);
-      return { request };
-    }
-
+  const result = await withMongoRetry(async () => {
     const tx = {
       id: nanoid(),
-      userId: user.id,
+      userId: req.user.id,
       type: "Depot",
       description: `Depot wallet ${method.toUpperCase()}`,
       amount: money(amount),
@@ -844,7 +859,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
         proof
       }
     };
-    db.transactions.push(tx);
+    await TransactionModel.create(tx);
     return { transaction: tx };
   });
 
@@ -888,28 +903,70 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     return res.status(400).json({ message: "Adresse wallet BEP20 requise." });
   }
 
-  const result = await updateDb(async (db) => {
-    const user = db.users.find((candidate) => candidate.id === req.user.id);
-    const fee = 0;
-    if (user.balance < amount + fee) return { error: "Solde insuffisant." };
+  let result;
+  try {
+    result = await withMongoRetry(async () => {
+      const fee = 0;
+      const reservedAmount = money(amount + fee);
+      const tx = {
+        id: nanoid(),
+        userId: req.user.id,
+        type: "Retrait",
+        description: `Retrait wallet ${method.toUpperCase()}`,
+        amount: money(amount),
+        displayAmount: formatAmount(amount, "-"),
+        status: "Pending",
+        createdAt: nowIso(),
+        metadata: { method, address, reservedAmount }
+      };
 
-    reserveUserFunds(db, user, amount, `Retrait wallet ${method.toUpperCase()}`, {
-      source: "withdrawal_request"
+      const session = await mongoose.startSession();
+      try {
+        let updatedUser;
+        await session.withTransaction(async () => {
+          updatedUser = await UserModel.findOneAndUpdate(
+            { id: req.user.id, balance: { $gte: reservedAmount } },
+            { $inc: { balance: -reservedAmount, reservedBalance: reservedAmount } },
+            { new: true, session, lean: true }
+          );
+          if (!updatedUser) {
+            throw new Error("Solde insuffisant.");
+          }
+
+          const ledgerEntries = buildLedgerEntries([{
+            accountType: "user",
+            accountId: req.user.id,
+            direction: "debit",
+            amount: reservedAmount,
+            balanceAfter: updatedUser.balance,
+            description: `${tx.description} - reserve`
+          }, {
+            accountType: "user_reserved",
+            accountId: req.user.id,
+            direction: "credit",
+            amount: reservedAmount,
+            balanceAfter: updatedUser.reservedBalance,
+            description: tx.description
+          }], {
+            source: "withdrawal_request",
+            referenceId: tx.id
+          });
+
+          await TransactionModel.create([tx], { session });
+          if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+        });
+      } finally {
+        await session.endSession();
+      }
+
+      return { transaction: tx };
     });
-    const tx = {
-      id: nanoid(),
-      userId: user.id,
-      type: "Retrait",
-      description: `Retrait wallet ${method.toUpperCase()}`,
-      amount: money(amount),
-      displayAmount: formatAmount(amount, "-"),
-      status: "Pending",
-      createdAt: nowIso(),
-      metadata: { method, address, reservedAmount: money(amount) }
-    };
-    db.transactions.push(tx);
-    return { transaction: tx };
-  });
+  } catch (error) {
+    if (error.message === "Solde insuffisant.") {
+      return res.status(400).json({ message: error.message });
+    }
+    throw error;
+  }
 
   if (result.error) return res.status(400).json({ message: result.error });
   res.status(201).json({
