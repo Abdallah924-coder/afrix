@@ -27,6 +27,17 @@
         </div>
       </article>
     </section>
+    <section class="panel admin-search-panel">
+      <div class="panel-head"><h1>Recherche admin</h1><span class="badge">Filtres</span></div>
+      <div class="grid two">
+        <label>Rechercher un utilisateur par email
+          <input type="search" data-admin-user-search data-admin-filter placeholder="client@email.com">
+        </label>
+        <label>Rechercher une transaction par référence
+          <input type="search" data-admin-tx-search data-admin-filter placeholder="ID transaction ou référence blockchain">
+        </label>
+      </div>
+    </section>
     <section class="grid two admin-queues">
       <article class="panel">
         <div class="panel-head"><h1>Dépôts USDT à valider</h1><span class="badge" data-pending-deposits-count>0</span></div>
@@ -39,13 +50,17 @@
     </section>
     <section class="grid two admin-queues">
       <article class="panel">
-        <div class="panel-head"><h1>Suivi historique CICO</h1><span class="badge" data-cico-requests-count>0</span></div>
-        <div class="list" data-admin-cico-requests></div>
+        <div class="panel-head"><h1>Demandes Exchange</h1><span class="badge">P2P local</span></div>
+        <div class="list" data-admin-exchange-orders></div>
       </article>
       <article class="panel">
         <div class="panel-head"><h1>Règle opérationnelle</h1><span class="badge">USDT + Exchange</span></div>
         <p class="muted">Les dépôts USDT BEP20/TRC20 et les retraits USDT BEP20 sont validés par l'admin. L'Exchange merchant permet aux utilisateurs en monnaie locale d'acheter ou de vendre des USDT via des annonces et une référence WhatsApp.</p>
       </article>
+    </section>
+    <section class="panel admin-queues">
+      <div class="panel-head"><h1>Historique CICO</h1><span class="badge" data-cico-requests-count>0</span></div>
+      <div class="list" data-admin-cico-requests></div>
     </section>
     <section class="grid two admin-queues">
       <article class="panel">
@@ -85,6 +100,6 @@
       </article>
     </section>
   </main>
-  <script src="../app.js?v=20260616-4"></script>
+  <script src="../app.js?v=20260616-7"></script>
 </body>
 </html>

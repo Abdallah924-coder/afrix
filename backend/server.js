@@ -68,7 +68,7 @@ import {
 } from "./models.js";
 
 let mongoReadyPromise = null;
-const transactionListProjection = { "metadata.proof.dataBase64": 0 };
+const transactionListProjection = {};
 
 function normalizeDb(db = {}) {
   return {
@@ -423,7 +423,7 @@ function composeUser(db, user) {
     paymentTargets: db.paymentTargets,
     refLink: `${process.env.APP_URL || "http://localhost:" + PORT}/register?ref=${user.refCode}`,
     transactions: db.transactions
-      .filter((tx) => user.role === "admin" || tx.userId === user.id)
+      .filter((tx) => tx.userId === user.id)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((tx) => ({
         id: tx.id,
@@ -433,6 +433,32 @@ function composeUser(db, user) {
         amount: tx.displayAmount,
         status: tx.status
       })),
+    adminTransactions: user.role === "admin"
+      ? db.transactions
+        .slice()
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+        .map((tx) => {
+          const owner = db.users.find((candidate) => candidate.id === tx.userId);
+          return {
+            id: tx.id,
+            reference: tx.id,
+            userId: tx.userId,
+            userEmail: owner?.email || "",
+            date: String(tx.createdAt || "").slice(0, 10),
+            type: tx.type,
+            description: tx.description,
+            amount: tx.displayAmount,
+            rawAmount: money(tx.amount),
+            status: tx.status,
+            hasProof: Boolean(tx.metadata?.proof?.dataBase64 || tx.metadata?.proof?.mimeType),
+            metadata: {
+              method: tx.metadata?.method || "",
+              txRef: tx.metadata?.txRef || "",
+              address: tx.metadata?.address || ""
+            }
+          };
+        })
+      : [],
     directPartners,
     merchants: approvedMerchants,
     merchantWallet: {
@@ -445,6 +471,11 @@ function composeUser(db, user) {
     cicoRequests: ownCicoRequests.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     exchangeAds: ownExchangeAds.map((ad) => publicExchangeAd(ad, db.users.find((candidate) => candidate.id === ad.merchantId))),
     exchangeOrders: ownExchangeOrders.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
+    adminExchangeOrders: user.role === "admin"
+      ? db.exchangeOrders
+        .slice()
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+      : [],
     merchantApplications: user.role === "admin" ? db.merchantApplications : db.merchantApplications.filter((item) => item.userId === user.id),
     disputes: user.role === "admin" ? db.disputes : db.disputes.filter((item) => item.userId === user.id),
     platformControls: user.role === "admin" ? db.platformControls : {}
@@ -914,7 +945,8 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
   const proof = {
     originalName: req.file.originalname || "preuve-paiement",
     mimeType: req.file.mimetype || "application/octet-stream",
-    size: req.file.size || req.file.buffer.length
+    size: req.file.size || req.file.buffer.length,
+    dataBase64: req.file.buffer.toString("base64")
   };
 
   const result = await withMongoRetry(async () => {
@@ -1473,22 +1505,24 @@ app.post("/api/merchant/applications", authenticate, requirePlatformAccess(), va
   });
 
   res.status(201).json({ application });
-  await sendBrevoMail({
-    to: req.user.email,
-    subject: "AFRIX - Demande merchant recue",
-    title: "Votre demande merchant est en validation",
-    intro: "L'equipe AFRIX va verifier votre profil merchant.",
-    rows: [
+  Promise.all([
+    sendBrevoMail({
+      to: req.user.email,
+      subject: "AFRIX - Demande merchant reçue",
+      title: "Votre demande merchant est en validation",
+      intro: "L'équipe AFRIX va vérifier votre profil merchant.",
+      rows: [
+        { label: "Nom commercial", value: application.businessName },
+        { label: "Ville", value: `${application.city}, ${application.country}` },
+        { label: "Garantie", value: formatAmount(application.guarantee) }
+      ]
+    }),
+    notifyAdmin("AFRIX - Nouvelle demande merchant", "Demande merchant", "Un utilisateur demande le statut merchant.", [
+      { label: "Utilisateur", value: req.user.email },
       { label: "Nom commercial", value: application.businessName },
-      { label: "Ville", value: `${application.city}, ${application.country}` },
       { label: "Garantie", value: formatAmount(application.guarantee) }
-    ]
-  });
-  await notifyAdmin("AFRIX - Nouvelle demande merchant", "Demande merchant", "Un utilisateur demande le statut merchant.", [
-    { label: "Utilisateur", value: req.user.email },
-    { label: "Nom commercial", value: application.businessName },
-    { label: "Garantie", value: formatAmount(application.guarantee) }
-  ]);
+    ])
+  ]).catch((error) => logger.error({ err: error }, "Merchant application notification failed"));
 });
 
 app.get("/api/merchant/cico-requests/:reference", authenticate, requirePlatformAccess({ cico: true }), requireMerchant, (req, res) => {
@@ -1644,6 +1678,21 @@ app.post("/api/admin/settings", authenticate, requireAdmin, validate(z.object({
     return db.platformControls;
   });
   res.json({ platformControls: controls });
+});
+
+app.get("/api/admin/deposits/:id/proof", authenticate, requireAdmin, async (req, res) => {
+  await ensureStorage();
+  const tx = await TransactionModel.findOne({ id: req.params.id, type: "Depot" }).lean();
+  const proof = tx?.metadata?.proof;
+  if (!proof?.dataBase64) {
+    return res.status(404).json({ message: "Capture de dépôt introuvable." });
+  }
+  res.json({
+    id: tx.id,
+    mimeType: proof.mimeType || "application/octet-stream",
+    originalName: proof.originalName || proof.fileName || "preuve-depot",
+    dataUrl: `data:${proof.mimeType || "application/octet-stream"};base64,${proof.dataBase64}`
+  });
 });
 
 app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
