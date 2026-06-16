@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exchange - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body data-protected data-page="exchange">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+
+    <section class="hero-card exchange-hero">
+      <span class="pill">AFRIX Exchange</span>
+      <h1>Acheter ou vendre des USDT avec les moyens de paiement locaux.</h1>
+      <p>Choisissez une annonce merchant, indiquez le montant, sélectionnez le moyen de paiement, puis utilisez la référence générée pour finaliser l'opération avec l'annonceur sur WhatsApp.</p>
+      <div class="principle-strip" aria-label="Procédure Exchange">
+        <span>Annonce merchant</span>
+        <span>Paiement local</span>
+        <span>Référence AFRIX</span>
+        <span>Validation par email</span>
+      </div>
+    </section>
+
+    <section class="panel" data-exchange-order-output hidden></section>
+
+    <section class="grid two">
+      <article class="panel">
+        <div class="panel-head"><h1>Acheter des USDT</h1><span class="badge">Recharge</span></div>
+        <p class="muted">Utilisez ces annonces si vous avez du Mobile Money, Airtel, Moov, Orange Money ou une carte bancaire et que vous voulez recevoir des USDT sur votre compte AFRIX.</p>
+        <div class="exchange-list" data-exchange-buy-list></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h1>Vendre des USDT</h1><span class="badge">Retrait local</span></div>
+        <p class="muted">Utilisez ces annonces si vous avez des USDT sur AFRIX et que vous voulez recevoir la monnaie locale auprès d'un merchant.</p>
+        <div class="exchange-list" data-exchange-sell-list></div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h1>Mes demandes Exchange</h1><span class="badge">Suivi</span></div>
+      <div class="list" data-exchange-orders-list></div>
+    </section>
+  </main>
+  <script src="../app.js?v=20260616-5"></script>
+</body>
+</html>

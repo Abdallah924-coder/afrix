@@ -56,6 +56,8 @@ import { maskEmail, notifyAdmin, sendBrevoMail } from "./mailer.js";
 import {
   CicoRequestModel,
   DisputeModel,
+  ExchangeAdModel,
+  ExchangeOrderModel,
   LedgerEntryModel,
   MerchantApplicationModel,
   PlatformAccountModel,
@@ -75,6 +77,8 @@ function normalizeDb(db = {}) {
     users: Array.isArray(db.users) ? db.users.map(normalizeUserRecord) : [],
     transactions: Array.isArray(db.transactions) ? db.transactions : [],
     cicoRequests: Array.isArray(db.cicoRequests) ? db.cicoRequests : [],
+    exchangeAds: Array.isArray(db.exchangeAds) ? db.exchangeAds : [],
+    exchangeOrders: Array.isArray(db.exchangeOrders) ? db.exchangeOrders : [],
     merchantApplications: Array.isArray(db.merchantApplications) ? db.merchantApplications : [],
     disputes: Array.isArray(db.disputes) ? db.disputes : [],
     ledgerEntries: Array.isArray(db.ledgerEntries) ? db.ledgerEntries : [],
@@ -134,6 +138,8 @@ async function readDb(session = null) {
   let users;
   let transactions;
   let cicoRequests;
+  let exchangeAds;
+  let exchangeOrders;
   let merchantApplications;
   let disputes;
   let ledgerEntries;
@@ -143,16 +149,20 @@ async function readDb(session = null) {
     users = await UserModel.find({}, null, queryOptions).lean();
     transactions = await TransactionModel.find({}, transactionListProjection, queryOptions).lean();
     cicoRequests = await CicoRequestModel.find({}, null, queryOptions).lean();
+    exchangeAds = await ExchangeAdModel.find({}, null, queryOptions).lean();
+    exchangeOrders = await ExchangeOrderModel.find({}, null, queryOptions).lean();
     merchantApplications = await MerchantApplicationModel.find({}, null, queryOptions).lean();
     disputes = await DisputeModel.find({}, null, queryOptions).lean();
     ledgerEntries = await LedgerEntryModel.find({}, null, queryOptions).lean();
     settings = await SettingModel.find({}, null, queryOptions).lean();
     platformAccount = await PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).lean();
   } else {
-    [users, transactions, cicoRequests, merchantApplications, disputes, ledgerEntries, settings, platformAccount] = await Promise.all([
+    [users, transactions, cicoRequests, exchangeAds, exchangeOrders, merchantApplications, disputes, ledgerEntries, settings, platformAccount] = await Promise.all([
       UserModel.find({}, null, queryOptions).lean(),
       TransactionModel.find({}, transactionListProjection, queryOptions).lean(),
       CicoRequestModel.find({}, null, queryOptions).lean(),
+      ExchangeAdModel.find({}, null, queryOptions).lean(),
+      ExchangeOrderModel.find({}, null, queryOptions).lean(),
       MerchantApplicationModel.find({}, null, queryOptions).lean(),
       DisputeModel.find({}, null, queryOptions).lean(),
       LedgerEntryModel.find({}, null, queryOptions).lean(),
@@ -165,6 +175,8 @@ async function readDb(session = null) {
     users,
     transactions,
     cicoRequests,
+    exchangeAds,
+    exchangeOrders,
     merchantApplications,
     disputes,
     ledgerEntries,
@@ -202,6 +214,8 @@ async function writeDb(db, session = null) {
   await syncCollection(UserModel, db.users, "id", session, keepExisting);
   await syncCollection(TransactionModel, db.transactions, "id", session, keepExisting);
   await syncCollection(CicoRequestModel, db.cicoRequests, "id", session, keepExisting);
+  await syncCollection(ExchangeAdModel, db.exchangeAds, "id", session, keepExisting);
+  await syncCollection(ExchangeOrderModel, db.exchangeOrders, "id", session, keepExisting);
   await syncCollection(MerchantApplicationModel, db.merchantApplications, "id", session, keepExisting);
   await syncCollection(DisputeModel, db.disputes, "id", session, keepExisting);
   await syncCollection(LedgerEntryModel, db.ledgerEntries, "id", session, { removeMissing: false });
@@ -328,6 +342,41 @@ function planForAmount(amount) {
     .find((plan) => amount >= plan.minAmount) || null;
 }
 
+function validateExchangeRate(type, rate) {
+  const numericRate = Number(rate);
+  if (!Number.isFinite(numericRate)) return "Taux invalide.";
+  if (type === "sell" && (numericRate < 550 || numericRate > 600)) {
+    return "Le prix de vente doit être compris entre 550 et 600 FCFA.";
+  }
+  if (type === "buy" && (numericRate < 630 || numericRate > 650)) {
+    return "Le prix d'achat doit être compris entre 630 et 650 FCFA.";
+  }
+  return "";
+}
+
+function normalizePaymentMethods(value) {
+  const methods = Array.isArray(value) ? value : String(value || "").split(",");
+  return methods
+    .map((method) => String(method || "").trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function publicExchangeAd(ad, merchant) {
+  return {
+    ...ad,
+    merchantName: merchant?.merchantProfile?.businessName || merchant?.fullName || "Merchant AFRIX",
+    merchantEmail: merchant?.email || "",
+    country: ad.country || merchant?.merchantProfile?.country || "",
+    city: ad.city || merchant?.merchantProfile?.city || "",
+    whatsapp: ad.whatsapp || merchant?.merchantProfile?.phone || "",
+    methods: normalizePaymentMethods(ad.methods),
+    rate: money(ad.rate),
+    minAmount: money(ad.minAmount),
+    maxAmount: money(ad.maxAmount)
+  };
+}
+
 function rankFromActivity(activity) {
   const activeLevels = Math.max(0, Math.min(20, Math.floor(Number(activity || 0) / 100)));
   if (activeLevels >= 20) return "Niveau 20";
@@ -354,6 +403,12 @@ function composeUser(db, user) {
   const ownCicoRequests = user.role === "admin"
     ? db.cicoRequests
     : db.cicoRequests.filter((request) => request.userId === user.id || request.merchantId === user.id);
+  const ownExchangeOrders = user.role === "admin"
+    ? db.exchangeOrders
+    : db.exchangeOrders.filter((order) => order.userId === user.id || order.merchantId === user.id || order.customerEmail === user.email);
+  const ownExchangeAds = db.exchangeAds
+    .filter((ad) => user.role === "admin" || ad.merchantId === user.id)
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 
   return {
     ...sanitizeUser(user),
@@ -388,6 +443,8 @@ function composeUser(db, user) {
     },
     merchantApplicationStatus: user.merchantProfile?.status || "Aucun profil",
     cicoRequests: ownCicoRequests.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    exchangeAds: ownExchangeAds.map((ad) => publicExchangeAd(ad, db.users.find((candidate) => candidate.id === ad.merchantId))),
+    exchangeOrders: ownExchangeOrders.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
     merchantApplications: user.role === "admin" ? db.merchantApplications : db.merchantApplications.filter((item) => item.userId === user.id),
     disputes: user.role === "admin" ? db.disputes : db.disputes.filter((item) => item.userId === user.id),
     platformControls: user.role === "admin" ? db.platformControls : {}
@@ -1137,6 +1194,208 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
 
   if (result.error) return res.status(400).json({ message: result.error });
   res.status(201).json(result);
+});
+
+app.get("/api/exchange/ads", authenticate, requirePlatformAccess(), async (req, res) => {
+  const type = String(req.query.type || "").trim();
+  const ads = req.db.exchangeAds
+    .filter((ad) => ad.status === "active")
+    .filter((ad) => !type || ad.type === type)
+    .map((ad) => publicExchangeAd(ad, req.db.users.find((user) => user.id === ad.merchantId)))
+    .filter((ad) => ad.whatsapp && ad.methods.length)
+    .sort((a, b) => type === "buy" ? b.rate - a.rate : a.rate - b.rate);
+  res.json({ ads });
+});
+
+app.post("/api/exchange/ads", authenticate, requirePlatformAccess(), requireMerchant, validate(z.object({
+  type: z.enum(["sell", "buy"]),
+  rate: z.coerce.number().positive(),
+  minAmount: z.coerce.number().positive(),
+  maxAmount: z.coerce.number().positive(),
+  country: z.string().min(2),
+  city: z.string().min(2),
+  whatsapp: z.string().min(8),
+  methods: z.union([z.string().min(2), z.array(z.string().min(2))]),
+  paymentInstructions: z.string().min(4),
+  status: z.enum(["active", "paused"]).optional()
+})), async (req, res) => {
+  const rateError = validateExchangeRate(req.body.type, req.body.rate);
+  if (rateError) return res.status(400).json({ message: rateError });
+  if (money(req.body.maxAmount) < money(req.body.minAmount)) {
+    return res.status(400).json({ message: "Le montant maximum doit être supérieur au montant minimum." });
+  }
+
+  const ad = await updateDb(async (db) => {
+    const item = {
+      id: nanoid(),
+      merchantId: req.user.id,
+      type: req.body.type,
+      status: req.body.status || "active",
+      rate: money(req.body.rate),
+      minAmount: money(req.body.minAmount),
+      maxAmount: money(req.body.maxAmount),
+      country: req.body.country.trim(),
+      city: req.body.city.trim(),
+      whatsapp: req.body.whatsapp.trim(),
+      methods: normalizePaymentMethods(req.body.methods),
+      paymentInstructions: req.body.paymentInstructions.trim(),
+      createdAt: nowIso()
+    };
+    db.exchangeAds.push(item);
+    return item;
+  });
+
+  res.status(201).json({ ad });
+});
+
+app.post("/api/exchange/orders", authenticate, requirePlatformAccess(), validate(z.object({
+  adId: z.string().min(2),
+  amount: z.coerce.number().positive(),
+  paymentMethod: z.string().min(2),
+  customerEmail: z.string().email(),
+  txReference: z.string().optional(),
+  note: z.string().optional()
+})), async (req, res) => {
+  const result = await updateDb(async (db) => {
+    const ad = db.exchangeAds.find((item) => item.id === req.body.adId && item.status === "active");
+    if (!ad) return { error: "Annonce introuvable ou inactive." };
+    const merchant = db.users.find((user) => user.id === ad.merchantId);
+    if (!merchant || merchant.merchantProfile?.status !== "approved") return { error: "Merchant indisponible." };
+
+    const amount = money(req.body.amount);
+    if (amount < money(ad.minAmount) || amount > money(ad.maxAmount)) {
+      return { error: `Le montant doit être compris entre ${formatAmount(ad.minAmount)} et ${formatAmount(ad.maxAmount)}.` };
+    }
+
+    const methods = normalizePaymentMethods(ad.methods).map((method) => method.toLowerCase());
+    if (!methods.includes(req.body.paymentMethod.trim().toLowerCase())) {
+      return { error: "Ce moyen de paiement n'est pas disponible sur cette annonce." };
+    }
+
+    const customerEmail = req.body.customerEmail.trim().toLowerCase();
+    const customer = db.users.find((user) => user.email === customerEmail);
+    if (!customer) return { error: "L'adresse email client doit correspondre à un compte AFRIX." };
+
+    const localAmount = money(amount * Number(ad.rate || 0));
+    const reference = makeReference(ad.type === "sell" ? "BUY" : "SELL", amount);
+
+    if (ad.type === "buy") {
+      if (customer.id !== req.user.id && req.user.role !== "admin") {
+        return { error: "Vous ne pouvez vendre que les USDT de votre propre compte." };
+      }
+      reserveUserFunds(db, customer, amount, `Vente USDT Exchange ${reference}`, {
+        source: "exchange_sell_request",
+        referenceId: reference,
+        extra: { adId: ad.id, merchantId: merchant.id }
+      });
+    }
+
+    const order = {
+      id: nanoid(),
+      reference,
+      adId: ad.id,
+      merchantId: merchant.id,
+      userId: customer.id,
+      customerEmail,
+      type: ad.type,
+      amount,
+      rate: money(ad.rate),
+      localAmount,
+      paymentMethod: req.body.paymentMethod.trim(),
+      txReference: String(req.body.txReference || "").trim(),
+      note: String(req.body.note || "").trim().slice(0, 240),
+      status: "pending",
+      merchantWhatsapp: ad.whatsapp,
+      merchantName: merchant.merchantProfile?.businessName || merchant.fullName || merchant.email,
+      paymentInstructions: ad.paymentInstructions,
+      createdAt: nowIso()
+    };
+    db.exchangeOrders.push(order);
+    addTransaction(db, {
+      userId: customer.id,
+      type: "Exchange",
+      description: ad.type === "sell" ? `Achat USDT via ${order.merchantName}` : `Vente USDT via ${order.merchantName}`,
+      amount,
+      displayAmount: ad.type === "sell" ? formatAmount(amount, "+") : formatAmount(amount, "-"),
+      status: "Pending",
+      metadata: { reference, localAmount, rate: ad.rate, paymentMethod: order.paymentMethod }
+    });
+    return { order };
+  });
+
+  if (result.error) return res.status(400).json({ message: result.error });
+  res.status(201).json({ order: result.order });
+});
+
+app.get("/api/exchange/orders/:reference", authenticate, requirePlatformAccess(), requireMerchant, (req, res) => {
+  const reference = String(req.params.reference || "").trim().toUpperCase();
+  const order = req.db.exchangeOrders.find((item) => item.reference === reference && (item.merchantId === req.user.id || req.user.role === "admin"));
+  if (!order) return res.status(404).json({ message: "Demande Exchange introuvable." });
+  res.json({ order });
+});
+
+app.post("/api/exchange/orders/:reference/confirm", authenticate, requirePlatformAccess(), requireMerchant, async (req, res) => {
+  const reference = String(req.params.reference || "").trim().toUpperCase();
+  const result = await updateDb(async (db) => {
+    const order = db.exchangeOrders.find((item) => item.reference === reference && (item.merchantId === req.user.id || req.user.role === "admin"));
+    if (!order) return { error: "Demande Exchange introuvable." };
+    if (order.status !== "pending") return { error: "Cette demande a déjà été traitée." };
+    const merchant = db.users.find((user) => user.id === order.merchantId);
+    const customer = db.users.find((user) => user.id === order.userId);
+    if (!merchant || !customer) return { error: "Compte merchant ou client introuvable." };
+
+    if (order.type === "sell") {
+      debitMerchantAvailable(db, merchant, order.amount, `Vente USDT Exchange ${order.reference}`, {
+        source: "exchange_merchant_sell",
+        referenceId: order.reference,
+        extra: { customerId: customer.id }
+      });
+      creditUser(db, customer, order.amount, `Achat USDT Exchange ${order.reference}`, {
+        source: "exchange_customer_buy",
+        referenceId: order.reference,
+        extra: { merchantId: merchant.id }
+      });
+    } else {
+      consumeReservedFunds(db, customer, order.amount, `Vente USDT Exchange ${order.reference}`, {
+        source: "exchange_customer_sell",
+        referenceId: order.reference,
+        extra: { merchantId: merchant.id }
+      });
+      creditMerchantAvailable(db, merchant, order.amount, `Achat USDT Exchange ${order.reference}`, {
+        source: "exchange_merchant_buy",
+        referenceId: order.reference,
+        extra: { customerId: customer.id }
+      });
+    }
+
+    order.status = "completed";
+    order.completedAt = nowIso();
+    order.completedBy = req.user.id;
+    addTransaction(db, {
+      userId: customer.id,
+      type: "Exchange",
+      description: order.type === "sell" ? `Achat USDT confirmé ${order.reference}` : `Vente USDT confirmée ${order.reference}`,
+      amount: order.amount,
+      displayAmount: order.type === "sell" ? formatAmount(order.amount, "+") : formatAmount(order.amount, "-"),
+      status: "Completed",
+      metadata: { reference: order.reference, localAmount: order.localAmount, rate: order.rate }
+    });
+    return { order, customer };
+  });
+
+  if (result.error) return res.status(400).json({ message: result.error });
+  res.json({ order: result.order });
+  sendBrevoMail({
+    to: result.customer.email,
+    subject: "AFRIX - Demande Exchange validée",
+    title: "Votre opération Exchange est validée",
+    intro: "Le merchant a confirmé votre opération.",
+    rows: [
+      { label: "Référence", value: result.order.reference },
+      { label: "Montant", value: formatAmount(result.order.amount) },
+      { label: "Montant local", value: `${Math.round(result.order.localAmount).toLocaleString("fr-FR")} FCFA` }
+    ]
+  }).catch((error) => logger.error({ err: error }, "Exchange confirmation email failed"));
 });
 
 app.post("/api/cico-requests", authenticate, requirePlatformAccess({ cico: true }), validate(z.object({

@@ -11,35 +11,35 @@
   <main class="app">
     <header class="topbar" data-topbar></header>
     <section class="hero-card merchant-hero">
-      <span class="pill">Agent agree AFRIX Money - Point CICO</span>
-      <h1>Devenir point de proximite Cash In / Cash Out.</h1>
-      <p>AFRIX Money met en place un reseau d'agents agrees charges d'accompagner les utilisateurs dans leurs operations financieres digitales.</p>
-      <div class="principle-strip" aria-label="Role agent agree AFRIX Money">
-        <span>Cash In et Cash Out</span>
+      <span class="pill">Merchant AFRIX Exchange</span>
+      <h1>Publier des annonces d'achat et de vente USDT.</h1>
+      <p>Les merchants permettent aux utilisateurs d'acheter ou de vendre des USDT avec les moyens de paiement locaux, selon une procédure proche du P2P Binance.</p>
+      <div class="principle-strip" aria-label="Rôle merchant AFRIX Exchange">
+        <span>Annonces d'achat et de vente</span>
         <span>Assistance utilisateurs</span>
-        <span>Liquidite locale</span>
-        <span>Service de proximite</span>
+        <span>Liquidité locale</span>
+        <span>Validation par référence</span>
       </div>
     </section>
 
     <section class="stats">
       <article><span>Plans actifs requis</span><strong>500 USDT</strong><small>activité personnelle minimum</small></article>
       <article><span>Fonds minimum</span><strong>1 000 USDT</strong><small>capital de fonctionnement</small></article>
-      <article><span>Cash In agent</span><strong>0,5%</strong><small>commission approvisionnement</small></article>
-      <article><span>Cash Out agent</span><strong>3%</strong><small>commission retrait</small></article>
+      <article><span>Vente USDT</span><strong>550-600</strong><small>FCFA par USDT</small></article>
+      <article><span>Achat USDT</span><strong>630-650</strong><small>FCFA par USDT</small></article>
       <article><span>Statut</span><strong data-merchant-application-status>Aucun profil</strong><small>profil merchant visible</small></article>
     </section>
 
     <section class="grid two merchant-dashboard">
       <article class="panel">
-        <div class="panel-head"><h1>Tableau de bord merchant</h1><span class="badge">CICO</span></div>
+        <div class="panel-head"><h1>Tableau de bord merchant</h1><span class="badge">Exchange</span></div>
         <div class="info-grid">
           <div><span>Wallet merchant</span><strong data-merchant-wallet-available>0.00 USDT</strong></div>
           <div><span>Opérations en attente</span><strong data-merchant-wallet-pending>0.00 USDT</strong></div>
           <div><span>Bonus cumulés</span><strong data-merchant-wallet-bonus>0.00 USDT</strong></div>
           <div><span>Compte principal</span><strong data-merchant-main-balance>0.00 USDT</strong></div>
         </div>
-        <p class="muted">Lors d'un dépôt client, le wallet merchant diminue. Lors d'un retrait client, il augmente avec le bonus prévu, puis le merchant peut transférer ce solde vers son compte principal.</p>
+        <p class="muted">Lorsqu'un client achète des USDT, le wallet merchant diminue après validation. Lorsqu'un client vend des USDT, le wallet merchant augmente après confirmation du paiement local.</p>
         <form data-merchant-transfer-form>
           <label>Montant à transférer vers le compte principal<input name="amount" type="number" min="1" step="0.01" value="100"></label>
           <button class="btn secondary full" type="submit">Transférer vers mon compte principal</button>
@@ -47,21 +47,48 @@
       </article>
 
       <article class="panel">
-        <div class="panel-head"><h1>Valider une référence client</h1><span class="badge">WhatsApp</span></div>
-        <form data-merchant-code-form>
+        <div class="panel-head"><h1>Valider une référence Exchange</h1><span class="badge">WhatsApp</span></div>
+        <form data-exchange-code-form>
           <label>Code de référence<input name="reference" required placeholder="AFX-WD-260614-200"></label>
-          <button class="btn primary full" type="submit">Rechercher le code</button>
+          <button class="btn primary full" type="submit">Rechercher la référence</button>
         </form>
-        <div class="merchant-code-result" data-merchant-code-result></div>
+        <div class="merchant-code-result" data-exchange-code-result></div>
       </article>
     </section>
 
     <section class="panel">
-      <div class="panel-head"><h1>Références CICO reçues</h1><span class="badge">À traiter</span></div>
-      <div class="list" data-merchant-request-list></div>
+      <div class="panel-head"><h1>Demandes Exchange reçues</h1><span class="badge">À traiter</span></div>
+      <div class="list" data-merchant-exchange-orders></div>
     </section>
 
-    <section class="merchant-access-grid" aria-label="Conditions d'acces agent agree">
+    <section class="grid two">
+      <form class="panel" data-exchange-ad-form>
+        <h1>Publier une annonce Exchange</h1>
+        <label>Type d'annonce
+          <select name="type" required>
+            <option value="sell">Je vends des USDT aux clients</option>
+            <option value="buy">J'achète des USDT aux clients</option>
+          </select>
+        </label>
+        <label>Taux FCFA par USDT<input name="rate" type="number" min="550" max="650" step="1" value="600" required></label>
+        <label>Montant minimum USDT<input name="minAmount" type="number" min="1" step="0.01" value="10" required></label>
+        <label>Montant maximum USDT<input name="maxAmount" type="number" min="1" step="0.01" value="500" required></label>
+        <label>Pays<input name="country" required placeholder="Congo"></label>
+        <label>Ville / zone<input name="city" required placeholder="Brazzaville, Poto-Poto"></label>
+        <label>WhatsApp public<input name="whatsapp" required placeholder="+242..." autocomplete="tel"></label>
+        <label>Moyens de paiement<input name="methods" required value="Mobile Money, Airtel, Moov, Orange Money, Carte bancaire"></label>
+        <label>Références de paiement à afficher après demande<input name="paymentInstructions" required placeholder="Nom, numéro, banque ou consignes de paiement"></label>
+        <button class="btn primary full" type="submit">Publier l'annonce</button>
+        <p class="muted">Vente USDT: 550 à 600 FCFA. Achat USDT: 630 à 650 FCFA. Ces limites sont aussi contrôlées par le backend.</p>
+      </form>
+
+      <article class="panel">
+        <div class="panel-head"><h1>Mes annonces Exchange</h1><span class="badge">Actives</span></div>
+        <div class="list" data-merchant-exchange-ads></div>
+      </article>
+    </section>
+
+    <section class="merchant-access-grid" aria-label="Conditions d'accès merchant agréé">
       <article class="panel merchant-condition">
         <span class="plan-tier">1</span>
         <h2>Compte AFRIX actif</h2>
@@ -71,60 +98,60 @@
       <article class="panel merchant-condition featured">
         <span class="plan-tier">2</span>
         <h2>Fonds de fonctionnement</h2>
-        <p>L'agent doit assurer la disponibilite des services avec un capital operationnel minimum.</p>
+        <p>Le merchant doit assurer la disponibilité des services avec un capital opérationnel minimum.</p>
         <div class="partner-requirements">
           <span><small>Solde digital</small><strong>500 USDT</strong></span>
-          <span><small>Liquidite locale</small><strong>500 USDT</strong></span>
+          <span><small>Liquidité locale</small><strong>500 USDT</strong></span>
         </div>
       </article>
       <article class="panel merchant-condition">
         <span class="plan-tier">3</span>
-        <h2>Developpement communautaire</h2>
-        <p>L'agent doit disposer d'une base communautaire active.</p>
+        <h2>Développement communautaire</h2>
+        <p>Le merchant doit disposer d'une base communautaire active.</p>
         <strong>Minimum 10 membres actifs</strong>
       </article>
       <article class="panel merchant-condition">
         <span class="plan-tier">4</span>
-        <h2>Presence communautaire</h2>
-        <p>Un canal local permet d'informer, accompagner et relayer les mises a jour officielles.</p>
+        <h2>Présence communautaire</h2>
+        <p>Un canal local permet d'informer, accompagner et relayer les mises à jour officielles.</p>
         <strong>Groupe WhatsApp ou canal Telegram</strong>
       </article>
       <article class="panel merchant-condition featured">
         <span class="plan-tier">5</span>
-        <h2>Competences techniques</h2>
-        <p>Bonne comprehension des outils numeriques lies aux operations financieres digitales.</p>
+        <h2>Compétences techniques</h2>
+        <p>Bonne compréhension des outils numériques liés aux opérations financières digitales.</p>
         <div class="principle-list">
           <span>Portefeuilles crypto</span>
           <span>Stablecoins</span>
-          <span>Applications financieres digitales</span>
-          <span>Plateformes d'echange crypto reconnues</span>
-          <span>Securite des transactions numeriques</span>
+          <span>Applications financières digitales</span>
+          <span>Plateformes d'échange crypto reconnues</span>
+          <span>Sécurité des transactions numériques</span>
         </div>
       </article>
       <article class="panel merchant-condition">
         <span class="plan-tier">6</span>
-        <h2>Disponibilite operationnelle</h2>
-        <p>L'agent doit etre disponible pendant les heures d'activite recommandees.</p>
+        <h2>Disponibilité opérationnelle</h2>
+        <p>Le merchant doit être disponible pendant les heures d'activité recommandées.</p>
         <strong>09H00 - 18H00</strong>
       </article>
     </section>
 
     <section class="grid two merchant-benefits">
       <article class="panel">
-        <span class="pill">Avantages agent AFRIX Money</span>
-        <h1>Developper un point CICO local.</h1>
+        <span class="pill">Avantages merchant AFRIX Exchange</span>
+        <h1>Développer une activité Exchange locale.</h1>
         <div class="principle-list">
           <span>Commissions sur transactions</span>
           <span>Bonus de performance</span>
-          <span>Developpement d'un reseau local</span>
-          <span>Opportunite de croissance dans la finance digitale</span>
-          <span>Acces a un ecosysteme Web3 moderne</span>
+          <span>Développement d'un réseau local</span>
+          <span>Opportunité de croissance dans la finance digitale</span>
+          <span>Accès à un écosystème Web3 moderne</span>
         </div>
       </article>
       <article class="panel ecosystem-note">
         <span class="pill">AFRIX Money</span>
         <h1>Paiement digital • Blockchain • Finance moderne</h1>
-        <p>Un agent agree AFRIX Money represente un point de proximite pour faciliter les operations digitales et connecter les utilisateurs a l'economie locale.</p>
+        <p>Un merchant agréé AFRIX Exchange facilite les opérations digitales et connecte les utilisateurs à l'économie locale.</p>
       </article>
     </section>
 
@@ -143,7 +170,7 @@
 
       <form class="panel" data-dispute-form>
         <h1>Signaler un litige</h1>
-        <label>Type<select name="type"><option>CICO</option><option>P2P</option><option>Dépôt</option><option>Retrait</option></select></label>
+        <label>Type<select name="type"><option>Exchange</option><option>P2P</option><option>Dépôt</option><option>Retrait</option></select></label>
         <label>Référence opération<input name="reference" required placeholder="AFX-..."></label>
         <label>Motif<input name="reason" required placeholder="Décrivez le problème"></label>
         <button class="btn secondary full" type="submit">Envoyer au support</button>
@@ -151,10 +178,10 @@
     </section>
 
     <section class="panel">
-      <div class="panel-head"><h1>Merchants approuvés</h1><span class="badge">CICO</span></div>
+      <div class="panel-head"><h1>Merchants approuvés</h1><span class="badge">Exchange</span></div>
       <div class="list" data-merchants-list></div>
     </section>
   </main>
-  <script src="../app.js?v=20260616-3"></script>
+  <script src="../app.js?v=20260616-5"></script>
 </body>
 </html>

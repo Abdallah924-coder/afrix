@@ -862,6 +862,29 @@ body.public-page {
 }
 .auth-card p { margin-bottom: 0; color: var(--muted); }
 .auth-card a { color: var(--cyan); font-weight: 800; }
+.password-meter {
+  --password-progress: 0%;
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+.password-meter span {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #071210;
+}
+.password-meter i {
+  display: block;
+  width: var(--password-progress);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--warning);
+  transition: width .18s ease, background .18s ease;
+}
+.password-meter.valid i { background: var(--green); }
+.password-meter small { color: var(--muted); }
 
 .sidebar {
   position: fixed;
@@ -947,6 +970,28 @@ body[data-page="wallet"] select {
 .queue-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center !important; }
 .admin-inline-input { width: 120px; min-height: 42px; }
 .merchant-card { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center !important; }
+.exchange-list { display: grid; gap: 14px; margin-top: 16px; }
+.exchange-ad {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+}
+.exchange-ad h2 { margin-bottom: 4px; }
+.exchange-rate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(7, 18, 16, .72);
+}
+.exchange-rate span { color: var(--muted); font-size: 12px; }
+.exchange-rate strong { color: var(--gold); font-size: 24px; }
 .positive { color: var(--green); }
 .negative { color: var(--red); }
 .progress { height: 12px; overflow: hidden; border-radius: 999px; background: #071210; }

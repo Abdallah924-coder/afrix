@@ -7,6 +7,7 @@ const pageTitles = {
   dashboard: "Tableau de bord",
   wallet: "Wallet USDT",
   "afrix-money": "AFRIX Money",
+  exchange: "Exchange",
   merchant: "Merchant",
   plans: "Plans",
   network: "Reseau",
@@ -21,6 +22,7 @@ const navItems = [
   ["dashboard", "Dashboard", "/dashboard"],
   ["wallet", "Wallet USDT", "/wallet"],
   ["afrix-money", "AFRIX Money", "/afrix-money"],
+  ["exchange", "Exchange", "/exchange"],
   ["merchant", "Merchant", "/merchant"],
   ["plans", "Plans", "/plans"],
   ["network", "Reseau", "/network"],
@@ -61,6 +63,8 @@ const emptyUser = {
     mainBalance: 0
   },
   cicoRequests: [],
+  exchangeAds: [],
+  exchangeOrders: [],
   merchantApplications: [],
   disputes: [],
   platformControls: {},
@@ -69,6 +73,11 @@ const emptyUser = {
 
 const formatUsdt = (value) => `${Number(value || 0).toFixed(2)} USDT`;
 const formatXaf = (value) => `${Math.round(Number(value || 0)).toLocaleString("fr-FR")} XAF`;
+
+function normalizePaymentMethods(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  return String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -164,6 +173,8 @@ function normalizeUser(user) {
     merchants: Array.isArray(user?.merchants) ? user.merchants : [],
     merchantWallet: { ...emptyUser.merchantWallet, ...(user?.merchantWallet || {}) },
     cicoRequests: Array.isArray(user?.cicoRequests) ? user.cicoRequests : [],
+    exchangeAds: Array.isArray(user?.exchangeAds) ? user.exchangeAds : [],
+    exchangeOrders: Array.isArray(user?.exchangeOrders) ? user.exchangeOrders : [],
     merchantApplications: Array.isArray(user?.merchantApplications) ? user.merchantApplications : [],
     disputes: Array.isArray(user?.disputes) ? user.disputes : [],
     platformControls: user?.platformControls || {}
@@ -457,6 +468,130 @@ function renderMerchantCards(container, rows) {
   container.innerHTML = rows.length ? rows.map((merchant) => merchantCard(merchant)).join("") : `<p class="muted">Aucun merchant disponible pour cette recherche.</p>`;
 }
 
+function exchangeTypeLabel(type) {
+  return type === "sell" ? "Acheter USDT" : "Vendre USDT";
+}
+
+function exchangeActionLabel(type) {
+  return type === "sell" ? "Demander l'achat" : "Demander la vente";
+}
+
+function renderExchangeAd(ad, user = emptyUser) {
+  const methods = Array.isArray(ad.methods) ? ad.methods : [];
+  return `
+    <article class="exchange-ad">
+      <div>
+        <span class="pill">${exchangeTypeLabel(ad.type)}</span>
+        <h2>${escapeHtml(ad.merchantName || "Merchant AFRIX")}</h2>
+        <p class="muted">${escapeHtml(ad.city || "")}${ad.city && ad.country ? ", " : ""}${escapeHtml(ad.country || "")}</p>
+      </div>
+      <div class="exchange-rate"><span>Taux</span><strong>${Math.round(Number(ad.rate || 0)).toLocaleString("fr-FR")} FCFA</strong></div>
+      <div class="principle-list">
+        ${methods.map((method) => `<span>${escapeHtml(method)}</span>`).join("")}
+      </div>
+      <small>Limites: ${formatUsdt(ad.minAmount)} à ${formatUsdt(ad.maxAmount)}</small>
+      <form data-exchange-order-form data-ad-id="${escapeHtml(ad.id)}" data-ad-type="${escapeHtml(ad.type)}" data-rate="${Number(ad.rate || 0)}">
+        <label>Montant USDT<input name="amount" type="number" min="${Number(ad.minAmount || 1)}" max="${Number(ad.maxAmount || 0)}" step="0.01" value="${Number(ad.minAmount || 1)}" required data-exchange-amount></label>
+        <label>Moyen de paiement
+          <select name="paymentMethod" required>
+            ${methods.map((method) => `<option>${escapeHtml(method)}</option>`).join("")}
+          </select>
+        </label>
+        <label>Email du compte AFRIX à créditer ou débiter<input name="customerEmail" type="email" value="${escapeHtml(user.email || "")}" required></label>
+        <label>Référence du paiement local, si déjà payée<input name="txReference" placeholder="Mobile Money, banque, carte..."></label>
+        <p class="muted" data-exchange-local>Total local: ${formatXaf(Number(ad.minAmount || 0) * Number(ad.rate || 0))}</p>
+        <button class="btn primary full" type="submit">${exchangeActionLabel(ad.type)}</button>
+      </form>
+    </article>
+  `;
+}
+
+function renderExchangeAds(container, ads, user = emptyUser) {
+  if (!container) return;
+  container.innerHTML = ads.length ? ads.map((ad) => renderExchangeAd(ad, user)).join("") : `<p class="muted">Aucune annonce disponible pour ce marché.</p>`;
+}
+
+function renderExchange(user) {
+  const buyList = document.querySelector("[data-exchange-buy-list]");
+  const sellList = document.querySelector("[data-exchange-sell-list]");
+  const orderOutput = document.querySelector("[data-exchange-order-output]");
+  if (!buyList && !sellList) return;
+
+  Promise.all([
+    apiRequest("/exchange/ads?type=sell"),
+    apiRequest("/exchange/ads?type=buy")
+  ]).then(([buyData, sellData]) => {
+    renderExchangeAds(buyList, Array.isArray(buyData.ads) ? buyData.ads : [], user);
+    renderExchangeAds(sellList, Array.isArray(sellData.ads) ? sellData.ads : [], user);
+  }).catch((error) => {
+    renderExchangeAds(buyList, []);
+    renderExchangeAds(sellList, []);
+    showToast(error.message, "error");
+  });
+
+  document.querySelector("[data-exchange-orders-list]")?.replaceChildren();
+  const ordersList = document.querySelector("[data-exchange-orders-list]");
+  if (ordersList) {
+    ordersList.innerHTML = user.exchangeOrders.length ? user.exchangeOrders.map((order) => `
+      <div>
+        <span>${escapeHtml(order.reference)}<small>${exchangeTypeLabel(order.type)} - ${escapeHtml(order.paymentMethod)} - ${escapeHtml(order.status)}</small></span>
+        <strong>${formatUsdt(order.amount)}</strong>
+      </div>
+    `).join("") : `<p class="muted">Aucune demande Exchange pour le moment.</p>`;
+  }
+
+  if (!document.body.dataset.exchangeBound) {
+    document.body.dataset.exchangeBound = "true";
+    document.addEventListener("input", (event) => {
+      const amountInput = event.target.closest("[data-exchange-amount]");
+      if (!amountInput) return;
+      const form = amountInput.closest("[data-exchange-order-form]");
+      const local = form?.querySelector("[data-exchange-local]");
+      if (local) local.textContent = `Total local: ${formatXaf(Number(amountInput.value || 0) * Number(form.dataset.rate || 0))}`;
+    });
+
+    document.addEventListener("submit", async (event) => {
+      const form = event.target.closest("[data-exchange-order-form]");
+      if (!form) return;
+      event.preventDefault();
+      const submitButton = form.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, "Création...");
+      try {
+        const response = await apiJson("/exchange/orders", {
+          ...formToObject(form),
+          adId: form.dataset.adId
+        });
+        const order = response.order;
+        const currentOutput = document.querySelector("[data-exchange-order-output]");
+        if (currentOutput && order) {
+          const whatsappText = encodeURIComponent(`Bonjour ${order.merchantName}, voici ma référence AFRIX Exchange: ${order.reference}. Montant: ${formatUsdt(order.amount)}. Paiement: ${order.paymentMethod}.`);
+          const whatsappLink = `https://wa.me/${String(order.merchantWhatsapp || "").replace(/[^\d]/g, "")}?text=${whatsappText}`;
+          currentOutput.hidden = false;
+          currentOutput.innerHTML = `
+            <span class="pill">Référence générée</span>
+            <h1>${escapeHtml(order.reference)}</h1>
+            <p class="muted">${exchangeTypeLabel(order.type)}: ${formatUsdt(order.amount)} pour ${formatXaf(order.localAmount)} au taux de ${Math.round(order.rate).toLocaleString("fr-FR")} FCFA.</p>
+            <div class="wallet-address">
+              <div>
+                <span>Références merchant</span>
+                <strong>${escapeHtml(order.paymentInstructions)}</strong>
+                <small>Après paiement, contactez l'annonceur sur WhatsApp avec votre référence.</small>
+              </div>
+              <a class="btn secondary" href="${whatsappLink}" target="_blank" rel="noopener">WhatsApp</a>
+            </div>
+          `;
+        }
+        form.reset();
+        showToast("Demande Exchange créée.");
+      } catch (error) {
+        showToast(error.message, "error");
+      } finally {
+        restoreButton();
+      }
+    });
+  }
+}
+
 function renderMerchants(user) {
   const merchantList = document.querySelector("[data-merchants-list]");
   const merchantResults = document.querySelector("[data-merchant-results]");
@@ -467,6 +602,8 @@ function renderMerchants(user) {
   const merchantWalletBonus = document.querySelector("[data-merchant-wallet-bonus]");
   const merchantMainBalance = document.querySelector("[data-merchant-main-balance]");
   const requestList = document.querySelector("[data-merchant-request-list]");
+  const exchangeAdsList = document.querySelector("[data-merchant-exchange-ads]");
+  const exchangeOrdersList = document.querySelector("[data-merchant-exchange-orders]");
 
   if (applicationStatus) applicationStatus.textContent = user.merchantApplicationStatus || "Aucun profil";
 
@@ -499,6 +636,24 @@ function renderMerchants(user) {
         <strong>${formatUsdt(item.amount)}</strong>
       </div>
     `).join("") : `<p class="muted">Aucune reference CICO recue.</p>`;
+  }
+
+  if (exchangeAdsList) {
+    exchangeAdsList.innerHTML = user.exchangeAds.length ? user.exchangeAds.map((ad) => `
+      <div>
+        <span>${exchangeTypeLabel(ad.type)}<small>${escapeHtml(ad.city)}, ${escapeHtml(ad.country)} - ${normalizePaymentMethods(ad.methods).join(", ")} - ${escapeHtml(ad.status)}</small></span>
+        <strong>${Math.round(Number(ad.rate || 0)).toLocaleString("fr-FR")} FCFA</strong>
+      </div>
+    `).join("") : `<p class="muted">Aucune annonce Exchange publiée.</p>`;
+  }
+
+  if (exchangeOrdersList) {
+    exchangeOrdersList.innerHTML = user.exchangeOrders.length ? user.exchangeOrders.map((order) => `
+      <div>
+        <span>${escapeHtml(order.reference)}<small>${exchangeTypeLabel(order.type)} - ${escapeHtml(order.customerEmail)} - ${escapeHtml(order.status)}</small></span>
+        <strong>${formatUsdt(order.amount)}</strong>
+      </div>
+    `).join("") : `<p class="muted">Aucune demande Exchange reçue.</p>`;
   }
 }
 
@@ -664,16 +819,33 @@ function setupAuthForms() {
   }
 
   if (registerForm) {
+    const passwordInput = registerForm.querySelector("[data-password-input]");
+    const passwordMeter = registerForm.querySelector("[data-password-meter]");
+    const passwordHelp = registerForm.querySelector("[data-password-help]");
+    const updatePasswordMeter = () => {
+      if (!passwordInput || !passwordMeter || !passwordHelp) return;
+      const length = String(passwordInput.value || "").length;
+      const remaining = Math.max(0, 10 - length);
+      const progress = Math.min(100, (length / 10) * 100);
+      passwordMeter.style.setProperty("--password-progress", `${progress}%`);
+      passwordMeter.classList.toggle("valid", remaining === 0);
+      passwordHelp.textContent = remaining === 0
+        ? "Mot de passe valide: 10 caractères minimum atteints."
+        : `Minimum 10 caractères. Il manque ${remaining} caractère${remaining > 1 ? "s" : ""}.`;
+    };
+    passwordInput?.addEventListener("input", updatePasswordMeter);
+    updatePasswordMeter();
+
     registerForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       const submitButton = registerForm.querySelector('button[type="submit"]');
-      const restoreButton = setButtonLoading(submitButton, "Creation...");
+      const restoreButton = setButtonLoading(submitButton, "Création...");
       const data = formToObject(registerForm);
       const email = String(data.email || "").trim().toLowerCase();
       const password = String(data.password || "").trim();
 
       if (!email || password.length < 10) {
-        showToast("Renseignez un email et un mot de passe d'au moins 10 caracteres.", "error");
+        showToast("Renseignez un email et un mot de passe d'au moins 10 caractères.", "error");
         restoreButton();
         return;
       }
@@ -925,6 +1097,34 @@ function setupActions(user) {
     restoreButton();
   });
 
+  document.querySelector("[data-exchange-ad-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = formToObject(event.currentTarget);
+    const rate = Number(data.rate || 0);
+    const type = String(data.type || "");
+    if (type === "sell" && (rate < 550 || rate > 600)) {
+      showToast("Le prix de vente doit être compris entre 550 et 600 FCFA.", "error");
+      return;
+    }
+    if (type === "buy" && (rate < 630 || rate > 650)) {
+      showToast("Le prix d'achat doit être compris entre 630 et 650 FCFA.", "error");
+      return;
+    }
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Publication...");
+    try {
+      await apiJson("/exchange/ads", data);
+      event.currentTarget.reset();
+      const freshUser = await loadCurrentUser();
+      renderMerchants(freshUser);
+      showToast("Annonce Exchange publiée.");
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
+
   document.querySelector("[data-dispute-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const submitButton = event.currentTarget.querySelector('button[type="submit"]');
@@ -1047,6 +1247,51 @@ function setupActions(user) {
     }
     restoreButton();
   });
+
+  document.querySelector("[data-exchange-code-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Recherche...");
+    const reference = String(new FormData(event.currentTarget).get("reference") || "").trim().toUpperCase();
+    const result = document.querySelector("[data-exchange-code-result]");
+
+    try {
+      const response = await apiRequest(`/exchange/orders/${encodeURIComponent(reference)}`);
+      const order = response.order || response;
+
+      if (result) {
+        result.innerHTML = `
+          <div class="merchant-code-card">
+            <span>${escapeHtml(order.reference)}</span>
+            <h2>${exchangeTypeLabel(order.type)} ${formatUsdt(order.amount)}</h2>
+            <p>${escapeHtml(order.customerEmail)} - ${escapeHtml(order.paymentMethod)} - ${formatXaf(order.localAmount)}</p>
+            <div class="info-grid compact-info">
+              <div><span>Taux</span><strong>${Math.round(Number(order.rate || 0)).toLocaleString("fr-FR")} FCFA</strong></div>
+              <div><span>Statut</span><strong>${escapeHtml(order.status)}</strong></div>
+            </div>
+            <button class="btn primary full" type="button" data-exchange-confirm-code="${escapeHtml(order.reference)}">Valider l'opération Exchange</button>
+          </div>
+        `;
+        result.querySelector("[data-exchange-confirm-code]")?.addEventListener("click", async (clickEvent) => {
+          const confirmButton = clickEvent.currentTarget;
+          const restoreConfirm = setButtonLoading(confirmButton, "Validation...");
+          try {
+            await apiJson(`/exchange/orders/${encodeURIComponent(clickEvent.currentTarget.dataset.exchangeConfirmCode)}/confirm`, {});
+            showToast("Opération Exchange validée.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            restoreConfirm();
+          }
+        });
+      }
+    } catch (error) {
+      if (result) result.innerHTML = `<p class="muted">Référence introuvable ou déjà traitée.</p>`;
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
 }
 
 function showCicoReference(reference, operation, amount, fee) {
@@ -1112,6 +1357,7 @@ function renderProtectedShell(page, user) {
   renderWallet(user);
   renderPlans(user);
   renderNetwork(user);
+  renderExchange(user);
   renderMerchants(user);
   renderAdmin(user);
   setupActions(user);

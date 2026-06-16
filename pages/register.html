@@ -26,11 +26,15 @@
       <span class="form-kicker">Ouverture de compte</span>
       <h2>Inscription</h2>
       <label>Email<input type="email" name="email" required></label>
-      <label>Mot de passe<input type="password" name="password" minlength="10" autocomplete="new-password" required></label>
+      <label>Mot de passe<input type="password" name="password" minlength="10" autocomplete="new-password" required data-password-input></label>
+      <div class="password-meter" data-password-meter>
+        <span><i></i></span>
+        <small data-password-help>Minimum 10 caractères. Il manque 10 caractères.</small>
+      </div>
       <button class="btn primary full" type="submit">Créer le compte</button>
       <p>Déjà inscrit ? <a href="/login">Se connecter</a></p>
     </form>
   </main>
-  <script src="../app.js?v=20260616-3"></script>
+  <script src="../app.js?v=20260616-5"></script>
 </body>
 </html>

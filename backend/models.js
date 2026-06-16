@@ -25,6 +25,25 @@ export const CicoRequestModel = mongoose.models.CicoRequest || mongoose.model("C
   createdAt: { type: String, index: true }
 }, flexibleOptions));
 
+export const ExchangeAdModel = mongoose.models.ExchangeAd || mongoose.model("ExchangeAd", new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  merchantId: { type: String, required: true, index: true },
+  type: { type: String, required: true, index: true },
+  status: { type: String, required: true, index: true },
+  rate: { type: Number, required: true },
+  createdAt: { type: String, index: true }
+}, flexibleOptions));
+
+export const ExchangeOrderModel = mongoose.models.ExchangeOrder || mongoose.model("ExchangeOrder", new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  reference: { type: String, required: true, unique: true },
+  adId: { type: String, required: true, index: true },
+  merchantId: { type: String, required: true, index: true },
+  userId: { type: String, index: true },
+  status: { type: String, required: true, index: true },
+  createdAt: { type: String, index: true }
+}, flexibleOptions));
+
 export const MerchantApplicationModel = mongoose.models.MerchantApplication || mongoose.model("MerchantApplication", new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   userId: { type: String, required: true, index: true },
