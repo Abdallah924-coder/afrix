@@ -57,7 +57,34 @@
         <div class="list" data-admin-disputes></div>
       </article>
     </section>
+    <section class="grid two admin-queues">
+      <article class="panel">
+        <div class="panel-head"><h1>Créer un compte</h1><span class="badge">Admin</span></div>
+        <form data-admin-create-user-form>
+          <label>Nom complet
+            <input name="fullName" type="text" required>
+          </label>
+          <label>Email
+            <input name="email" type="email" required>
+          </label>
+          <label>Mot de passe
+            <input name="password" type="password" minlength="10" required>
+          </label>
+          <label>Rôle
+            <select name="role">
+              <option value="user">Utilisateur</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          <button class="btn primary full" type="submit">Créer le compte</button>
+        </form>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h1>Comptes utilisateurs</h1><span class="badge" data-admin-users-count>0</span></div>
+        <div class="list" data-admin-users></div>
+      </article>
+    </section>
   </main>
-  <script src="../app.js?v=20260616-3"></script>
+  <script src="../app.js?v=20260616-4"></script>
 </body>
 </html>

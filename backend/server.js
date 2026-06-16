@@ -392,6 +392,23 @@ function composeUser(db, user) {
     disputes: user.role === "admin" ? db.disputes : db.disputes.filter((item) => item.userId === user.id),
     platformControls: user.role === "admin" ? db.platformControls : {}
     ,
+    adminUsers: user.role === "admin"
+      ? db.users
+        .slice()
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+        .map((candidate) => ({
+          id: candidate.id,
+          email: candidate.email,
+          fullName: candidate.fullName || candidate.email,
+          role: candidate.role || "user",
+          status: candidate.status || "active",
+          balance: money(candidate.balance),
+          reservedBalance: money(candidate.reservedBalance),
+          activity: money(candidate.activity),
+          merchantStatus: candidate.merchantProfile?.status || "Aucun profil",
+          createdAt: candidate.createdAt
+        }))
+      : [],
     ledgerEntries: user.role === "admin"
       ? db.ledgerEntries.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 500)
       : db.ledgerEntries.filter((entry) => entry.accountId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 200),
@@ -870,7 +887,8 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
     status: result.request?.status || result.transaction?.status
   });
 
-  await sendBrevoMail({
+  Promise.all([
+    sendBrevoMail({
     to: req.user.email,
     subject: "AFRIX - Depot enregistre",
     title: "Votre depot est en attente",
@@ -881,12 +899,13 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
       { label: "Reference", value: result.request?.reference || result.transaction?.id },
       { label: "Statut", value: result.request?.status || result.transaction?.status }
     ]
-  });
-  await notifyAdmin("AFRIX - Depot a traiter", "Depot a traiter", "Une demande de depot est en attente.", [
+    }),
+    notifyAdmin("AFRIX - Depot a traiter", "Depot a traiter", "Une demande de depot est en attente.", [
     { label: "Client", value: req.user.email },
     { label: "Methode", value: method.toUpperCase() },
     { label: "Montant", value: formatAmount(amount) }
-  ]);
+    ])
+  ]).catch((error) => logger.error({ err: error }, "Deposit notification failed"));
 });
 
 app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.object({
@@ -987,7 +1006,8 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     status: result.request?.status || result.transaction?.status
   });
 
-  await sendBrevoMail({
+  Promise.all([
+    sendBrevoMail({
     to: req.user.email,
     subject: "AFRIX - Retrait soumis",
     title: "Votre retrait est en traitement",
@@ -999,12 +1019,13 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
       { label: "Reference", value: result.request?.reference || result.transaction?.id },
       { label: "Statut", value: result.request?.status || result.transaction?.status }
     ]
-  });
-  await notifyAdmin("AFRIX - Retrait a traiter", "Retrait a traiter", "Une demande de retrait est en attente.", [
+    }),
+    notifyAdmin("AFRIX - Retrait a traiter", "Retrait a traiter", "Une demande de retrait est en attente.", [
     { label: "Client", value: req.user.email },
     { label: "Methode", value: method.toUpperCase() },
     { label: "Montant", value: formatAmount(amount) }
-  ]);
+    ])
+  ]).catch((error) => logger.error({ err: error }, "Withdrawal notification failed"));
 });
 
 app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(z.object({
@@ -1369,10 +1390,79 @@ app.post("/api/admin/settings", authenticate, requireAdmin, validate(z.object({
 app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
   action: z.string().min(1),
   id: z.string().optional(),
-  amount: z.coerce.number().positive().optional()
+  amount: z.coerce.number().positive().optional(),
+  email: z.string().email().optional(),
+  password: z.string().min(10).optional(),
+  fullName: z.string().min(2).optional(),
+  role: z.enum(["user", "admin"]).optional(),
+  status: z.enum(["active", "blocked"]).optional()
 })), async (req, res) => {
   const result = await updateDb(async (db) => {
     const { action, id, amount } = req.body;
+
+    if (action === "user-create") {
+      const email = String(req.body.email || "").trim().toLowerCase();
+      const password = String(req.body.password || "");
+      if (!email || !password) return { error: "Email et mot de passe requis." };
+      if (db.users.some((candidate) => candidate.email === email)) {
+        return { error: "Cet email est deja enregistre." };
+      }
+
+      const user = {
+        id: nanoid(),
+        email,
+        fullName: String(req.body.fullName || email.split("@")[0]).trim(),
+        passwordHash: await bcrypt.hash(password, 12),
+        role: req.body.role || "user",
+        status: "active",
+        balance: 0,
+        reservedBalance: 0,
+        activity: 0,
+        bonus: 0,
+        wallet: "",
+        refCode: `AFX-${nanoid(8).toUpperCase()}`,
+        referrerId: null,
+        merchantWallet: { available: 0, pending: 0, bonus: 0 },
+        activePlans: [],
+        createdAt: nowIso(),
+        metadata: { createdByAdmin: req.user.id }
+      };
+      db.users.push(user);
+      addTransaction(db, {
+        userId: user.id,
+        type: "Admin",
+        description: "Compte cree par admin",
+        amount: 0,
+        displayAmount: formatAmount(0),
+        status: "Completed",
+        metadata: { reviewedBy: req.user.id, source: "admin_user_create" }
+      });
+      return { user: sanitizeUser(user) };
+    }
+
+    if (action === "user-suspend" || action === "user-reactivate" || action === "user-role") {
+      const target = db.users.find((candidate) => candidate.id === id);
+      if (!target) return { error: "Utilisateur introuvable." };
+      if (target.id === req.user.id && action === "user-suspend") {
+        return { error: "Un admin ne peut pas suspendre son propre compte." };
+      }
+      if (action === "user-suspend") {
+        target.status = "blocked";
+        target.suspendedAt = nowIso();
+        target.suspendedBy = req.user.id;
+      }
+      if (action === "user-reactivate") {
+        target.status = "active";
+        target.reactivatedAt = nowIso();
+        target.reactivatedBy = req.user.id;
+      }
+      if (action === "user-role") {
+        target.role = req.body.role || "user";
+        target.roleUpdatedAt = nowIso();
+        target.roleUpdatedBy = req.user.id;
+      }
+      return { user: sanitizeUser(target) };
+    }
 
     if (action === "merchant-approve" || action === "merchant-reject") {
       const application = db.merchantApplications.find((item) => item.id === id);
@@ -1464,11 +1554,11 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
   });
 
   if (result.error) return res.status(400).json({ message: result.error });
-  await notifyAdmin("AFRIX - Action admin executee", "Action admin executee", "Une action admin vient d'etre appliquee.", [
+  res.json(result);
+  notifyAdmin("AFRIX - Action admin executee", "Action admin executee", "Une action admin vient d'etre appliquee.", [
     { label: "Action", value: req.body.action },
     { label: "Identifiant", value: req.body.id || "" }
-  ]);
-  res.json(result);
+  ]).catch((error) => logger.error({ err: error }, "Admin action notification failed"));
 });
 
 app.use("/assets", express.static(path.join(rootDir, "assets"), {

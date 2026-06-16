@@ -524,6 +524,7 @@ function renderAdmin(user) {
   const cicoRequestsCount = document.querySelector("[data-cico-requests-count]");
   const merchantApplicationsCount = document.querySelector("[data-merchant-applications-count]");
   const disputesCount = document.querySelector("[data-disputes-count]");
+  const adminUsersCount = document.querySelector("[data-admin-users-count]");
 
   if (adminDeposits) adminDeposits.textContent = formatUsdt(depositTotal);
   if (adminWithdrawals) adminWithdrawals.textContent = formatUsdt(withdrawalTotal);
@@ -534,16 +535,38 @@ function renderAdmin(user) {
   if (cicoRequestsCount) cicoRequestsCount.textContent = user.cicoRequests.length;
   if (merchantApplicationsCount) merchantApplicationsCount.textContent = user.merchantApplications.length;
   if (disputesCount) disputesCount.textContent = user.disputes.length;
+  if (adminUsersCount) adminUsersCount.textContent = Array.isArray(user.adminUsers) ? user.adminUsers.length : 0;
 
   renderQueue("[data-admin-pending-deposits]", pendingDeposits);
   renderQueue("[data-admin-pending-withdrawals]", pendingWithdrawals);
   renderCicoAdminRequests(user.cicoRequests);
   renderMerchantApplications(user.merchantApplications);
   renderDisputes(user.disputes);
+  renderAdminUsers(user.adminUsers || []);
 
   document.querySelectorAll("[data-admin-control]").forEach((control) => {
     control.checked = Boolean(platformControls[control.dataset.adminControl]);
   });
+}
+
+function renderAdminUsers(users) {
+  const list = document.querySelector("[data-admin-users]");
+  if (!list) return;
+
+  list.innerHTML = users.length ? users.map((item) => {
+    const isBlocked = item.status === "blocked";
+    const nextRole = item.role === "admin" ? "user" : "admin";
+    return `
+      <div class="queue-row user-row">
+        <span>${escapeHtml(item.fullName || item.email)}<small>${escapeHtml(item.email)} - ${escapeHtml(item.role)} - ${escapeHtml(item.status)} - ${formatUsdt(item.balance)}</small></span>
+        <strong>${escapeHtml(item.merchantStatus || "Aucun profil")}</strong>
+        <button class="btn secondary" type="button" data-admin-user-role="${escapeHtml(item.id)}" data-role="${nextRole}">${nextRole === "admin" ? "Admin" : "User"}</button>
+        ${isBlocked
+          ? `<button class="btn primary" type="button" data-admin-user-reactivate="${escapeHtml(item.id)}">Reactiver</button>`
+          : `<button class="btn secondary" type="button" data-admin-user-suspend="${escapeHtml(item.id)}">Suspendre</button>`}
+      </div>
+    `;
+  }).join("") : `<p class="muted">Aucun utilisateur.</p>`;
 }
 
 function renderQueue(selector, rows) {
@@ -751,7 +774,10 @@ function setupActions(user) {
     }
   });
 
-  document.querySelector("[data-deposit-form]")?.addEventListener("submit", async (event) => {
+  const depositForm = document.querySelector("[data-deposit-form]");
+  if (depositForm && !depositForm.dataset.boundDeposit) {
+    depositForm.dataset.boundDeposit = "true";
+    depositForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const formError = firstFormError(event.currentTarget);
     if (formError) {
@@ -767,22 +793,23 @@ function setupActions(user) {
         body: new FormData(event.currentTarget)
       });
       if (response.reference) showCicoReference(response.reference, "Depot", response.amount, response.fee || 0);
-      try {
-        const freshUser = await loadCurrentUser();
-        renderProtectedShell(document.body.dataset.page, freshUser);
-      } catch (refreshError) {
-        showToast(`Demande enregistree, mais actualisation impossible: ${refreshError.message}`, "error");
-        return;
-      }
       showToast("Demande de depot enregistree. Elle est visible dans vos transactions.");
+      event.currentTarget.reset();
+      loadCurrentUser()
+        .then((freshUser) => renderProtectedShell(document.body.dataset.page, freshUser))
+        .catch((refreshError) => showToast(`Demande enregistree, mais actualisation impossible: ${refreshError.message}`, "error"));
     } catch (error) {
       showToast(error.message, "error");
     } finally {
       restoreButton();
     }
   });
+  }
 
-  document.querySelector("[data-withdraw-form]")?.addEventListener("submit", async (event) => {
+  const withdrawForm = document.querySelector("[data-withdraw-form]");
+  if (withdrawForm && !withdrawForm.dataset.boundWithdraw) {
+    withdrawForm.dataset.boundWithdraw = "true";
+    withdrawForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const formError = firstFormError(event.currentTarget);
     if (formError) {
@@ -794,20 +821,18 @@ function setupActions(user) {
     try {
       const response = await apiJson("/withdrawals", formToObject(event.currentTarget));
       if (response.reference) showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0);
-      try {
-        const freshUser = await loadCurrentUser();
-        renderProtectedShell(document.body.dataset.page, freshUser);
-      } catch (refreshError) {
-        showToast(`Demande enregistree, mais actualisation impossible: ${refreshError.message}`, "error");
-        return;
-      }
       showToast("Demande de retrait soumise. Elle est visible dans vos transactions.");
+      event.currentTarget.reset();
+      loadCurrentUser()
+        .then((freshUser) => renderProtectedShell(document.body.dataset.page, freshUser))
+        .catch((refreshError) => showToast(`Demande enregistree, mais actualisation impossible: ${refreshError.message}`, "error"));
     } catch (error) {
       showToast(error.message, "error");
     } finally {
       restoreButton();
     }
   });
+  }
 
   document.querySelector("[data-plans-list]")?.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-plan]");
@@ -920,6 +945,31 @@ function setupActions(user) {
   document.querySelector("[data-admin-pending-withdrawals]")?.addEventListener("click", handleAdminClick);
   document.querySelector("[data-admin-merchant-applications]")?.addEventListener("click", handleAdminClick);
   document.querySelector("[data-admin-disputes]")?.addEventListener("click", handleAdminClick);
+  document.querySelector("[data-admin-users]")?.addEventListener("click", handleAdminClick);
+
+  document.querySelector("[data-admin-create-user-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Creation...");
+    const data = formToObject(event.currentTarget);
+    try {
+      await apiJson("/admin/actions", {
+        action: "user-create",
+        fullName: String(data.fullName || "").trim(),
+        email: String(data.email || "").trim().toLowerCase(),
+        password: String(data.password || ""),
+        role: data.role || "user"
+      });
+      event.currentTarget.reset();
+      const freshUser = await loadCurrentUser();
+      renderAdmin(freshUser);
+      showToast("Compte cree par admin.");
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
 
   document.querySelectorAll("[data-admin-control]").forEach((control) => {
     control.addEventListener("change", async (event) => {
@@ -1017,7 +1067,7 @@ function showCicoReference(reference, operation, amount, fee) {
 }
 
 async function handleAdminClick(event) {
-  const action = event.target.closest("[data-admin-approve], [data-admin-reject], [data-merchant-approve], [data-merchant-reject], [data-merchant-fund], [data-dispute-close]");
+  const action = event.target.closest("[data-admin-approve], [data-admin-reject], [data-merchant-approve], [data-merchant-reject], [data-merchant-fund], [data-dispute-close], [data-admin-user-suspend], [data-admin-user-reactivate], [data-admin-user-role]");
   if (!action) return;
 
   const actionMap = [
@@ -1026,7 +1076,10 @@ async function handleAdminClick(event) {
     ["merchantApprove", "merchant-approve"],
     ["merchantReject", "merchant-reject"],
     ["merchantFund", "merchant-fund"],
-    ["disputeClose", "dispute-close"]
+    ["disputeClose", "dispute-close"],
+    ["adminUserSuspend", "user-suspend"],
+    ["adminUserReactivate", "user-reactivate"],
+    ["adminUserRole", "user-role"]
   ];
   const [datasetKey, actionName] = actionMap.find(([key]) => action.dataset[key] !== undefined) || [];
   const id = datasetKey ? action.dataset[datasetKey] : "";
@@ -1036,14 +1089,18 @@ async function handleAdminClick(event) {
   }
   const amountInput = action.closest(".queue-row")?.querySelector("[data-merchant-fund-amount]");
   const amount = amountInput ? Number(amountInput.value || 0) : undefined;
+  const role = action.dataset.role;
+  const restoreButton = setButtonLoading(action, "...");
 
   try {
-    await apiJson("/admin/actions", { action: actionName, id, ...(amount ? { amount } : {}) });
+    await apiJson("/admin/actions", { action: actionName, id, ...(amount ? { amount } : {}), ...(role ? { role } : {}) });
     const freshUser = await loadCurrentUser();
     renderAdmin(freshUser);
     showToast("Action admin enregistree.");
   } catch (error) {
     showToast(error.message, "error");
+  } finally {
+    restoreButton();
   }
 }
 
