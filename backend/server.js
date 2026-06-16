@@ -821,23 +821,25 @@ app.post("/api/auth/register", validate(z.object({
   })();
 
   if (result.error) return res.status(409).json({ message: result.error });
-  await sendBrevoMail({
-    to: result.user.email,
-    subject: "AFRIX - Bienvenue",
-    title: "Votre compte AFRIX est pret",
-    intro: "Votre espace AFRIX a ete cree avec succes.",
-    rows: [
-      { label: "Email", value: result.user.email },
-      { label: "Role", value: result.user.role }
-    ],
-    actionLabel: "Acceder au tableau de bord",
-    actionUrl: `${APP_URL}/dashboard`
-  });
-  await notifyAdmin("AFRIX - Nouvelle inscription", "Nouvelle inscription", "Un nouveau compte vient d'etre cree.", [
-    { label: "Email", value: result.user.email },
-    { label: "Role", value: result.user.role }
-  ]);
   res.status(201).json({ token: signToken(result.user), user: sanitizeUser(result.user) });
+  Promise.all([
+    sendBrevoMail({
+      to: result.user.email,
+      subject: "AFRIX - Bienvenue",
+      title: "Votre compte AFRIX est prêt",
+      intro: "Votre espace AFRIX a été créé avec succès.",
+      rows: [
+        { label: "Email", value: result.user.email },
+        { label: "Rôle", value: result.user.role }
+      ],
+      actionLabel: "Accéder au tableau de bord",
+      actionUrl: `${APP_URL}/dashboard`
+    }),
+    notifyAdmin("AFRIX - Nouvelle inscription", "Nouvelle inscription", "Un nouveau compte vient d'être créé.", [
+      { label: "Email", value: result.user.email },
+      { label: "Rôle", value: result.user.role }
+    ])
+  ]).catch((error) => logger.error({ err: error }, "Register notification failed"));
 });
 
 app.post("/api/auth/login", validate(z.object({
@@ -878,15 +880,15 @@ app.post("/api/auth/forgot-password", validate(z.object({
   });
 
   if (resetUrl) {
-    await sendBrevoMail({
+    sendBrevoMail({
       to: normalizedEmail,
-      subject: "AFRIX - Reinitialisation du mot de passe",
-      title: "Reinitialisation du mot de passe",
-      intro: "Utilisez ce lien pour definir un nouveau mot de passe. Il expire dans 1 heure.",
+      subject: "AFRIX - Réinitialisation du mot de passe",
+      title: "Réinitialisation du mot de passe",
+      intro: "Utilisez ce lien pour définir un nouveau mot de passe. Il expire dans 1 heure.",
       rows: [{ label: "Compte", value: normalizedEmail }],
-      actionLabel: "Reinitialiser le mot de passe",
+      actionLabel: "Réinitialiser le mot de passe",
       actionUrl: resetUrl
-    });
+    }).catch((error) => logger.error({ err: error }, "Forgot password email failed"));
   }
 
   res.json({ message: "Si ce compte existe, un lien de reinitialisation a ete envoye." });
@@ -1652,11 +1654,11 @@ app.post("/api/disputes", authenticate, validate(z.object({
     return item;
   });
   res.status(201).json({ dispute });
-  await notifyAdmin("AFRIX - Nouveau litige", "Nouveau litige", "Un utilisateur a ouvert un litige.", [
+  notifyAdmin("AFRIX - Nouveau litige", "Nouveau litige", "Un utilisateur a ouvert un litige.", [
     { label: "Utilisateur", value: req.user.email },
-    { label: "Reference", value: dispute.reference },
+    { label: "Référence", value: dispute.reference },
     { label: "Motif", value: dispute.reason }
-  ]);
+  ]).catch((error) => logger.error({ err: error }, "Dispute notification failed"));
 });
 
 app.get("/api/transactions/export", authenticate, (req, res) => {

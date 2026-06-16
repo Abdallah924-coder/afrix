@@ -1,6 +1,6 @@
 const API_BASE = window.AFRIX_API_BASE || "/api";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
-const API_TIMEOUT_MS = 45_000;
+const API_TIMEOUT_MS = 120_000;
 const MAX_PROOF_FILE_BYTES = 5 * 1024 * 1024;
 
 const pageTitles = {
@@ -125,9 +125,9 @@ async function apiRequest(path, options = {}) {
     });
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error("La requete prend trop de temps. Verifiez votre connexion ou utilisez une preuve de paiement plus legere.");
+      throw new Error("Le serveur met trop de temps à répondre. Réessayez dans quelques secondes.");
     }
-    throw new Error("API AFRIX indisponible. Verifiez la configuration du backend.");
+    throw new Error("Connexion au serveur AFRIX impossible. Vérifiez que le déploiement Render est terminé et que l'API est en ligne.");
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId);
   }
@@ -840,7 +840,7 @@ function setupAuthForms() {
       const restoreButton = setButtonLoading(submitButton, "Connexion...");
       const data = formToObject(loginForm);
       const email = String(data.email || "").trim().toLowerCase();
-      const password = String(data.password || "").trim();
+      const password = String(data.password || "");
 
       if (!email || !password) {
         showToast("Email et mot de passe requis.", "error");
@@ -883,7 +883,7 @@ function setupAuthForms() {
       const restoreButton = setButtonLoading(submitButton, "Création...");
       const data = formToObject(registerForm);
       const email = String(data.email || "").trim().toLowerCase();
-      const password = String(data.password || "").trim();
+      const password = String(data.password || "");
 
       if (!email || password.length < 10) {
         showToast("Renseignez un email et un mot de passe d'au moins 10 caractères.", "error");
@@ -937,7 +937,7 @@ function setupAuthForms() {
       const submitButton = resetPasswordForm.querySelector('button[type="submit"]');
       const restoreButton = setButtonLoading(submitButton, "Changement...");
       const data = formToObject(resetPasswordForm);
-      const password = String(data.password || "").trim();
+      const password = String(data.password || "");
 
       if (!data.token || password.length < 10) {
         showToast("Lien invalide ou mot de passe trop court.", "error");
