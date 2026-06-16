@@ -902,6 +902,9 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
   if (!address) {
     return res.status(400).json({ message: "Adresse wallet BEP20 requise." });
   }
+  if (money(req.user.balance) < money(amount)) {
+    return res.status(400).json({ message: "Solde insuffisant." });
+  }
 
   let result;
   try {
@@ -925,8 +928,16 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
         let updatedUser;
         await session.withTransaction(async () => {
           updatedUser = await UserModel.findOneAndUpdate(
-            { id: req.user.id, balance: { $gte: reservedAmount } },
-            { $inc: { balance: -reservedAmount, reservedBalance: reservedAmount } },
+            {
+              id: req.user.id,
+              $expr: { $gte: [{ $toDouble: "$balance" }, reservedAmount] }
+            },
+            [{
+              $set: {
+                balance: { $round: [{ $subtract: [{ $toDouble: "$balance" }, reservedAmount] }, 2] },
+                reservedBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$reservedBalance", 0] } }, reservedAmount] }, 2] }
+              }
+            }],
             { new: true, session, lean: true }
           );
           if (!updatedUser) {

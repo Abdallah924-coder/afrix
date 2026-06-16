@@ -1030,11 +1030,17 @@ async function handleAdminClick(event) {
   ];
   const [datasetKey, actionName] = actionMap.find(([key]) => action.dataset[key] !== undefined) || [];
   const id = datasetKey ? action.dataset[datasetKey] : "";
+  if (!actionName || !id) {
+    showToast("Action admin invalide.", "error");
+    return;
+  }
   const amountInput = action.closest(".queue-row")?.querySelector("[data-merchant-fund-amount]");
   const amount = amountInput ? Number(amountInput.value || 0) : undefined;
 
   try {
     await apiJson("/admin/actions", { action: actionName, id, ...(amount ? { amount } : {}) });
+    const freshUser = await loadCurrentUser();
+    renderAdmin(freshUser);
     showToast("Action admin enregistree.");
   } catch (error) {
     showToast(error.message, "error");
