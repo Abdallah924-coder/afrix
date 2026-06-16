@@ -999,22 +999,23 @@ function setupActions(user) {
     depositForm.dataset.boundDeposit = "true";
     depositForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const formError = firstFormError(event.currentTarget);
+    const form = event.currentTarget;
+    const formError = firstFormError(form);
     if (formError) {
       showToast(formError, "error");
       return;
     }
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Traitement...");
     try {
       const response = await apiRequest("/deposits", {
         method: "POST",
         headers: authHeaders(),
-        body: new FormData(event.currentTarget)
+        body: new FormData(form)
       });
       if (response.reference) showCicoReference(response.reference, "Depot", response.amount, response.fee || 0);
       showToast("Demande de depot enregistree. Elle est visible dans vos transactions.");
-      event.currentTarget.reset();
+      form.reset();
       loadCurrentUser()
         .then((freshUser) => renderProtectedShell(document.body.dataset.page, freshUser))
         .catch((refreshError) => showToast(`Demande enregistree, mais actualisation impossible: ${refreshError.message}`, "error"));
@@ -1031,18 +1032,19 @@ function setupActions(user) {
     withdrawForm.dataset.boundWithdraw = "true";
     withdrawForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const formError = firstFormError(event.currentTarget);
+    const form = event.currentTarget;
+    const formError = firstFormError(form);
     if (formError) {
       showToast(formError, "error");
       return;
     }
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Traitement...");
     try {
-      const response = await apiJson("/withdrawals", formToObject(event.currentTarget));
+      const response = await apiJson("/withdrawals", formToObject(form));
       if (response.reference) showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0);
       showToast("Demande de retrait soumise. Elle est visible dans vos transactions.");
-      event.currentTarget.reset();
+      form.reset();
       loadCurrentUser()
         .then((freshUser) => renderProtectedShell(document.body.dataset.page, freshUser))
         .catch((refreshError) => showToast(`Demande enregistree, mais actualisation impossible: ${refreshError.message}`, "error"));
@@ -1084,10 +1086,11 @@ function setupActions(user) {
   const p2pForm = document.querySelector("[data-p2p-form]");
   if (p2pForm && !p2pForm.dataset.boundSubmit) p2pForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Envoi...");
     try {
-      await apiJson("/p2p-transfers", formToObject(event.currentTarget));
+      await apiJson("/p2p-transfers", formToObject(form));
       showToast("Transfert P2P envoye.");
     } catch (error) {
       restoreButton();
@@ -1101,16 +1104,17 @@ function setupActions(user) {
   const cicoForm = document.querySelector("[data-cico-form]");
   if (cicoForm && !cicoForm.dataset.boundSubmit) cicoForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const operation = event.currentTarget.querySelector("[name='operation']")?.value || "Depot";
-    const amount = Number(event.currentTarget.querySelector("[name='amount']")?.value || 0);
+    const form = event.currentTarget;
+    const operation = form.querySelector("[name='operation']")?.value || "Depot";
+    const amount = Number(form.querySelector("[name='amount']")?.value || 0);
     if (operation === "Retrait" && amount < 10) {
       showToast("Montant minimum retrait: 10 USDT.", "error");
       return;
     }
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Creation...");
     try {
-      const response = await apiJson("/cico-requests", formToObject(event.currentTarget));
+      const response = await apiJson("/cico-requests", formToObject(form));
       if (response.reference) showCicoReference(response.reference, response.operation || "CICO", response.amount, response.fee || 0);
       showToast("Reference CICO creee.");
     } catch (error) {
@@ -1136,11 +1140,12 @@ function setupActions(user) {
   const merchantApplicationForm = document.querySelector("[data-merchant-application-form]");
   if (merchantApplicationForm && !merchantApplicationForm.dataset.boundSubmit) merchantApplicationForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Envoi...");
     try {
-      await apiJson("/merchant/applications", formToObject(event.currentTarget));
-      event.currentTarget.reset();
+      await apiJson("/merchant/applications", formToObject(form));
+      form.reset();
       showToast("Profil merchant envoye pour validation.");
     } catch (error) {
       restoreButton();
@@ -1154,7 +1159,8 @@ function setupActions(user) {
   const exchangeAdForm = document.querySelector("[data-exchange-ad-form]");
   if (exchangeAdForm && !exchangeAdForm.dataset.boundSubmit) exchangeAdForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const data = formToObject(event.currentTarget);
+    const form = event.currentTarget;
+    const data = formToObject(form);
     const rate = Number(data.rate || 0);
     const type = String(data.type || "");
     if (type === "sell" && (rate < 550 || rate > 600)) {
@@ -1165,11 +1171,11 @@ function setupActions(user) {
       showToast("Le prix d'achat doit être compris entre 630 et 650 FCFA.", "error");
       return;
     }
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Publication...");
     try {
       await apiJson("/exchange/ads", data);
-      event.currentTarget.reset();
+      form.reset();
       showToast("Annonce Exchange publiée.");
       loadCurrentUser()
         .then((freshUser) => renderMerchants(freshUser))
@@ -1185,11 +1191,12 @@ function setupActions(user) {
   const disputeForm = document.querySelector("[data-dispute-form]");
   if (disputeForm && !disputeForm.dataset.boundSubmit) disputeForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Envoi...");
     try {
-      await apiJson("/disputes", formToObject(event.currentTarget));
-      event.currentTarget.reset();
+      await apiJson("/disputes", formToObject(form));
+      form.reset();
       showToast("Litige envoye au support.");
     } catch (error) {
       restoreButton();
@@ -1205,13 +1212,20 @@ function setupActions(user) {
   bindClickOnce("[data-admin-merchant-applications]", handleAdminClick);
   bindClickOnce("[data-admin-disputes]", handleAdminClick);
   bindClickOnce("[data-admin-users]", handleAdminClick);
+  bindClickOnce("[data-admin-proof-close]", () => {
+    const viewer = document.querySelector("[data-admin-proof-viewer]");
+    const content = document.querySelector("[data-admin-proof-content]");
+    if (viewer) viewer.hidden = true;
+    if (content) content.innerHTML = "";
+  });
 
   const adminCreateUserForm = document.querySelector("[data-admin-create-user-form]");
   if (adminCreateUserForm && !adminCreateUserForm.dataset.boundSubmit) adminCreateUserForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Creation...");
-    const data = formToObject(event.currentTarget);
+    const data = formToObject(form);
     try {
       await apiJson("/admin/actions", {
         action: "user-create",
@@ -1220,7 +1234,7 @@ function setupActions(user) {
         password: String(data.password || ""),
         role: data.role || "user"
       });
-      event.currentTarget.reset();
+      form.reset();
       const freshUser = await loadCurrentUser();
       renderAdmin(freshUser);
       showToast("Compte cree par admin.");
@@ -1252,9 +1266,10 @@ function setupActions(user) {
   const merchantCodeForm = document.querySelector("[data-merchant-code-form]");
   if (merchantCodeForm && !merchantCodeForm.dataset.boundSubmit) merchantCodeForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Recherche...");
-    const reference = String(new FormData(event.currentTarget).get("reference") || "").trim().toUpperCase();
+    const reference = String(new FormData(form).get("reference") || "").trim().toUpperCase();
     const result = document.querySelector("[data-merchant-code-result]");
 
     try {
@@ -1301,10 +1316,11 @@ function setupActions(user) {
   const merchantTransferForm = document.querySelector("[data-merchant-transfer-form]");
   if (merchantTransferForm && !merchantTransferForm.dataset.boundSubmit) merchantTransferForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Transfert...");
     try {
-      await apiJson("/merchant/transfers", formToObject(event.currentTarget));
+      await apiJson("/merchant/transfers", formToObject(form));
       showToast("Transfert du wallet merchant envoye.");
     } catch (error) {
       restoreButton();
@@ -1318,9 +1334,10 @@ function setupActions(user) {
   const exchangeCodeForm = document.querySelector("[data-exchange-code-form]");
   if (exchangeCodeForm && !exchangeCodeForm.dataset.boundSubmit) exchangeCodeForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Recherche...");
-    const reference = String(new FormData(event.currentTarget).get("reference") || "").trim().toUpperCase();
+    const reference = String(new FormData(form).get("reference") || "").trim().toUpperCase();
     const result = document.querySelector("[data-exchange-code-result]");
 
     try {
@@ -1386,21 +1403,20 @@ async function handleAdminClick(event) {
     const restoreProof = setButtonLoading(proofButton, "Ouverture...");
     try {
       const proof = await apiRequest(`/admin/deposits/${encodeURIComponent(proofButton.dataset.adminProof)}/proof`);
-      const proofWindow = window.open("", "_blank", "noopener,noreferrer");
-      if (proofWindow) {
-        proofWindow.document.write(`
-          <!doctype html>
-          <html lang="fr">
-          <head><meta charset="utf-8"><title>Capture dépôt ${escapeHtml(proof.id || "")}</title></head>
-          <body style="margin:0;background:#111;display:grid;place-items:center;min-height:100vh;">
-            <img src="${proof.dataUrl}" alt="Capture dépôt" style="max-width:100%;max-height:100vh;object-fit:contain;">
-          </body>
-          </html>
-        `);
-        proofWindow.document.close();
-      } else {
+      const viewer = document.querySelector("[data-admin-proof-viewer]");
+      const content = document.querySelector("[data-admin-proof-content]");
+      if (!viewer || !content) {
         window.location.href = proof.dataUrl;
+        return;
       }
+      content.innerHTML = `
+        <div class="proof-frame">
+          <img src="${proof.dataUrl}" alt="Capture dépôt ${escapeHtml(proof.id || "")}">
+          <a class="btn secondary" href="${proof.dataUrl}" download="${escapeHtml(proof.originalName || "capture-depot")}">Télécharger</a>
+        </div>
+      `;
+      viewer.hidden = false;
+      viewer.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       showToast(error.message, "error");
     } finally {
