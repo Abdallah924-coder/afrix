@@ -767,15 +767,19 @@ function setupActions(user) {
         body: new FormData(event.currentTarget)
       });
       if (response.reference) showCicoReference(response.reference, "Depot", response.amount, response.fee || 0);
-      const freshUser = await loadCurrentUser();
-      renderProtectedShell(document.body.dataset.page, freshUser);
+      try {
+        const freshUser = await loadCurrentUser();
+        renderProtectedShell(document.body.dataset.page, freshUser);
+      } catch (refreshError) {
+        showToast(`Demande enregistree, mais actualisation impossible: ${refreshError.message}`, "error");
+        return;
+      }
       showToast("Demande de depot enregistree. Elle est visible dans vos transactions.");
     } catch (error) {
-      restoreButton();
       showToast(error.message, "error");
-      return;
+    } finally {
+      restoreButton();
     }
-    restoreButton();
   });
 
   document.querySelector("[data-withdraw-form]")?.addEventListener("submit", async (event) => {
@@ -790,15 +794,19 @@ function setupActions(user) {
     try {
       const response = await apiJson("/withdrawals", formToObject(event.currentTarget));
       if (response.reference) showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0);
-      const freshUser = await loadCurrentUser();
-      renderProtectedShell(document.body.dataset.page, freshUser);
+      try {
+        const freshUser = await loadCurrentUser();
+        renderProtectedShell(document.body.dataset.page, freshUser);
+      } catch (refreshError) {
+        showToast(`Demande enregistree, mais actualisation impossible: ${refreshError.message}`, "error");
+        return;
+      }
       showToast("Demande de retrait soumise. Elle est visible dans vos transactions.");
     } catch (error) {
-      restoreButton();
       showToast(error.message, "error");
-      return;
+    } finally {
+      restoreButton();
     }
-    restoreButton();
   });
 
   document.querySelector("[data-plans-list]")?.addEventListener("click", async (event) => {

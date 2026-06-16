@@ -66,6 +66,7 @@ import {
 } from "./models.js";
 
 let mongoReadyPromise = null;
+const transactionListProjection = { "metadata.proof.dataBase64": 0 };
 
 function normalizeDb(db = {}) {
   return {
@@ -140,7 +141,7 @@ async function readDb(session = null) {
   let platformAccount;
   if (session) {
     users = await UserModel.find({}, null, queryOptions).lean();
-    transactions = await TransactionModel.find({}, null, queryOptions).lean();
+    transactions = await TransactionModel.find({}, transactionListProjection, queryOptions).lean();
     cicoRequests = await CicoRequestModel.find({}, null, queryOptions).lean();
     merchantApplications = await MerchantApplicationModel.find({}, null, queryOptions).lean();
     disputes = await DisputeModel.find({}, null, queryOptions).lean();
@@ -150,7 +151,7 @@ async function readDb(session = null) {
   } else {
     [users, transactions, cicoRequests, merchantApplications, disputes, ledgerEntries, settings, platformAccount] = await Promise.all([
       UserModel.find({}, null, queryOptions).lean(),
-      TransactionModel.find({}, null, queryOptions).lean(),
+      TransactionModel.find({}, transactionListProjection, queryOptions).lean(),
       CicoRequestModel.find({}, null, queryOptions).lean(),
       MerchantApplicationModel.find({}, null, queryOptions).lean(),
       DisputeModel.find({}, null, queryOptions).lean(),
@@ -803,8 +804,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
   const proof = {
     originalName: req.file.originalname || "preuve-paiement",
     mimeType: req.file.mimetype || "application/octet-stream",
-    size: req.file.size || req.file.buffer.length,
-    dataBase64: req.file.buffer.toString("base64")
+    size: req.file.size || req.file.buffer.length
   };
 
   const result = await updateDb(async (db) => {
@@ -849,7 +849,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
   });
 
   res.status(201).json({
-    reference: result.request?.reference,
+    reference: result.request?.reference || result.transaction?.id,
     amount,
     fee: result.request?.fee || 0,
     status: result.request?.status || result.transaction?.status
@@ -913,7 +913,7 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
 
   if (result.error) return res.status(400).json({ message: result.error });
   res.status(201).json({
-    reference: result.request?.reference,
+    reference: result.request?.reference || result.transaction?.id,
     amount,
     fee: result.request?.fee || 0,
     status: result.request?.status || result.transaction?.status
