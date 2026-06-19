@@ -13,7 +13,7 @@ MongoDB Atlas is the only application data store. `MONGODB_URI` is required in d
 
 ## Admin Account
 
-On startup, Render creates or updates the admin account from `ADMIN_EMAIL` and `ADMIN_PASSWORD`. A registered user whose email matches `ADMIN_EMAIL` also receives the admin role.
+On startup, Render creates or updates the admin account from `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Public registration always creates standard user accounts; admin accounts are bootstrapped from environment variables or created by an existing admin.
 
 ## Main Domains
 
@@ -38,6 +38,7 @@ Required production variables:
 - `ADMIN_PASSWORD`
 - `TRC20_DEPOSIT_ADDRESS`
 - `BEP20_DEPOSIT_ADDRESS`
+- `MTN_CG_DEPOSIT_PHONE` for Congo Brazzaville MTN Mobile Money deposits
 
 Email delivery uses Brevo HTTP when these variables are set:
 
@@ -47,4 +48,4 @@ Email delivery uses Brevo HTTP when these variables are set:
 - `SUPPORT_EMAIL`
 - `ADMIN_ALERT_EMAIL`
 
-USDT deposits accept BEP20 and TRC20. USDT withdrawals are BEP20 only. CICO remains available through approved merchants for users who fund their account with local currency.
+USDT deposits accept BEP20 and TRC20. Congo Brazzaville accounts can also see MTN Mobile Money deposits when `MTN_CG_DEPOSIT_PHONE` is set. USDT withdrawals are BEP20 only. CICO remains available through approved merchants for users who fund their account with local currency.

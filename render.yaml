@@ -40,5 +40,7 @@ services:
         sync: false
       - key: BEP20_DEPOSIT_ADDRESS
         sync: false
+      - key: MTN_CG_DEPOSIT_PHONE
+        sync: false
       - key: LOG_LEVEL
         value: info

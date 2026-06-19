@@ -104,6 +104,11 @@ export const defaultDb = {
       label: "Adresse de depot BEP20",
       value: process.env.BEP20_DEPOSIT_ADDRESS || "",
       note: "Envoyez uniquement des USDT BEP20 vers cette adresse."
+    },
+    mtn_cg: {
+      label: "Depot MTN Mobile Money Congo Brazzaville",
+      value: process.env.MTN_CG_DEPOSIT_PHONE || "",
+      note: "Option reservee aux comptes Congo Brazzaville. Indiquez la reference MTN apres paiement."
     }
   }
 };

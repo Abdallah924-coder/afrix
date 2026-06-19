@@ -8,21 +8,21 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-async function waitForServer(child) {
+async function waitForServer(child, logs) {
   let lastError;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     if (child.exitCode !== null) {
-      throw new Error(`Server exited before smoke tests with code ${child.exitCode}`);
+      throw new Error(`Server exited before smoke tests with code ${child.exitCode}: ${logs.join("").trim()}`);
     }
     try {
-      const response = await fetch(`${baseUrl}/api/health`);
+      const response = await fetch(`${baseUrl}/dashboard`);
       if (response.ok) return;
     } catch (error) {
       lastError = error;
     }
     await wait(250);
   }
-  throw new Error(`Server did not become ready: ${lastError?.message || "timeout"}`);
+  throw new Error(`Server did not become ready: ${lastError?.message || "timeout"}. ${logs.join("").trim()}`);
 }
 
 async function request(path) {
@@ -36,6 +36,7 @@ async function run() {
       ...process.env,
       PORT: String(PORT),
       NODE_ENV: "development",
+      AFRIX_TEST_SKIP_STORAGE_BOOT: "1",
       JWT_SECRET: "dev-only-change-this-secret-before-production",
       ADMIN_EMAIL: "",
       ADMIN_PASSWORD: ""
@@ -48,7 +49,7 @@ async function run() {
   child.stderr.on("data", (chunk) => logs.push(chunk.toString()));
 
   try {
-    await waitForServer(child);
+    await waitForServer(child, logs);
 
     const dashboard = await request("/dashboard");
     assert(dashboard.status === 200, "/dashboard should render");

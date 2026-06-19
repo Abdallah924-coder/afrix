@@ -51,6 +51,7 @@ const emptyUser = {
   rank: "Niveau 0",
   progress: 0,
   wallet: "",
+  country: "",
   paymentTargets: {},
   refLink: "",
   transactions: [],
@@ -75,6 +76,19 @@ const emptyUser = {
 
 const formatUsdt = (value) => `${Number(value || 0).toFixed(2)} USDT`;
 const formatXaf = (value) => `${Math.round(Number(value || 0)).toLocaleString("fr-FR")} XAF`;
+
+function normalizeCountry(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function isCongoBrazzaville(value) {
+  const country = normalizeCountry(value);
+  return country === "congo brazzaville" || country === "republique du congo" || country === "congo" || country === "cg";
+}
 
 function normalizePaymentMethods(value) {
   if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
@@ -181,7 +195,8 @@ function normalizeUser(user) {
     adminExchangeOrders: Array.isArray(user?.adminExchangeOrders) ? user.adminExchangeOrders : [],
     merchantApplications: Array.isArray(user?.merchantApplications) ? user.merchantApplications : [],
     disputes: Array.isArray(user?.disputes) ? user.disputes : [],
-    platformControls: user?.platformControls || {}
+    platformControls: user?.platformControls || {},
+    country: user?.country || ""
   };
 }
 
@@ -360,6 +375,9 @@ function renderWallet(user) {
   const targetValue = document.querySelector("[data-deposit-target]");
   const targetNote = document.querySelector("[data-deposit-target-note]");
   const depositAmount = document.querySelector("[data-deposit-amount]");
+  const mtnDepositOption = document.querySelector("[data-mtn-cg-option]");
+  const txRefLabel = document.querySelector("[data-deposit-txref-label]");
+  const txRefInput = document.querySelector("[data-deposit-txref]");
   const withdrawAmount = document.querySelector("[data-withdraw-amount]");
   const depositConversion = document.querySelector("[data-deposit-conversion]");
   const withdrawConversion = document.querySelector("[data-withdraw-conversion]");
@@ -379,12 +397,17 @@ function renderWallet(user) {
   }
 
   function updateDepositTarget() {
+    const canUseMtnCongo = isCongoBrazzaville(user.country);
+    if (mtnDepositOption) mtnDepositOption.hidden = !canUseMtnCongo;
+    if (!canUseMtnCongo && depositMethod?.value === "mtn_cg") depositMethod.value = "bep20";
     const method = depositMethod?.value || "bep20";
     const target = user.paymentTargets?.[method];
 
     if (targetLabel) targetLabel.textContent = target?.label || "Coordonnees de depot indisponibles";
     if (targetValue) targetValue.textContent = target?.value || "Indisponible";
     if (targetNote) targetNote.textContent = target?.note || "Connectez le backend pour charger les coordonnees officielles.";
+    if (txRefLabel) txRefLabel.firstChild.textContent = method === "mtn_cg" ? "Référence transaction MTN" : "Référence transaction crypto";
+    if (txRefInput) txRefInput.placeholder = method === "mtn_cg" ? "Référence MTN Mobile Money" : "Hash de transaction";
     updateDepositConversion();
   }
 
@@ -761,8 +784,8 @@ function renderQueue(selector, rows, options = {}) {
       <span>${escapeHtml(item.description)}<small>${escapeHtml(item.userEmail || "")} - ${escapeHtml(item.date)} - Réf. ${escapeHtml(item.reference || item.id || "")}${item.metadata?.txRef ? ` - TX ${escapeHtml(item.metadata.txRef)}` : ""}</small></span>
       <strong>${escapeHtml(item.amount)}</strong>
       ${options.proof && item.hasProof ? `<button class="btn secondary" type="button" data-admin-proof="${escapeHtml(item.id || item.reference || "")}">Capture</button>` : ""}
-      <button class="btn primary" type="button" data-admin-approve="${escapeHtml(item.id || item.reference || "")}">Valider</button>
-      <button class="btn secondary" type="button" data-admin-reject="${escapeHtml(item.id || item.reference || "")}">Rejeter</button>
+      <button class="btn primary" type="button" data-admin-action="approve" data-admin-id="${escapeHtml(item.id || item.reference || "")}" data-admin-approve="${escapeHtml(item.id || item.reference || "")}">Valider</button>
+      <button class="btn secondary" type="button" data-admin-action="reject" data-admin-id="${escapeHtml(item.id || item.reference || "")}" data-admin-reject="${escapeHtml(item.id || item.reference || "")}">Rejeter</button>
     </div>
   `).join("") : `<p class="muted">Aucune demande en attente.</p>`;
 }
@@ -885,14 +908,16 @@ function setupAuthForms() {
       const email = String(data.email || "").trim().toLowerCase();
       const password = String(data.password || "");
 
-      if (!email || password.length < 10) {
-        showToast("Renseignez un email et un mot de passe d'au moins 10 caractères.", "error");
+      const country = String(data.country || "").trim();
+
+      if (!email || !country || password.length < 10) {
+        showToast("Renseignez un email, un pays et un mot de passe d'au moins 10 caractères.", "error");
         restoreButton();
         return;
       }
 
       try {
-        const response = await apiJson("/auth/register", { email, password });
+        const response = await apiJson("/auth/register", { email, password, country });
         setAuthToken(response.token);
         window.location.href = "/dashboard";
       } catch (error) {
@@ -1236,7 +1261,7 @@ function setupActions(user) {
       });
       form.reset();
       const freshUser = await loadCurrentUser();
-      renderAdmin(freshUser);
+      renderProtectedShell(document.body.dataset.page, freshUser);
       showToast("Compte cree par admin.");
     } catch (error) {
       showToast(error.message, "error");
@@ -1425,7 +1450,7 @@ async function handleAdminClick(event) {
     return;
   }
 
-  const action = event.target.closest("[data-admin-approve], [data-admin-reject], [data-merchant-approve], [data-merchant-reject], [data-merchant-fund], [data-dispute-close], [data-admin-user-suspend], [data-admin-user-reactivate], [data-admin-user-role]");
+  const action = event.target.closest("[data-admin-action], [data-admin-approve], [data-admin-reject], [data-merchant-approve], [data-merchant-reject], [data-merchant-fund], [data-dispute-close], [data-admin-user-suspend], [data-admin-user-reactivate], [data-admin-user-role]");
   if (!action) return;
 
   const actionMap = [
@@ -1439,8 +1464,9 @@ async function handleAdminClick(event) {
     ["adminUserReactivate", "user-reactivate"],
     ["adminUserRole", "user-role"]
   ];
-  const [datasetKey, actionName] = actionMap.find(([key]) => action.dataset[key] !== undefined) || [];
-  const id = datasetKey ? action.dataset[datasetKey] : "";
+  const [datasetKey, mappedActionName] = actionMap.find(([key]) => action.dataset[key] !== undefined) || [];
+  const actionName = action.dataset.adminAction || mappedActionName;
+  const id = action.dataset.adminId || (datasetKey ? action.dataset[datasetKey] : "");
   if (!actionName || !id) {
     showToast("Action admin invalide.", "error");
     return;
@@ -1453,7 +1479,7 @@ async function handleAdminClick(event) {
   try {
     await apiJson("/admin/actions", { action: actionName, id, ...(amount ? { amount } : {}), ...(role ? { role } : {}) });
     const freshUser = await loadCurrentUser();
-    renderAdmin(freshUser);
+    renderProtectedShell(document.body.dataset.page, freshUser);
     showToast("Action admin enregistree.");
   } catch (error) {
     showToast(error.message, "error");

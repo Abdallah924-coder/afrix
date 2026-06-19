@@ -39,9 +39,10 @@
             <select name="method" required data-deposit-method>
               <option value="bep20">USDT BEP20</option>
               <option value="trc20">USDT TRC20</option>
+              <option value="mtn_cg" data-mtn-cg-option hidden>MTN Mobile Money Congo Brazzaville</option>
             </select>
           </label>
-          <label>Référence transaction crypto<input name="txRef" placeholder="Hash de transaction" required></label>
+          <label data-deposit-txref-label>Référence transaction crypto<input name="txRef" placeholder="Hash de transaction" required data-deposit-txref></label>
           <label>Preuve de paiement<input name="proof" type="file" accept="image/png,image/jpeg,image/webp" required></label>
           <button class="btn primary full" type="submit">Soumettre le dépôt USDT</button>
         </form>

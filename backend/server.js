@@ -22,7 +22,6 @@ import {
   TOKEN_TTL,
   bonusRates,
   defaultDb,
-  isConfiguredAdminEmail,
   isProduction,
   jwtSecret,
   legacyPageRoutes,
@@ -362,6 +361,19 @@ function normalizePaymentMethods(value) {
     .slice(0, 8);
 }
 
+function normalizeCountry(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function isCongoBrazzaville(value) {
+  const country = normalizeCountry(value);
+  return country === "congo brazzaville" || country === "republique du congo" || country === "congo" || country === "cg";
+}
+
 function publicExchangeAd(ad, merchant) {
   return {
     ...ad,
@@ -532,6 +544,14 @@ function requireMerchant(req, res, next) {
     return res.status(403).json({ message: "Compte merchant approuve requis." });
   }
   next();
+}
+
+function isBusinessRuleError(error) {
+  return [
+    "Solde insuffisant.",
+    "Reserve insuffisante.",
+    "Wallet merchant insuffisant."
+  ].includes(error?.message);
 }
 
 function requirePlatformAccess({ cico = false } = {}) {
@@ -781,17 +801,20 @@ app.get("/api/health", async (_req, res) => {
 app.post("/api/auth/register", validate(z.object({
   email: z.string().email(),
   password: z.string().min(10),
+  country: z.string().min(2),
   ref: z.string().optional()
 })), async (req, res) => {
   const { email, password, ref } = req.body;
   const normalizedEmail = email.trim().toLowerCase();
+  const country = req.body.country.trim();
 
   const createUserRecord = async (referrerId = null) => ({
     id: nanoid(),
     email: normalizedEmail,
     fullName: normalizedEmail.split("@")[0],
+    country,
     passwordHash: await bcrypt.hash(password, 12),
-    role: isConfiguredAdminEmail(normalizedEmail) ? "admin" : "user",
+    role: "user",
     status: "active",
     balance: 0,
     reservedBalance: 0,
@@ -934,9 +957,13 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || "bep20");
   const txRef = String(req.body.txRef || "").trim();
+  const isMtnCongoDeposit = method === "mtn_cg";
   if (amount < 10) return res.status(400).json({ message: "Montant minimum depot: 10 USDT." });
-  if (!["bep20", "trc20"].includes(method)) {
-    return res.status(400).json({ message: "Seuls les depots USDT BEP20 et TRC20 sont disponibles." });
+  if (!["bep20", "trc20", "mtn_cg"].includes(method)) {
+    return res.status(400).json({ message: "Seuls les depots USDT BEP20, TRC20 et MTN Congo Brazzaville sont disponibles." });
+  }
+  if (isMtnCongoDeposit && !isCongoBrazzaville(req.user.country)) {
+    return res.status(403).json({ message: "Le depot MTN Mobile Money est reserve aux comptes Congo Brazzaville." });
   }
   if (!txRef) {
     return res.status(400).json({ message: "Reference transaction crypto requise." });
@@ -956,7 +983,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
       id: nanoid(),
       userId: req.user.id,
       type: "Depot",
-      description: `Depot wallet ${method.toUpperCase()}`,
+      description: isMtnCongoDeposit ? "Depot MTN Mobile Money Congo Brazzaville" : `Depot wallet ${method.toUpperCase()}`,
       amount: money(amount),
       displayAmount: formatAmount(amount, "+"),
       status: "Pending",
@@ -1905,6 +1932,9 @@ app.use((req, res, next) => {
 });
 
 app.use((err, _req, res, _next) => {
+  if (isBusinessRuleError(err)) {
+    return res.status(400).json({ message: err.message });
+  }
   if (err instanceof multer.MulterError) {
     if (err.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({ message: "Preuve de paiement trop lourde. Taille maximale: 5 Mo." });
@@ -1924,14 +1954,16 @@ function runDailyPlanEarnings() {
 }
 
 async function bootstrapServer() {
-  await ensureStorage();
-  const server = app.listen(PORT, () => {
-    logger.info(`AFRIX server listening on http://localhost:${PORT}`);
-  });
+  const skipStorageBoot = !isProduction && process.env.AFRIX_TEST_SKIP_STORAGE_BOOT === "1";
+  if (!skipStorageBoot) {
+    await ensureStorage();
+    await ensureAdminUser();
+  } else {
+    logger.warn("Storage bootstrap skipped for local smoke test");
+  }
 
-  ensureAdminUser().catch((error) => {
-    logger.error({ err: error }, "Admin bootstrap failed");
-    if (isProduction) server.close(() => process.exit(1));
+  app.listen(PORT, () => {
+    logger.info(`AFRIX server listening on http://localhost:${PORT}`);
   });
 
   const initialPlanEarningsTimer = setTimeout(runDailyPlanEarnings, 5 * 60 * 1000);
