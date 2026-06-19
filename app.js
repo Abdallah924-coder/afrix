@@ -474,6 +474,7 @@ function renderWallet(user) {
 function renderPlans(user) {
   const list = document.querySelector("[data-plans-list]");
   if (!list) return;
+  renderActivePlans(user);
 
   const activityByPlan = (planId) => (user.activePlans || [])
     .filter((activePlan) => activePlan.planId === planId)
@@ -507,6 +508,45 @@ function renderPlans(user) {
     </article>
   `;
   }).join("");
+}
+
+function renderActivePlans(user) {
+  const list = document.querySelector("[data-active-plans-list]");
+  const count = document.querySelector("[data-active-plans-count]");
+  if (!list) return;
+
+  const activePlans = (user.activePlans || [])
+    .slice()
+    .sort((a, b) => String(b.activatedAt || "").localeCompare(String(a.activatedAt || "")));
+  if (count) count.textContent = activePlans.length;
+
+  list.innerHTML = activePlans.length ? activePlans.map((plan) => {
+    const durationDays = Math.max(1, Number(plan.durationDays || 0));
+    const daysPaid = Math.min(durationDays, Math.max(0, Number(plan.daysPaid || 0)));
+    const percent = Math.min(100, Math.round((daysPaid / durationDays) * 100));
+    const remainingDays = Math.max(0, durationDays - daysPaid);
+    const status = plan.status === "completed" ? "Termine" : "Actif";
+    return `
+      <article class="active-plan-card">
+        <div class="active-plan-head">
+          <span>
+            <strong>${escapeHtml(plan.name || "Plan")}</strong>
+            <small>${escapeHtml(status)} depuis ${escapeHtml(String(plan.activatedAt || "").slice(0, 10) || "-")}</small>
+          </span>
+          <b>${percent}%</b>
+        </div>
+        <div class="progress active-plan-progress" aria-label="Progression ${escapeHtml(plan.name || "plan")}">
+          <span style="width:${percent}%"></span>
+        </div>
+        <div class="active-plan-stats">
+          <small><span>Capital bloqué</span>${formatUsdt(plan.amount || 0)}</small>
+          <small><span>Gains cumulés</span>${formatUsdt(plan.earnedAmount || 0)}</small>
+          <small><span>Jours payés</span>${daysPaid}/${durationDays}</small>
+          <small><span>Jours restants</span>${remainingDays}</small>
+        </div>
+      </article>
+    `;
+  }).join("") : `<p class="muted">Aucun investissement actif pour le moment.</p>`;
 }
 
 function renderNetwork(user) {
