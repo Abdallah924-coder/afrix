@@ -1929,6 +1929,178 @@ app.get("/api/admin/deposits/:id/proof", authenticate, requireAdmin, async (req,
   });
 });
 
+async function performFastAdminAction({ action, id, amount, role, adminId }) {
+  if (action === "user-suspend" || action === "user-reactivate" || action === "user-role") {
+    const target = await UserModel.findOne({ id }).lean();
+    if (!target) return { error: "Utilisateur introuvable." };
+    if (target.id === adminId && action === "user-suspend") {
+      return { error: "Un admin ne peut pas suspendre son propre compte." };
+    }
+
+    const update = {};
+    if (action === "user-suspend") Object.assign(update, { status: "blocked", suspendedAt: nowIso(), suspendedBy: adminId });
+    if (action === "user-reactivate") Object.assign(update, { status: "active", reactivatedAt: nowIso(), reactivatedBy: adminId });
+    if (action === "user-role") Object.assign(update, { role: role || "user", roleUpdatedAt: nowIso(), roleUpdatedBy: adminId });
+
+    const user = await UserModel.findOneAndUpdate({ id }, { $set: update }, { new: true, lean: true });
+    return { user: sanitizeUser(normalizeUserRecord(user)) };
+  }
+
+  if (action !== "approve" && action !== "reject") return null;
+
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      const tx = await TransactionModel.findOne({ id }, null, { session }).lean();
+      if (!tx) {
+        result = { error: "Transaction introuvable." };
+        return;
+      }
+      if (tx.status === "Completed" || tx.status === "Rejected") {
+        result = { error: "Transaction deja traitee." };
+        return;
+      }
+      if (tx.type !== "Depot" && tx.type !== "Retrait") {
+        result = { error: "Cette transaction ne se valide pas ici." };
+        return;
+      }
+
+      const reviewedAt = nowIso();
+      const nextStatus = action === "approve" ? "Completed" : "Rejected";
+
+      if (tx.type === "Depot" && action === "approve") {
+        const updatedUser = await UserModel.findOneAndUpdate(
+          { id: tx.userId },
+          [{
+            $set: {
+              balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, money(tx.amount)] }, 2] }
+            }
+          }],
+          { new: true, session, lean: true }
+        );
+        if (!updatedUser) {
+          result = { error: "Utilisateur introuvable." };
+          return;
+        }
+        const entries = buildLedgerEntries([{
+          accountType: "user",
+          accountId: tx.userId,
+          direction: "credit",
+          amount: tx.amount,
+          balanceAfter: updatedUser.balance,
+          description: tx.description || "Depot approuve"
+        }], { source: "admin_deposit_approval", referenceId: tx.id, extra: { reviewedBy: adminId } });
+        if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+      }
+
+      if (tx.type === "Retrait") {
+        const reservedAmount = money(tx.metadata?.reservedAmount || tx.amount);
+        const feeAmount = money(tx.metadata?.fee || 0);
+        if (action === "approve") {
+          const updatedUser = await UserModel.findOneAndUpdate(
+            {
+              id: tx.userId,
+              $expr: { $gte: [{ $toDouble: { $ifNull: ["$reservedBalance", 0] } }, reservedAmount] }
+            },
+            [{
+              $set: {
+                reservedBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$reservedBalance", 0] } }, reservedAmount] }, 2] }
+              }
+            }],
+            { new: true, session, lean: true }
+          );
+          if (!updatedUser) {
+            result = { error: "Reserve insuffisante pour valider ce retrait." };
+            return;
+          }
+          const entries = buildLedgerEntries([{
+            accountType: "user_reserved",
+            accountId: tx.userId,
+            direction: "debit",
+            amount: reservedAmount,
+            balanceAfter: updatedUser.reservedBalance,
+            description: tx.description || "Retrait approuve"
+          }], { source: "admin_withdrawal_approval", referenceId: tx.id, extra: { reviewedBy: adminId } });
+          if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+
+          if (feeAmount > 0) {
+            const platform = await PlatformAccountModel.findOneAndUpdate(
+              { id: "platform" },
+              { $inc: { balance: feeAmount, fees: feeAmount }, $setOnInsert: { createdAt: nowIso() } },
+              { upsert: true, new: true, session, lean: true }
+            );
+            const feeEntries = buildLedgerEntries([{
+              accountType: "platform",
+              accountId: "platform",
+              direction: "credit",
+              amount: feeAmount,
+              balanceAfter: platform.balance,
+              description: `Frais ${tx.description || "Retrait approuve"}`
+            }], { source: "admin_withdrawal_fee", referenceId: tx.id, extra: { reviewedBy: adminId, userId: tx.userId } });
+            if (feeEntries.length) await LedgerEntryModel.insertMany(feeEntries, { session });
+          }
+        } else {
+          const updatedUser = await UserModel.findOneAndUpdate(
+            {
+              id: tx.userId,
+              $expr: { $gte: [{ $toDouble: { $ifNull: ["$reservedBalance", 0] } }, reservedAmount] }
+            },
+            [{
+              $set: {
+                reservedBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$reservedBalance", 0] } }, reservedAmount] }, 2] },
+                balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, reservedAmount] }, 2] }
+              }
+            }],
+            { new: true, session, lean: true }
+          );
+          if (!updatedUser) {
+            result = { error: "Reserve insuffisante pour rejeter ce retrait." };
+            return;
+          }
+          const entries = buildLedgerEntries([{
+            accountType: "user_reserved",
+            accountId: tx.userId,
+            direction: "debit",
+            amount: reservedAmount,
+            balanceAfter: updatedUser.reservedBalance,
+            description: tx.description || "Retrait rejete"
+          }, {
+            accountType: "user",
+            accountId: tx.userId,
+            direction: "credit",
+            amount: reservedAmount,
+            balanceAfter: updatedUser.balance,
+            description: `${tx.description || "Retrait"} - retour disponible`
+          }], { source: "admin_withdrawal_rejection", referenceId: tx.id, extra: { reviewedBy: adminId } });
+          if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+        }
+      }
+
+      const txUpdate = await TransactionModel.updateOne(
+        { id, status: tx.status },
+        {
+          $set: {
+            status: nextStatus,
+            "metadata.reviewedAt": reviewedAt,
+            "metadata.reviewedBy": adminId
+          }
+        },
+        { session }
+      );
+      if (!txUpdate.matchedCount) {
+        result = { error: "Transaction deja traitee." };
+        return;
+      }
+
+      result = { transaction: { ...tx, status: nextStatus, metadata: { ...(tx.metadata || {}), reviewedAt, reviewedBy: adminId } } };
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
 app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
   action: z.string().min(1),
   id: z.string().optional(),
@@ -1940,6 +2112,18 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
   role: z.enum(["user", "admin"]).optional(),
   status: z.enum(["active", "blocked"]).optional()
 })), async (req, res) => {
+  const fastResult = await performFastAdminAction({
+    action: req.body.action,
+    id: req.body.id,
+    amount: req.body.amount,
+    role: req.body.role,
+    adminId: req.user.id
+  });
+  if (fastResult) {
+    if (fastResult.error) return res.status(400).json({ message: fastResult.error });
+    return res.json(fastResult);
+  }
+
   const result = await updateDb(async (db) => {
     const { action, id, amount } = req.body;
 

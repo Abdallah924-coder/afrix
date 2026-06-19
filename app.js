@@ -167,6 +167,7 @@ async function apiRequest(path, options = {}) {
 
 async function apiJson(path, data, options = {}) {
   return apiRequest(path, {
+    ...options,
     method: options.method || "POST",
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     body: JSON.stringify(data)
@@ -1707,13 +1708,22 @@ async function handleAdminClick(event) {
     "user-role": "modifier le role de ce compte"
   };
   if (confirmationLabels[actionName] && !window.confirm(`Confirmer: ${confirmationLabels[actionName]} ?`)) return;
-  const restoreButton = setButtonLoading(action, "...");
+  const restoreButton = setButtonLoading(action, "Traitement...");
 
   try {
-    await apiJson("/admin/actions", { action: actionName, id, ...(amount ? { amount } : {}), ...(role ? { role } : {}) });
-    const freshUser = await loadCurrentUser();
-    renderProtectedShell(document.body.dataset.page, freshUser);
-    showToast("Action admin enregistree.");
+    await apiJson(
+      "/admin/actions",
+      { action: actionName, id, ...(amount ? { amount } : {}), ...(role ? { role } : {}) },
+      { timeoutMs: 20_000 }
+    );
+    showToast("Action admin validee.");
+    action.closest(".queue-row")?.classList.add("is-processing");
+    try {
+      const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
+      renderProtectedShell(document.body.dataset.page, freshUser);
+    } catch (refreshError) {
+      showToast(`Action validee, actualisez la page si la liste ne change pas: ${refreshError.message}`, "error");
+    }
   } catch (error) {
     showToast(error.message, "error");
   } finally {
