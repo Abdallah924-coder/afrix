@@ -1232,11 +1232,10 @@ function setupActions(user) {
   });
   if (disputeForm) disputeForm.dataset.boundSubmit = "true";
 
-  bindClickOnce("[data-admin-pending-deposits]", handleAdminClick);
-  bindClickOnce("[data-admin-pending-withdrawals]", handleAdminClick);
-  bindClickOnce("[data-admin-merchant-applications]", handleAdminClick);
-  bindClickOnce("[data-admin-disputes]", handleAdminClick);
-  bindClickOnce("[data-admin-users]", handleAdminClick);
+  if (!document.body.dataset.adminClickBound) {
+    document.body.dataset.adminClickBound = "true";
+    document.addEventListener("click", handleAdminClick);
+  }
   bindClickOnce("[data-admin-proof-close]", () => {
     const viewer = document.querySelector("[data-admin-proof-viewer]");
     const content = document.querySelector("[data-admin-proof-content]");
