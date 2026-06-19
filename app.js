@@ -405,9 +405,9 @@ function renderWallet(user) {
   function updateWithdrawConversion() {
     const amount = Number(withdrawAmount?.value || 0);
     const method = withdrawMethod?.value || "bep20";
-    const fee = method === "mtn_cg" ? Number((amount * MTN_WITHDRAW_FEE_RATE).toFixed(2)) : 0;
+    const fee = Number((amount * MTN_WITHDRAW_FEE_RATE).toFixed(2));
     const net = Number((amount - fee).toFixed(2));
-    if (withdrawConversion) withdrawConversion.hidden = method !== "mtn_cg";
+    if (withdrawConversion) withdrawConversion.hidden = false;
     if (withdrawFee) withdrawFee.textContent = formatUsdt(fee);
     if (withdrawNet) withdrawNet.textContent = formatUsdt(net);
     if (withdrawTotal) withdrawTotal.textContent = formatUsdt(amount);
@@ -1205,10 +1205,14 @@ function setupActions(user) {
     }
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
-      const response = await apiJson("/plans/activate", { amount, plan: button.dataset.plan });
-      showToast(`Activation ${formatUsdt(amount)} - ${response.activePlan?.name || "plan"} soumise.`);
-      const freshUser = await loadCurrentUser();
-      renderProtectedShell(document.body.dataset.page, freshUser);
+      const response = await apiJson("/plans/activate", { amount, plan: button.dataset.plan }, { timeoutMs: 25_000 });
+      showToast(`Activation ${formatUsdt(amount)} - ${response.activePlan?.name || "plan"} validee.`);
+      try {
+        const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
+        renderProtectedShell(document.body.dataset.page, freshUser);
+      } catch (refreshError) {
+        showToast(`Activation validee, actualisez la page si le solde ne change pas: ${refreshError.message}`, "error");
+      }
     } catch (error) {
       restoreButton();
       showToast(error.message, "error");
@@ -1458,11 +1462,15 @@ function setupActions(user) {
         email: String(data.email || "").trim().toLowerCase(),
         amount: Number(data.amount || 0),
         note: String(data.note || "").trim()
-      });
+      }, { timeoutMs: 20_000 });
       form.reset();
-      const freshUser = await loadCurrentUser();
-      renderProtectedShell(document.body.dataset.page, freshUser);
       showToast("Depot manuel credite.");
+      try {
+        const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((payload) => normalizeUser(payload.user || payload));
+        renderProtectedShell(document.body.dataset.page, freshUser);
+      } catch (refreshError) {
+        showToast(`Credit valide, actualisez la page si la liste ne change pas: ${refreshError.message}`, "error");
+      }
     } catch (error) {
       showToast(error.message, "error");
     } finally {
@@ -1470,6 +1478,48 @@ function setupActions(user) {
     }
   });
   if (adminManualDepositForm) adminManualDepositForm.dataset.boundSubmit = "true";
+
+  const bindAdminSimpleForm = (selector, actionName, loadingLabel, successMessage, mapper = (data) => data) => {
+    const form = document.querySelector(selector);
+    if (!form || form.dataset.boundSubmit) return;
+    form.dataset.boundSubmit = "true";
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const data = mapper(formToObject(form));
+      const submitButton = form.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, loadingLabel);
+      try {
+        await apiJson("/admin/actions", { action: actionName, ...data }, { timeoutMs: 25_000 });
+        form.reset();
+        showToast(successMessage);
+        try {
+          const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((payload) => normalizeUser(payload.user || payload));
+          renderProtectedShell(document.body.dataset.page, freshUser);
+        } catch (refreshError) {
+          showToast(`Action validee, actualisez la page si besoin: ${refreshError.message}`, "error");
+        }
+      } catch (error) {
+        showToast(error.message, "error");
+      } finally {
+        restoreButton();
+      }
+    });
+  };
+
+  bindAdminSimpleForm("[data-admin-fund-deduct-form]", "admin-fund-deduct", "Déduction...", "Fonds deduits.", (data) => ({
+    email: String(data.email || "").trim().toLowerCase(),
+    amount: Number(data.amount || 0),
+    note: String(data.note || "").trim()
+  }));
+  bindAdminSimpleForm("[data-admin-plan-activate-form]", "admin-plan-activate", "Activation...", "Investissement active.", (data) => ({
+    email: String(data.email || "").trim().toLowerCase(),
+    plan: String(data.plan || ""),
+    amount: Number(data.amount || 0)
+  }));
+  bindAdminSimpleForm("[data-admin-bonus-levels-form]", "bonus-levels", "Activation...", "Niveaux bonus actives.", (data) => ({
+    email: String(data.email || "").trim().toLowerCase(),
+    levels: Number(data.levels || 0)
+  }));
 
   document.querySelectorAll("[data-admin-control]").forEach((control) => {
     if (control.dataset.boundAdminControl) return;

@@ -70,7 +70,7 @@ import {
 } from "./models.js";
 
 let mongoReadyPromise = null;
-const transactionListProjection = {};
+const transactionListProjection = { "metadata.proof.dataBase64": 0 };
 
 function normalizeDb(db = {}) {
   return {
@@ -149,7 +149,7 @@ async function readDb(session = null) {
   let platformAccount;
   if (session) {
     users = await UserModel.find({}, null, queryOptions).lean();
-    transactions = await TransactionModel.find({}, transactionListProjection, queryOptions).lean();
+    transactions = await TransactionModel.find({}, {}, queryOptions).lean();
     cicoRequests = await CicoRequestModel.find({}, null, queryOptions).lean();
     exchangeAds = await ExchangeAdModel.find({}, null, queryOptions).lean();
     exchangeOrders = await ExchangeOrderModel.find({}, null, queryOptions).lean();
@@ -363,6 +363,13 @@ function planUnlockError(user, plan) {
   if (currentActivity >= rule.requiredAmount) return "";
   const requiredPlan = plans.find((item) => item.id === rule.requiredPlanId);
   return `${plan.name} verrouille. Il faut ${formatAmount(rule.requiredAmount)} d'activite dans ${requiredPlan?.name || "le plan precedent"}. Activite actuelle: ${formatAmount(currentActivity)}.`;
+}
+
+function unlockedReferralLevels(user) {
+  return Math.max(
+    Math.floor(Number(user?.activity || 0) / 100),
+    Number(user?.bonusLevelsOverride || 0)
+  );
 }
 
 function validateExchangeRate(type, rate) {
@@ -617,7 +624,7 @@ async function distributeNetworkBonus(db, sourceUser, amount) {
     const referrer = db.users.find((user) => user.id === currentReferrerId);
     if (!referrer) break;
 
-    const unlockedLevels = Math.floor(Number(referrer.activity || 0) / 100);
+    const unlockedLevels = unlockedReferralLevels(referrer);
     if (unlockedLevels > level) {
       const bonus = money((amount * bonusRates[level]) / 100);
       debitPlatform(db, bonus, `Bonus reseau niveau ${level + 1}`, {
@@ -1176,10 +1183,10 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
   if (isMtnCongoWithdrawal && (!phone || !beneficiary)) {
     return res.status(400).json({ message: "Numero MTN et nom beneficiaire requis." });
   }
-  const fee = isMtnCongoWithdrawal ? money(amount * 0.10) : 0;
+  const fee = money(amount * 0.10);
   const netAmount = money(amount - fee);
   const reservedAmount = money(amount);
-  if (isMtnCongoWithdrawal && netAmount <= 0) {
+  if (netAmount <= 0) {
     return res.status(400).json({ message: "Le montant apres frais doit rester positif." });
   }
   if (money(req.user.balance) < reservedAmount) {
@@ -1313,53 +1320,7 @@ app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(
     return res.status(400).json({ message: `Montant minimum ${plan.name}: ${formatAmount(plan.minAmount)}.` });
   }
 
-  const result = await updateDb(async (db) => {
-    const user = db.users.find((candidate) => candidate.id === req.user.id);
-    if (user.balance < investmentAmount) return { error: "Solde insuffisant pour activer ce plan." };
-    const unlockError = planUnlockError(user, plan);
-    if (unlockError) return { error: unlockError };
-
-    debitUser(db, user, investmentAmount, `Activation ${plan.name}`, {
-      source: "plan_activation",
-      referenceId: plan.id
-    });
-    creditPlatform(db, investmentAmount, `Activation ${plan.name}`, {
-      source: "plan_activation",
-      referenceId: user.id,
-      extra: { planId: plan.id }
-    });
-    user.activity = money(user.activity + investmentAmount);
-    const activePlan = {
-      id: nanoid(),
-      planId: plan.id,
-      name: plan.name,
-      amount: investmentAmount,
-      dailyRate: plan.dailyRate,
-      durationDays: plan.durationDays,
-      activatedAt: nowIso(),
-      lastPayoutDate: today(),
-      daysPaid: 0,
-      earnedAmount: 0,
-      capitalReturnedAt: null,
-      status: "active"
-    };
-    user.activePlans = user.activePlans || [];
-    user.activePlans.push(activePlan);
-
-    addTransaction(db, {
-      userId: user.id,
-      type: "Plan",
-      description: `Activation ${plan.name}`,
-      amount: investmentAmount,
-      displayAmount: formatAmount(investmentAmount, "-"),
-      status: "Active",
-      metadata: { planId: plan.id, activePlanId: activePlan.id }
-    });
-
-    await distributeNetworkBonus(db, user, investmentAmount);
-    distributeHouseCommissions(db, user, investmentAmount);
-    return { user, activePlan };
-  });
+  const result = await activatePlanDirect({ userId: req.user.id, plan, amount: investmentAmount });
 
   if (result.error) return res.status(400).json({ message: result.error });
   res.json({ user: sanitizeUser(result.user), activePlan: result.activePlan });
@@ -1929,7 +1890,317 @@ app.get("/api/admin/deposits/:id/proof", authenticate, requireAdmin, async (req,
   });
 });
 
-async function performFastAdminAction({ action, id, amount, role, adminId }) {
+async function payDirectCommission({ session, accountId, amount, label, source, referenceId, extra = {} }) {
+  const commission = money(amount);
+  if (commission <= 0 || !accountId) return;
+  const account = await UserModel.findOneAndUpdate(
+    { id: accountId },
+    [{
+      $set: {
+        balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, commission] }, 2] }
+      }
+    }],
+    { new: true, session, lean: true }
+  );
+  if (!account) return;
+  const platform = await PlatformAccountModel.findOneAndUpdate(
+    { id: "platform" },
+    { $inc: { balance: -commission }, $setOnInsert: { createdAt: nowIso() } },
+    { upsert: true, new: true, session, lean: true }
+  );
+  const ledgerEntries = buildLedgerEntries([{
+    accountType: "platform",
+    accountId: "platform",
+    direction: "debit",
+    amount: commission,
+    balanceAfter: platform.balance,
+    description: label
+  }, {
+    accountType: "user",
+    accountId,
+    direction: "credit",
+    amount: commission,
+    balanceAfter: account.balance,
+    description: label
+  }], { source, referenceId, extra });
+  if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+  await TransactionModel.create([{
+    id: nanoid(),
+    userId: accountId,
+    type: "Commission",
+    description: label,
+    amount: commission,
+    displayAmount: formatAmount(commission, "+"),
+    status: "Completed",
+    createdAt: nowIso(),
+    metadata: { source, referenceId, ...extra }
+  }], { session });
+}
+
+async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, initiatedBy = null }) {
+  const investmentAmount = money(amount || plan.minAmount);
+  if (investmentAmount < money(plan.minAmount)) {
+    return { error: `Montant minimum ${plan.name}: ${formatAmount(plan.minAmount)}.` };
+  }
+
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      const user = normalizeUserRecord(await UserModel.findOne({ id: userId }, null, { session }).lean());
+      if (!user) {
+        result = { error: "Utilisateur introuvable." };
+        return;
+      }
+      if (user.status && user.status !== "active") {
+        result = { error: "Ce compte est suspendu." };
+        return;
+      }
+      if (!bypassUnlock) {
+        const unlockError = planUnlockError(user, plan);
+        if (unlockError) {
+          result = { error: unlockError };
+          return;
+        }
+      }
+
+      const activePlan = {
+        id: nanoid(),
+        planId: plan.id,
+        name: plan.name,
+        amount: investmentAmount,
+        dailyRate: plan.dailyRate,
+        durationDays: plan.durationDays,
+        activatedAt: nowIso(),
+        lastPayoutDate: today(),
+        daysPaid: 0,
+        earnedAmount: 0,
+        capitalReturnedAt: null,
+        status: "active"
+      };
+
+      const updatedUser = await UserModel.findOneAndUpdate(
+        {
+          id: user.id,
+          $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, investmentAmount] }
+        },
+        [{
+          $set: {
+            balance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$balance", 0] } }, investmentAmount] }, 2] },
+            activity: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$activity", 0] } }, investmentAmount] }, 2] },
+            activePlans: { $concatArrays: [{ $ifNull: ["$activePlans", []] }, [activePlan]] }
+          }
+        }],
+        { new: true, session, lean: true }
+      );
+      if (!updatedUser) {
+        result = { error: "Solde insuffisant pour activer ce plan." };
+        return;
+      }
+
+      const platform = await PlatformAccountModel.findOneAndUpdate(
+        { id: "platform" },
+        { $inc: { balance: investmentAmount, fees: investmentAmount }, $setOnInsert: { createdAt: nowIso() } },
+        { upsert: true, new: true, session, lean: true }
+      );
+      const activationLedger = buildLedgerEntries([{
+        accountType: "user",
+        accountId: user.id,
+        direction: "debit",
+        amount: investmentAmount,
+        balanceAfter: updatedUser.balance,
+        description: `Activation ${plan.name}`
+      }, {
+        accountType: "platform",
+        accountId: "platform",
+        direction: "credit",
+        amount: investmentAmount,
+        balanceAfter: platform.balance,
+        description: `Activation ${plan.name}`
+      }], { source: "plan_activation", referenceId: activePlan.id, extra: { planId: plan.id, initiatedBy } });
+      if (activationLedger.length) await LedgerEntryModel.insertMany(activationLedger, { session });
+      await TransactionModel.create([{
+        id: nanoid(),
+        userId: user.id,
+        type: "Plan",
+        description: `Activation ${plan.name}`,
+        amount: investmentAmount,
+        displayAmount: formatAmount(investmentAmount, "-"),
+        status: "Active",
+        createdAt: nowIso(),
+        metadata: { planId: plan.id, activePlanId: activePlan.id, initiatedBy }
+      }], { session });
+
+      let currentReferrerId = user.referrerId;
+      for (let level = 0; level < bonusRates.length && currentReferrerId; level += 1) {
+        const referrer = normalizeUserRecord(await UserModel.findOne({ id: currentReferrerId }, null, { session }).lean());
+        if (!referrer) break;
+        if (unlockedReferralLevels(referrer) > level) {
+          const bonus = money((investmentAmount * bonusRates[level]) / 100);
+          const updatedReferrer = await UserModel.findOneAndUpdate(
+            { id: referrer.id },
+            [{
+              $set: {
+                balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, bonus] }, 2] },
+                bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, bonus] }, 2] }
+              }
+            }],
+            { new: true, session, lean: true }
+          );
+          const updatedPlatform = await PlatformAccountModel.findOneAndUpdate(
+            { id: "platform" },
+            { $inc: { balance: -bonus } },
+            { new: true, session, lean: true }
+          );
+          const entries = buildLedgerEntries([{
+            accountType: "platform",
+            accountId: "platform",
+            direction: "debit",
+            amount: bonus,
+            balanceAfter: updatedPlatform.balance,
+            description: `Bonus reseau niveau ${level + 1}`
+          }, {
+            accountType: "user",
+            accountId: referrer.id,
+            direction: "credit",
+            amount: bonus,
+            balanceAfter: updatedReferrer.balance,
+            description: `Bonus reseau niveau ${level + 1}`
+          }], { source: "network_bonus", referenceId: user.id, extra: { sourceUserId: user.id, level: level + 1 } });
+          if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+          await TransactionModel.create([{
+            id: nanoid(),
+            userId: referrer.id,
+            type: "Bonus",
+            description: `Bonus reseau niveau ${level + 1}`,
+            amount: bonus,
+            displayAmount: formatAmount(bonus, "+"),
+            status: "Completed",
+            createdAt: nowIso(),
+            metadata: { sourceUserId: user.id, level: level + 1 }
+          }], { session });
+        }
+        currentReferrerId = referrer.referrerId;
+      }
+
+      const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
+      const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
+      await payDirectCommission({
+        session,
+        accountId: adminAccount?.id,
+        amount: investmentAmount * 0.075,
+        label: "Commission admin activation plan",
+        source: "admin_activation_commission",
+        referenceId: user.id,
+        extra: { sourceUserId: user.id, rate: 0.075 }
+      });
+      await payDirectCommission({
+        session,
+        accountId: developerAccount?.id,
+        amount: investmentAmount * 0.075,
+        label: "Commission developpeur activation plan",
+        source: "developer_activation_commission",
+        referenceId: user.id,
+        extra: { sourceUserId: user.id, rate: 0.075 }
+      });
+
+      result = { user: normalizeUserRecord(updatedUser), activePlan };
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function performFastAdminAction({ action, id, amount, role, adminId, email, note, levels, plan }) {
+  if (action === "manual-deposit" || action === "admin-fund-add" || action === "admin-fund-deduct") {
+    const targetEmail = String(email || "").trim().toLowerCase();
+    if (!targetEmail || !amount) return { error: "Email et montant requis." };
+    const target = await UserModel.findOne({ email: targetEmail }).lean();
+    if (!target) return { error: "Utilisateur introuvable." };
+    if (target.status && target.status !== "active") return { error: "Ce compte est suspendu." };
+
+    const isDeduct = action === "admin-fund-deduct";
+    const reference = `ADM-${nanoid(10).toUpperCase()}`;
+    const description = isDeduct ? "Deduction admin" : "Depot manuel admin";
+    const session = await mongoose.startSession();
+    try {
+      let result;
+      await session.withTransaction(async () => {
+        const updatedUser = await UserModel.findOneAndUpdate(
+          {
+            id: target.id,
+            ...(isDeduct ? { $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, money(amount)] } } : {})
+          },
+          [{
+            $set: {
+              balance: {
+                $round: [
+                  isDeduct
+                    ? { $subtract: [{ $toDouble: { $ifNull: ["$balance", 0] } }, money(amount)] }
+                    : { $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, money(amount)] },
+                  2
+                ]
+              }
+            }
+          }],
+          { new: true, session, lean: true }
+        );
+        if (!updatedUser) {
+          result = { error: "Solde insuffisant ou utilisateur introuvable." };
+          return;
+        }
+        const tx = {
+          id: nanoid(),
+          userId: target.id,
+          type: isDeduct ? "Admin" : "Depot",
+          description,
+          amount: money(amount),
+          displayAmount: formatAmount(amount, isDeduct ? "-" : "+"),
+          status: "Completed",
+          createdAt: nowIso(),
+          metadata: { source: action, reviewedBy: adminId, reference, note: note || "" }
+        };
+        await TransactionModel.create([tx], { session });
+        const entries = buildLedgerEntries([{
+          accountType: "user",
+          accountId: target.id,
+          direction: isDeduct ? "debit" : "credit",
+          amount,
+          balanceAfter: updatedUser.balance,
+          description
+        }], { source: action, referenceId: reference, extra: { reviewedBy: adminId } });
+        if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+        result = { reference, user: sanitizeUser(normalizeUserRecord(updatedUser)) };
+      });
+      return result;
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  if (action === "bonus-levels") {
+    const targetEmail = String(email || "").trim().toLowerCase();
+    const selectedLevels = Number(levels || 0);
+    if (!targetEmail || ![5, 10, 15, 20].includes(selectedLevels)) return { error: "Email et niveau bonus valides requis." };
+    const user = await UserModel.findOneAndUpdate(
+      { email: targetEmail },
+      { $set: { bonusLevelsOverride: selectedLevels, bonusLevelsUpdatedAt: nowIso(), bonusLevelsUpdatedBy: adminId } },
+      { new: true, lean: true }
+    );
+    if (!user) return { error: "Utilisateur introuvable." };
+    return { user: sanitizeUser(normalizeUserRecord(user)) };
+  }
+
+  if (action === "admin-plan-activate") {
+    const targetEmail = String(email || "").trim().toLowerCase();
+    const target = await UserModel.findOne({ email: targetEmail }).lean();
+    if (!target) return { error: "Utilisateur introuvable." };
+    const selectedPlan = parsePlan(plan);
+    if (!selectedPlan) return { error: "Plan inconnu." };
+    return activatePlanDirect({ userId: target.id, plan: selectedPlan, amount, bypassUnlock: true, initiatedBy: adminId });
+  }
+
   if (action === "user-suspend" || action === "user-reactivate" || action === "user-role") {
     const target = await UserModel.findOne({ id }).lean();
     if (!target) return { error: "Utilisateur introuvable." };
@@ -2109,6 +2380,8 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
   password: z.string().min(10).optional(),
   fullName: z.string().min(2).optional(),
   note: z.string().max(300).optional(),
+  levels: z.coerce.number().optional(),
+  plan: z.string().optional(),
   role: z.enum(["user", "admin"]).optional(),
   status: z.enum(["active", "blocked"]).optional()
 })), async (req, res) => {
@@ -2117,7 +2390,11 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
     id: req.body.id,
     amount: req.body.amount,
     role: req.body.role,
-    adminId: req.user.id
+    adminId: req.user.id,
+    email: req.body.email,
+    note: req.body.note,
+    levels: req.body.levels,
+    plan: req.body.plan
   });
   if (fastResult) {
     if (fastResult.error) return res.status(400).json({ message: fastResult.error });

@@ -102,7 +102,7 @@
         </form>
       </article>
       <article class="panel">
-        <div class="panel-head"><h1>Dépôt manuel</h1><span class="badge">Crédit USDT</span></div>
+        <div class="panel-head"><h1>Ajouter des fonds</h1><span class="badge">Crédit USDT</span></div>
         <form data-admin-manual-deposit-form>
           <label>Email utilisateur
             <input name="email" type="email" required placeholder="client@email.com">
@@ -115,6 +115,66 @@
           </label>
           <button class="btn primary full" type="submit">Créditer le compte</button>
         </form>
+      </article>
+    </section>
+    <section class="grid two admin-queues">
+      <article class="panel">
+        <div class="panel-head"><h1>Déduire des fonds</h1><span class="badge">Débit USDT</span></div>
+        <form data-admin-fund-deduct-form>
+          <label>Email utilisateur
+            <input name="email" type="email" required placeholder="client@email.com">
+          </label>
+          <label>Montant USDT
+            <input name="amount" type="number" min="1" step="0.01" required>
+          </label>
+          <label>Note interne
+            <input name="note" type="text" maxlength="300" placeholder="Correction, retrait manuel...">
+          </label>
+          <button class="btn secondary full" type="submit">Déduire le montant</button>
+        </form>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h1>Activer un investissement</h1><span class="badge">Admin</span></div>
+        <form data-admin-plan-activate-form>
+          <label>Email utilisateur
+            <input name="email" type="email" required placeholder="client@email.com">
+          </label>
+          <label>Plan
+            <select name="plan" required>
+              <option value="starter">Starter</option>
+              <option value="smart">Smart</option>
+              <option value="premium">Premium</option>
+              <option value="elite">Elite</option>
+            </select>
+          </label>
+          <label>Montant USDT
+            <input name="amount" type="number" min="10" step="0.01" required>
+          </label>
+          <button class="btn primary full" type="submit">Activer l'investissement</button>
+        </form>
+      </article>
+    </section>
+    <section class="grid two admin-queues">
+      <article class="panel">
+        <div class="panel-head"><h1>Niveaux bonus</h1><span class="badge">Parrainage</span></div>
+        <form data-admin-bonus-levels-form>
+          <label>Email partenaire
+            <input name="email" type="email" required placeholder="partenaire@email.com">
+          </label>
+          <label>Niveaux activés
+            <select name="levels" required>
+              <option value="5">5 niveaux</option>
+              <option value="10">10 niveaux</option>
+              <option value="15">15 niveaux</option>
+              <option value="20">20 niveaux</option>
+            </select>
+          </label>
+          <button class="btn primary full" type="submit">Activer les niveaux</button>
+        </form>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h1>Autres actions</h1><span class="badge">Admin</span></div>
+        <p class="muted">Les actions sensibles disponibles sont: valider/rejeter les transactions, créer un compte, suspendre/réactiver, changer le rôle, ajouter ou déduire des fonds, activer un investissement et ouvrir les niveaux bonus.</p>
       </article>
     </section>
     <section class="panel admin-queues">
