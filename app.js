@@ -33,6 +33,7 @@ const navItems = [
 
 const DEPOSIT_MOBILE_RATE = 650;
 const WITHDRAW_MOBILE_RATE = 550;
+const MTN_WITHDRAW_FEE_RATE = 0.10;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 const plans = [
   { tier: "Bronze", name: "Starter Plan", minAmount: 10, amount: "10 a 49,99 USDT", daily: "0,50%", duration: "90 jours", cycle: "capital + jusqu'a 45% de benefices", note: "Ideal pour decouvrir progressivement l'ecosysteme." },
@@ -379,10 +380,15 @@ function renderWallet(user) {
   const txRefLabel = document.querySelector("[data-deposit-txref-label]");
   const txRefInput = document.querySelector("[data-deposit-txref]");
   const withdrawAmount = document.querySelector("[data-withdraw-amount]");
+  const withdrawAddress = document.querySelector("[data-withdraw-address]");
+  const withdrawPhone = document.querySelector("[data-withdraw-phone]");
+  const withdrawBeneficiary = document.querySelector("[data-withdraw-beneficiary]");
   const depositConversion = document.querySelector("[data-deposit-conversion]");
   const withdrawConversion = document.querySelector("[data-withdraw-conversion]");
   const depositLocalAmount = document.querySelector("[data-deposit-local-amount]");
   const withdrawLocalAmount = document.querySelector("[data-withdraw-local-amount]");
+  const withdrawFee = document.querySelector("[data-withdraw-fee]");
+  const withdrawTotal = document.querySelector("[data-withdraw-total]");
 
   function updateDepositConversion() {
     if (depositConversion) depositConversion.hidden = true;
@@ -391,8 +397,12 @@ function renderWallet(user) {
   }
 
   function updateWithdrawConversion() {
-    if (withdrawConversion) withdrawConversion.hidden = true;
     const amount = Number(withdrawAmount?.value || 0);
+    const method = withdrawMethod?.value || "bep20";
+    const fee = method === "mtn_cg" ? Number((amount * MTN_WITHDRAW_FEE_RATE).toFixed(2)) : 0;
+    if (withdrawConversion) withdrawConversion.hidden = method !== "mtn_cg";
+    if (withdrawFee) withdrawFee.textContent = formatUsdt(fee);
+    if (withdrawTotal) withdrawTotal.textContent = formatUsdt(amount + fee);
     if (withdrawLocalAmount) withdrawLocalAmount.textContent = formatXaf(amount * WITHDRAW_MOBILE_RATE);
   }
 
@@ -406,14 +416,39 @@ function renderWallet(user) {
     if (targetLabel) targetLabel.textContent = target?.label || "Coordonnees de depot indisponibles";
     if (targetValue) targetValue.textContent = target?.value || "Indisponible";
     if (targetNote) targetNote.textContent = target?.note || "Connectez le backend pour charger les coordonnees officielles.";
-    if (txRefLabel) txRefLabel.firstChild.textContent = method === "mtn_cg" ? "Référence transaction MTN" : "Référence transaction crypto";
-    if (txRefInput) txRefInput.placeholder = method === "mtn_cg" ? "Référence MTN Mobile Money" : "Hash de transaction";
+    if (txRefLabel) {
+      txRefLabel.hidden = method === "mtn_cg";
+      txRefLabel.firstChild.textContent = "Référence transaction crypto";
+    }
+    if (txRefInput) {
+      txRefInput.required = method !== "mtn_cg";
+      txRefInput.disabled = method === "mtn_cg";
+      txRefInput.placeholder = "Hash de transaction";
+      if (method === "mtn_cg") txRefInput.value = "";
+    }
     updateDepositConversion();
   }
 
   function updateWithdrawFields() {
-    if (receiveCrypto) receiveCrypto.hidden = false;
-    if (receiveMobile) receiveMobile.hidden = true;
+    const method = withdrawMethod?.value || "bep20";
+    const isMtn = method === "mtn_cg";
+    if (receiveCrypto) receiveCrypto.hidden = isMtn;
+    if (receiveMobile) receiveMobile.hidden = !isMtn;
+    if (withdrawAddress) {
+      withdrawAddress.required = !isMtn;
+      withdrawAddress.disabled = isMtn;
+      if (isMtn) withdrawAddress.value = "";
+    }
+    if (withdrawPhone) {
+      withdrawPhone.required = isMtn;
+      withdrawPhone.disabled = !isMtn;
+      if (!isMtn) withdrawPhone.value = "";
+    }
+    if (withdrawBeneficiary) {
+      withdrawBeneficiary.required = isMtn;
+      withdrawBeneficiary.disabled = !isMtn;
+      if (!isMtn) withdrawBeneficiary.value = "";
+    }
     updateWithdrawConversion();
   }
 

@@ -108,7 +108,7 @@ export const defaultDb = {
     mtn_cg: {
       label: "Depot MTN Mobile Money Congo Brazzaville",
       value: process.env.MTN_CG_DEPOSIT_PHONE || "",
-      note: "Option reservee aux comptes Congo Brazzaville. Indiquez la reference MTN apres paiement."
+      note: "Nom beneficiaire: Estelle Larissa HONGANGA ODJILIE. Taux: 10 USDT = 6500 FCFA. Ajoutez uniquement la capture du paiement."
     }
   }
 };

@@ -965,7 +965,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
   if (isMtnCongoDeposit && !isCongoBrazzaville(req.user.country)) {
     return res.status(403).json({ message: "Le depot MTN Mobile Money est reserve aux comptes Congo Brazzaville." });
   }
-  if (!txRef) {
+  if (!isMtnCongoDeposit && !txRef) {
     return res.status(400).json({ message: "Reference transaction crypto requise." });
   }
   if (!req.file?.buffer?.length) {
@@ -990,7 +990,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
       createdAt: nowIso(),
       metadata: {
         method,
-        txRef,
+        ...(txRef ? { txRef } : {}),
         proof
       }
     };
@@ -1027,7 +1027,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
 });
 
 app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.object({
-  method: z.literal("bep20"),
+  method: z.enum(["bep20", "mtn_cg"]),
   amount: z.coerce.number().positive(),
   address: z.string().optional(),
   phone: z.string().optional(),
@@ -1035,29 +1035,45 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
 })), async (req, res) => {
   const { amount, method } = req.body;
   const address = String(req.body.address || "").trim();
+  const phone = String(req.body.phone || "").trim();
+  const beneficiary = String(req.body.beneficiary || "").trim();
+  const isMtnCongoWithdrawal = method === "mtn_cg";
   if (amount < 10) return res.status(400).json({ message: "Montant minimum retrait: 10 USDT." });
-  if (!address) {
+  if (method === "bep20" && !address) {
     return res.status(400).json({ message: "Adresse wallet BEP20 requise." });
   }
-  if (money(req.user.balance) < money(amount)) {
+  if (isMtnCongoWithdrawal && !isCongoBrazzaville(req.user.country)) {
+    return res.status(403).json({ message: "Le retrait MTN Mobile Money est reserve aux comptes Congo Brazzaville." });
+  }
+  if (isMtnCongoWithdrawal && (!phone || !beneficiary)) {
+    return res.status(400).json({ message: "Numero MTN et nom beneficiaire requis." });
+  }
+  const fee = isMtnCongoWithdrawal ? money(amount * 0.10) : 0;
+  const reservedAmount = money(amount + fee);
+  if (money(req.user.balance) < reservedAmount) {
     return res.status(400).json({ message: "Solde insuffisant." });
   }
 
   let result;
   try {
     result = await withMongoRetry(async () => {
-      const fee = 0;
-      const reservedAmount = money(amount + fee);
       const tx = {
         id: nanoid(),
         userId: req.user.id,
         type: "Retrait",
-        description: `Retrait wallet ${method.toUpperCase()}`,
+        description: isMtnCongoWithdrawal ? "Retrait MTN Mobile Money Congo Brazzaville" : `Retrait wallet ${method.toUpperCase()}`,
         amount: money(amount),
         displayAmount: formatAmount(amount, "-"),
         status: "Pending",
         createdAt: nowIso(),
-        metadata: { method, address, reservedAmount }
+        metadata: {
+          method,
+          fee,
+          reservedAmount,
+          ...(address ? { address } : {}),
+          ...(phone ? { phone } : {}),
+          ...(beneficiary ? { beneficiary } : {})
+        }
       };
 
       const session = await mongoose.startSession();
@@ -1120,7 +1136,7 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
   res.status(201).json({
     reference: result.request?.reference || result.transaction?.id,
     amount,
-    fee: result.request?.fee || 0,
+    fee: result.request?.fee || result.transaction?.metadata?.fee || 0,
     status: result.request?.status || result.transaction?.status
   });
 
@@ -1133,7 +1149,7 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     rows: [
       { label: "Methode", value: method.toUpperCase() },
       { label: "Montant", value: formatAmount(amount) },
-      { label: "Frais", value: formatAmount(result.request?.fee || 0) },
+      { label: "Frais", value: formatAmount(result.request?.fee || result.transaction?.metadata?.fee || 0) },
       { label: "Reference", value: result.request?.reference || result.transaction?.id },
       { label: "Statut", value: result.request?.status || result.transaction?.status }
     ]
@@ -1141,7 +1157,10 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     notifyAdmin("AFRIX - Retrait a traiter", "Retrait a traiter", "Une demande de retrait est en attente.", [
     { label: "Client", value: req.user.email },
     { label: "Methode", value: method.toUpperCase() },
-    { label: "Montant", value: formatAmount(amount) }
+    { label: "Montant", value: formatAmount(amount) },
+    { label: "Frais", value: formatAmount(result.transaction?.metadata?.fee || 0) },
+    ...(phone ? [{ label: "Numero MTN", value: phone }] : []),
+    ...(beneficiary ? [{ label: "Beneficiaire", value: beneficiary }] : [])
     ])
   ]).catch((error) => logger.error({ err: error }, "Withdrawal notification failed"));
 });

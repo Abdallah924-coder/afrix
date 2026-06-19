@@ -50,33 +50,43 @@
           <h2>Instructions dépôt</h2>
           <div class="info-grid">
             <div><span>Minimum</span><strong>10 USDT</strong></div>
-            <div><span>Réseaux</span><strong>BEP20 / TRC20</strong></div>
+            <div><span>Réseaux</span><strong>BEP20 / TRC20 / MTN</strong></div>
             <div><span>Devise</span><strong>USDT</strong></div>
             <div><span>Validation</span><strong>Admin</strong></div>
           </div>
-          <p class="muted">Envoyez uniquement des USDT vers l'adresse officielle AFRIX du réseau sélectionné.</p>
+          <p class="muted">Pour MTN Congo Brazzaville, 10 USDT = 6500 FCFA. Envoyez les fonds au numéro affiché, puis ajoutez uniquement la capture du paiement.</p>
         </section>
       </div>
       <div class="wallet-tab-panel wallet-withdraw-panel">
         <form class="panel" data-withdraw-form>
-          <h1>Retrait USDT BEP20</h1>
-          <input type="hidden" name="method" value="bep20" data-withdraw-method>
-          <label>Réseau<input value="USDT BEP20" readonly></label>
+          <h1>Retrait USDT</h1>
+          <label>Réseau
+            <select name="method" required data-withdraw-method>
+              <option value="bep20">USDT BEP20</option>
+              <option value="mtn_cg">MTN Mobile Money Congo Brazzaville</option>
+            </select>
+          </label>
           <div class="wallet-receive-fields" data-receive-crypto>
-          <label>Adresse wallet<input name="address" placeholder="Adresse USDT" required></label>
+            <label>Adresse wallet<input name="address" placeholder="Adresse USDT" required data-withdraw-address></label>
+          </div>
+          <div class="wallet-receive-fields" data-receive-mobile hidden>
+            <label>Numéro MTN<input name="phone" placeholder="+242..." autocomplete="tel" data-withdraw-phone></label>
+            <label>Nom qui apparaît<input name="beneficiary" placeholder="Nom du compte MTN" data-withdraw-beneficiary></label>
           </div>
           <label>Montant minimum 10 USDT<input name="amount" type="number" min="10" step="0.01" value="10" required data-withdraw-amount></label>
-          <button class="btn primary full" type="submit">Soumettre le retrait BEP20</button>
+          <p class="muted" data-withdraw-conversion hidden>Frais MTN 10%: <strong data-withdraw-fee>1.00 USDT</strong>. Total débité: <strong data-withdraw-total>11.00 USDT</strong>.</p>
+          <button class="btn primary full" type="submit">Soumettre le retrait</button>
         </form>
         <section class="panel">
           <h2>Conditions de retrait</h2>
           <div class="info-grid">
             <div><span>Minimum</span><strong>10 USDT</strong></div>
-            <div><span>Réseau</span><strong>BEP20</strong></div>
-            <div><span>Frais retrait</span><strong>0%</strong></div>
+            <div><span>Réseau</span><strong>BEP20 / MTN</strong></div>
+            <div><span>Frais BEP20</span><strong>0%</strong></div>
+            <div><span>Frais MTN</span><strong>10%</strong></div>
             <div><span>Traitement</span><strong>Admin</strong></div>
           </div>
-          <p class="muted">Les retraits sont traités uniquement vers une adresse USDT BEP20.</p>
+          <p class="muted">Pour MTN, indiquez le numéro et le nom exact qui apparaît sur le compte. Les frais de 10% sont appliqués automatiquement.</p>
         </section>
       </div>
     </section>
