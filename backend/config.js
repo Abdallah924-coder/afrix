@@ -67,7 +67,7 @@ export const publicFiles = new Set([
 export const plans = [
   { id: "starter", name: "Starter Plan", minAmount: 10, dailyRate: 0.005, durationDays: 90 },
   { id: "smart", name: "Smart Plan", minAmount: 50, dailyRate: 0.006, durationDays: 180 },
-  { id: "premium", name: "Premium Plan", minAmount: 100, dailyRate: 0.007, durationDays: 270 },
+  { id: "premium", name: "Premium Plan", minAmount: 300, dailyRate: 0.007, durationDays: 270 },
   { id: "elite", name: "Elite Plan", minAmount: 500, dailyRate: 0.008, durationDays: 365 }
 ];
 

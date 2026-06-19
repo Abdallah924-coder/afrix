@@ -34,12 +34,13 @@ const navItems = [
 const DEPOSIT_MOBILE_RATE = 650;
 const WITHDRAW_MOBILE_RATE = 550;
 const MTN_WITHDRAW_FEE_RATE = 0.10;
+const P2P_FEE_RATE = 0.01;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 const plans = [
-  { tier: "Bronze", name: "Starter Plan", minAmount: 10, amount: "10 a 49,99 USDT", daily: "0,50%", duration: "90 jours", cycle: "capital + jusqu'a 45% de benefices", note: "Ideal pour decouvrir progressivement l'ecosysteme." },
-  { tier: "Silver", name: "Smart Plan", minAmount: 50, amount: "50 a 99,99 USDT", daily: "0,60%", duration: "180 jours", cycle: "capital + jusqu'a 108% de benefices", note: "Adapte aux membres recherchant une strategie plus longue.", featured: true },
-  { tier: "Gold", name: "Premium Plan", minAmount: 100, amount: "100 a 499,99 USDT", daily: "0,70%", duration: "270 jours", cycle: "capital + jusqu'a 189% de benefices", note: "Concu pour les participants souhaitant renforcer leur engagement." },
-  { tier: "Elite", name: "Elite Plan", minAmount: 500, amount: "500 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "capital + jusqu'a 292% de benefices", note: "Destine aux partenaires et investisseurs ayant une vision long terme." }
+  { id: "starter", tier: "Bronze", name: "Starter Plan", minAmount: 10, amount: "10 USDT et plus", daily: "0,50%", duration: "90 jours", cycle: "capital bloque 90 jours + gains journaliers retirable", note: "Premier niveau obligatoire pour ouvrir la progression AFRIX." },
+  { id: "smart", tier: "Silver", name: "Smart Plan", minAmount: 50, amount: "50 USDT et plus", daily: "0,60%", duration: "180 jours", cycle: "capital bloque 180 jours + gains journaliers retirable", note: "Ouvert apres 500 USDT d'activite dans le Starter Plan.", requiredPlan: "starter", requiredAmount: 500, featured: true },
+  { id: "premium", tier: "Gold", name: "Premium Plan", minAmount: 300, amount: "300 USDT et plus", daily: "0,70%", duration: "270 jours", cycle: "capital bloque 270 jours + gains journaliers retirable", note: "Ouvert apres 2500 USDT d'activite dans le Smart Plan.", requiredPlan: "smart", requiredAmount: 2500 },
+  { id: "elite", tier: "Elite", name: "Elite Plan", minAmount: 500, amount: "500 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "capital bloque 365 jours + gains journaliers retirable", note: "Ouvert apres 5000 USDT d'activite dans le Premium Plan.", requiredPlan: "premium", requiredAmount: 5000 }
 ];
 
 const emptyUser = {
@@ -71,6 +72,7 @@ const emptyUser = {
   adminExchangeOrders: [],
   merchantApplications: [],
   disputes: [],
+  activePlans: [],
   platformControls: {},
   role: "user"
 };
@@ -196,6 +198,7 @@ function normalizeUser(user) {
     adminExchangeOrders: Array.isArray(user?.adminExchangeOrders) ? user.adminExchangeOrders : [],
     merchantApplications: Array.isArray(user?.merchantApplications) ? user.merchantApplications : [],
     disputes: Array.isArray(user?.disputes) ? user.disputes : [],
+    activePlans: Array.isArray(user?.activePlans) ? user.activePlans : [],
     platformControls: user?.platformControls || {},
     country: user?.country || ""
   };
@@ -388,6 +391,7 @@ function renderWallet(user) {
   const depositLocalAmount = document.querySelector("[data-deposit-local-amount]");
   const withdrawLocalAmount = document.querySelector("[data-withdraw-local-amount]");
   const withdrawFee = document.querySelector("[data-withdraw-fee]");
+  const withdrawNet = document.querySelector("[data-withdraw-net]");
   const withdrawTotal = document.querySelector("[data-withdraw-total]");
 
   function updateDepositConversion() {
@@ -400,9 +404,11 @@ function renderWallet(user) {
     const amount = Number(withdrawAmount?.value || 0);
     const method = withdrawMethod?.value || "bep20";
     const fee = method === "mtn_cg" ? Number((amount * MTN_WITHDRAW_FEE_RATE).toFixed(2)) : 0;
+    const net = Number((amount - fee).toFixed(2));
     if (withdrawConversion) withdrawConversion.hidden = method !== "mtn_cg";
     if (withdrawFee) withdrawFee.textContent = formatUsdt(fee);
-    if (withdrawTotal) withdrawTotal.textContent = formatUsdt(amount + fee);
+    if (withdrawNet) withdrawNet.textContent = formatUsdt(net);
+    if (withdrawTotal) withdrawTotal.textContent = formatUsdt(amount);
     if (withdrawLocalAmount) withdrawLocalAmount.textContent = formatXaf(amount * WITHDRAW_MOBILE_RATE);
   }
 
@@ -464,8 +470,19 @@ function renderPlans(user) {
   const list = document.querySelector("[data-plans-list]");
   if (!list) return;
 
-  list.innerHTML = plans.map((plan) => `
-    <article class="${plan.featured ? "featured" : ""}">
+  const activityByPlan = (planId) => (user.activePlans || [])
+    .filter((activePlan) => activePlan.planId === planId)
+    .reduce((total, activePlan) => total + Number(activePlan.amount || 0), 0);
+
+  list.innerHTML = plans.map((plan) => {
+    const currentActivity = plan.requiredPlan ? activityByPlan(plan.requiredPlan) : 0;
+    const isUnlocked = !plan.requiredPlan || currentActivity >= Number(plan.requiredAmount || 0);
+    const requirement = plan.requiredPlan
+      ? `Condition: ${Number(plan.requiredAmount || 0).toLocaleString("fr-FR")} USDT investis dans ${plans.find((item) => item.id === plan.requiredPlan)?.name || "le plan precedent"} - Actuel: ${formatUsdt(currentActivity)}`
+      : "Condition: ouverture initiale avec 10 USDT.";
+
+    return `
+    <article class="${plan.featured ? "featured" : ""} ${isUnlocked ? "" : "locked"}">
       <span class="plan-tier">${plan.tier}</span>
       <h2>${plan.name}</h2>
       <strong>${plan.amount}</strong>
@@ -475,14 +492,16 @@ function renderPlans(user) {
         <small><span>Objectif cycle</span>${plan.cycle}</small>
       </div>
       <p>${plan.note}</p>
-      <small>Solde disponible: ${formatUsdt(user.balance)} - Activite actuelle: ${Number(user.activity || 0).toFixed(0)} USDT</small>
+      <small>${requirement}</small>
+      <small>Solde disponible: ${formatUsdt(user.balance)} - Activite totale: ${Number(user.activity || 0).toFixed(0)} USDT</small>
       <label class="plan-investment-input">
         Montant a investir
         <input type="number" min="10" step="0.01" value="${plan.minAmount}" data-plan-amount>
       </label>
-      <button class="btn primary" type="button" data-plan="${escapeHtml(plan.name)}" data-plan-min="${plan.minAmount}">Activer</button>
+      <button class="btn primary" type="button" data-plan="${escapeHtml(plan.name)}" data-plan-min="${plan.minAmount}">${isUnlocked ? "Activer" : "Verrouille"}</button>
     </article>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function renderNetwork(user) {
@@ -717,6 +736,32 @@ function renderMerchants(user) {
       </div>
     `).join("") : `<p class="muted">Aucune demande Exchange reçue.</p>`;
   }
+}
+
+function renderP2pRecipientPreview(recipient) {
+  const preview = document.querySelector("[data-p2p-recipient-preview]");
+  if (!preview) return;
+  if (!recipient) {
+    preview.hidden = true;
+    preview.innerHTML = "";
+    return;
+  }
+  preview.hidden = false;
+  preview.innerHTML = `
+    <div>
+      <span>Destinataire verifie</span>
+      <strong>${escapeHtml(recipient.displayName || "Utilisateur AFRIX")}</strong>
+      <small>${escapeHtml(recipient.email || "")}</small>
+    </div>
+  `;
+}
+
+function updateP2pFeePreview() {
+  const amount = Number(document.querySelector("[data-p2p-amount]")?.value || 0);
+  const preview = document.querySelector("[data-p2p-fee-preview]");
+  if (!preview) return;
+  const fee = Number((Math.max(0, amount) * P2P_FEE_RATE).toFixed(2));
+  preview.textContent = `Frais 1%: ${formatUsdt(fee)}. Total debite: ${formatUsdt(amount + fee)}.`;
 }
 
 function renderAdmin(user) {
@@ -1102,7 +1147,7 @@ function setupActions(user) {
     const restoreButton = setButtonLoading(submitButton, "Traitement...");
     try {
       const response = await apiJson("/withdrawals", formToObject(form));
-      if (response.reference) showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0);
+      if (response.reference) showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0, response.netAmount);
       showToast("Demande de retrait soumise. Elle est visible dans vos transactions.");
       form.reset();
       loadCurrentUser()
@@ -1131,7 +1176,7 @@ function setupActions(user) {
     }
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
-      const response = await apiJson("/plans/activate", { amount });
+      const response = await apiJson("/plans/activate", { amount, plan: button.dataset.plan });
       showToast(`Activation ${formatUsdt(amount)} - ${response.activePlan?.name || "plan"} soumise.`);
       const freshUser = await loadCurrentUser();
       renderProtectedShell(document.body.dataset.page, freshUser);
@@ -1144,20 +1189,88 @@ function setupActions(user) {
   });
 
   const p2pForm = document.querySelector("[data-p2p-form]");
+  const p2pLookup = document.querySelector("[data-p2p-lookup]");
+  const p2pRecipientInput = document.querySelector("[data-p2p-recipient]");
+  const p2pAmountInput = document.querySelector("[data-p2p-amount]");
+  let p2pRecipient = null;
+
+  const lookupP2pRecipient = async () => {
+    const email = String(p2pRecipientInput?.value || "").trim().toLowerCase();
+    if (!email) {
+      showToast("Email du destinataire requis.", "error");
+      return null;
+    }
+    const restoreButton = setButtonLoading(p2pLookup, "Verification...");
+    try {
+      const data = await apiRequest(`/p2p-recipient/${encodeURIComponent(email)}`);
+      p2pRecipient = data;
+      renderP2pRecipientPreview(data);
+      showToast("Destinataire verifie.");
+      return data;
+    } catch (error) {
+      p2pRecipient = null;
+      renderP2pRecipientPreview(null);
+      showToast(error.message, "error");
+      return null;
+    } finally {
+      restoreButton();
+    }
+  };
+
+  if (p2pLookup && !p2pLookup.dataset.boundLookup) {
+    p2pLookup.dataset.boundLookup = "true";
+    p2pLookup.addEventListener("click", lookupP2pRecipient);
+  }
+  if (p2pRecipientInput && !p2pRecipientInput.dataset.boundP2pRecipient) {
+    p2pRecipientInput.dataset.boundP2pRecipient = "true";
+    p2pRecipientInput.addEventListener("input", () => {
+      p2pRecipient = null;
+      renderP2pRecipientPreview(null);
+    });
+  }
+  if (p2pAmountInput && !p2pAmountInput.dataset.boundP2pAmount) {
+    p2pAmountInput.dataset.boundP2pAmount = "true";
+    p2pAmountInput.addEventListener("input", updateP2pFeePreview);
+    updateP2pFeePreview();
+  }
+
   if (p2pForm && !p2pForm.dataset.boundSubmit) p2pForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    const data = formToObject(form);
+    const amount = Number(data.amount || 0);
+    const fee = Number((amount * P2P_FEE_RATE).toFixed(2));
+    const total = Number((amount + fee).toFixed(2));
+    if (!Number.isFinite(amount) || amount < 1) {
+      showToast("Montant minimum transfert: 1 USDT.", "error");
+      return;
+    }
+    if (total > Number(user.balance || 0)) {
+      showToast(`Solde insuffisant. Total requis: ${formatUsdt(total)}.`, "error");
+      return;
+    }
+    if (!p2pRecipient || p2pRecipient.email !== String(data.recipient || "").trim().toLowerCase()) {
+      const recipient = await lookupP2pRecipient();
+      if (!recipient) return;
+    }
+    const confirmed = window.confirm(`Confirmer l'envoi de ${formatUsdt(amount)} a ${p2pRecipient.displayName || p2pRecipient.email} ? Frais: ${formatUsdt(fee)}. Total debite: ${formatUsdt(total)}.`);
+    if (!confirmed) return;
     const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Envoi...");
     try {
-      await apiJson("/p2p-transfers", formToObject(form));
-      showToast("Transfert P2P envoye.");
+      const response = await apiJson("/p2p-transfers", data);
+      showToast(`Transfert P2P envoye. Reference: ${response.reference || "AFRIX"}.`);
+      form.reset();
+      p2pRecipient = null;
+      renderP2pRecipientPreview(null);
+      updateP2pFeePreview();
+      const freshUser = await loadCurrentUser();
+      renderProtectedShell(document.body.dataset.page, freshUser);
     } catch (error) {
-      restoreButton();
       showToast(error.message, "error");
-      return;
+    } finally {
+      restoreButton();
     }
-    restoreButton();
   });
   if (p2pForm) p2pForm.dataset.boundSubmit = "true";
 
@@ -1439,14 +1552,18 @@ function setupActions(user) {
   if (exchangeCodeForm) exchangeCodeForm.dataset.boundSubmit = "true";
 }
 
-function showCicoReference(reference, operation, amount, fee) {
+function showCicoReference(reference, operation, amount, fee, netAmount = null) {
   const output = document.querySelector("[data-cico-reference-output]");
   const refValue = document.querySelector("[data-cico-reference]");
   const refSummary = document.querySelector("[data-cico-reference-summary]");
   if (!output || !refValue || !refSummary) return;
 
   refValue.textContent = reference;
-  refSummary.textContent = `${operation}: ${formatUsdt(amount)}${fee ? ` + ${formatUsdt(fee)} de frais` : " sans frais"}.`;
+  if (netAmount !== null && Number.isFinite(Number(netAmount))) {
+    refSummary.textContent = `${operation}: ${formatUsdt(amount)} - frais ${formatUsdt(fee)} = ${formatUsdt(netAmount)}.`;
+  } else {
+    refSummary.textContent = `${operation}: ${formatUsdt(amount)}${fee ? ` + ${formatUsdt(fee)} de frais` : " sans frais"}.`;
+  }
   output.hidden = false;
 
   document.querySelectorAll(".merchant-card a[href^='https://wa.me/']").forEach((link) => {

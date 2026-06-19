@@ -341,6 +341,27 @@ function planForAmount(amount) {
     .find((plan) => amount >= plan.minAmount) || null;
 }
 
+const planUnlockRules = {
+  smart: { requiredPlanId: "starter", requiredAmount: 500 },
+  premium: { requiredPlanId: "smart", requiredAmount: 2500 },
+  elite: { requiredPlanId: "premium", requiredAmount: 5000 }
+};
+
+function planActivity(user, planId) {
+  return (Array.isArray(user.activePlans) ? user.activePlans : [])
+    .filter((activePlan) => activePlan.planId === planId)
+    .reduce((total, activePlan) => money(total + Number(activePlan.amount || 0)), 0);
+}
+
+function planUnlockError(user, plan) {
+  const rule = planUnlockRules[plan.id];
+  if (!rule) return "";
+  const currentActivity = planActivity(user, rule.requiredPlanId);
+  if (currentActivity >= rule.requiredAmount) return "";
+  const requiredPlan = plans.find((item) => item.id === rule.requiredPlanId);
+  return `${plan.name} verrouille. Il faut ${formatAmount(rule.requiredAmount)} d'activite dans ${requiredPlan?.name || "le plan precedent"}. Activite actuelle: ${formatAmount(currentActivity)}.`;
+}
+
 function validateExchangeRate(type, rate) {
   const numericRate = Number(rate);
   if (!Number.isFinite(numericRate)) return "Taux invalide.";
@@ -1049,7 +1070,11 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     return res.status(400).json({ message: "Numero MTN et nom beneficiaire requis." });
   }
   const fee = isMtnCongoWithdrawal ? money(amount * 0.10) : 0;
-  const reservedAmount = money(amount + fee);
+  const netAmount = money(amount - fee);
+  const reservedAmount = money(amount);
+  if (isMtnCongoWithdrawal && netAmount <= 0) {
+    return res.status(400).json({ message: "Le montant apres frais doit rester positif." });
+  }
   if (money(req.user.balance) < reservedAmount) {
     return res.status(400).json({ message: "Solde insuffisant." });
   }
@@ -1069,6 +1094,7 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
         metadata: {
           method,
           fee,
+          netAmount,
           reservedAmount,
           ...(address ? { address } : {}),
           ...(phone ? { phone } : {}),
@@ -1137,6 +1163,7 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     reference: result.request?.reference || result.transaction?.id,
     amount,
     fee: result.request?.fee || result.transaction?.metadata?.fee || 0,
+    netAmount: result.request?.netAmount || result.transaction?.metadata?.netAmount || money(amount - fee),
     status: result.request?.status || result.transaction?.status
   });
 
@@ -1150,6 +1177,7 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
       { label: "Methode", value: method.toUpperCase() },
       { label: "Montant", value: formatAmount(amount) },
       { label: "Frais", value: formatAmount(result.request?.fee || result.transaction?.metadata?.fee || 0) },
+      { label: "Net a recevoir", value: formatAmount(result.request?.netAmount || result.transaction?.metadata?.netAmount || money(amount - fee)) },
       { label: "Reference", value: result.request?.reference || result.transaction?.id },
       { label: "Statut", value: result.request?.status || result.transaction?.status }
     ]
@@ -1159,6 +1187,7 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     { label: "Methode", value: method.toUpperCase() },
     { label: "Montant", value: formatAmount(amount) },
     { label: "Frais", value: formatAmount(result.transaction?.metadata?.fee || 0) },
+    { label: "Net a recevoir", value: formatAmount(result.transaction?.metadata?.netAmount || money(amount - fee)) },
     ...(phone ? [{ label: "Numero MTN", value: phone }] : []),
     ...(beneficiary ? [{ label: "Beneficiaire", value: beneficiary }] : [])
     ])
@@ -1170,14 +1199,18 @@ app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(
   plan: z.string().optional()
 })), async (req, res) => {
   const requestedAmount = req.body.amount ? money(req.body.amount) : null;
-  const plan = requestedAmount ? planForAmount(requestedAmount) : parsePlan(req.body.plan);
+  const plan = req.body.plan ? parsePlan(req.body.plan) : planForAmount(requestedAmount);
   if (!plan) return res.status(400).json({ message: "Plan inconnu." });
   const investmentAmount = requestedAmount || money(plan.minAmount || plan.amount);
-  if (investmentAmount < 10) return res.status(400).json({ message: "Montant minimum investissement: 10 USDT." });
+  if (investmentAmount < money(plan.minAmount)) {
+    return res.status(400).json({ message: `Montant minimum ${plan.name}: ${formatAmount(plan.minAmount)}.` });
+  }
 
   const result = await updateDb(async (db) => {
     const user = db.users.find((candidate) => candidate.id === req.user.id);
     if (user.balance < investmentAmount) return { error: "Solde insuffisant pour activer ce plan." };
+    const unlockError = planUnlockError(user, plan);
+    if (unlockError) return { error: unlockError };
 
     debitUser(db, user, investmentAmount, `Activation ${plan.name}`, {
       source: "plan_activation",
@@ -1225,30 +1258,62 @@ app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(
   res.json({ user: sanitizeUser(result.user), activePlan: result.activePlan });
 });
 
+function maskDisplayName(value = "") {
+  const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "Utilisateur AFRIX";
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1][0] || ""}.`;
+}
+
+app.get("/api/p2p-recipient/:email", authenticate, requirePlatformAccess(), (req, res) => {
+  const email = String(req.params.email || "").trim().toLowerCase();
+  const recipient = req.db.users.find((user) => String(user.email || "").toLowerCase() === email);
+  if (!recipient) return res.status(404).json({ message: "Destinataire introuvable." });
+  if (recipient.id === req.user.id) {
+    return res.status(400).json({ message: "Vous ne pouvez pas vous envoyer des fonds a vous-meme." });
+  }
+  if (recipient.status && recipient.status !== "active") {
+    return res.status(400).json({ message: "Ce compte ne peut pas recevoir de transfert." });
+  }
+  res.json({
+    email: recipient.email,
+    displayName: maskDisplayName(recipient.fullName || recipient.email),
+    canReceive: true
+  });
+});
+
 app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z.object({
   recipient: z.string().email(),
-  amount: z.coerce.number().positive()
+  amount: z.coerce.number().positive(),
+  note: z.string().max(180).optional()
 })), async (req, res) => {
+  const amount = money(req.body.amount);
+  const fee = money(amount * 0.01);
+  const total = money(amount + fee);
+  const note = String(req.body.note || "").trim().slice(0, 180);
   const result = await updateDb(async (db) => {
     const sender = db.users.find((user) => user.id === req.user.id);
     const recipient = db.users.find((user) => user.email === req.body.recipient.trim().toLowerCase());
     if (!recipient) return { error: "Destinataire introuvable." };
-    const fee = money(req.body.amount * 0.01);
-    const total = money(req.body.amount + fee);
+    if (recipient.id === sender.id) return { error: "Vous ne pouvez pas vous envoyer des fonds a vous-meme." };
+    if (recipient.status && recipient.status !== "active") return { error: "Ce compte ne peut pas recevoir de transfert." };
     if (sender.balance < total) return { error: "Solde insuffisant." };
+    const reference = makeReference("P2P", amount);
 
     debitUser(db, sender, total, `Transfert vers ${recipient.email}`, {
       source: "p2p_transfer",
-      referenceId: recipient.id
+      referenceId: reference,
+      extra: { recipientId: recipient.id, amount, fee, note }
     });
-    creditUser(db, recipient, req.body.amount, `Reception depuis ${sender.email}`, {
+    creditUser(db, recipient, amount, `Reception depuis ${sender.email}`, {
       source: "p2p_transfer",
-      referenceId: sender.id
+      referenceId: reference,
+      extra: { senderId: sender.id, fee, note }
     });
     creditPlatform(db, fee, "Frais P2P", {
       source: "p2p_fee",
-      referenceId: sender.id,
-      extra: { recipientId: recipient.id }
+      referenceId: reference,
+      extra: { senderId: sender.id, recipientId: recipient.id }
     });
     db.transactions.push({
       id: nanoid(),
@@ -1258,18 +1323,26 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
       amount: total,
       displayAmount: formatAmount(total, "-"),
       status: "Completed",
-      createdAt: nowIso()
+      createdAt: nowIso(),
+      metadata: { reference, amount, fee, total, recipientEmail: recipient.email, note }
     }, {
       id: nanoid(),
       userId: recipient.id,
       type: "P2P",
       description: `Reception depuis ${sender.email}`,
-      amount: req.body.amount,
-      displayAmount: formatAmount(req.body.amount, "+"),
+      amount,
+      displayAmount: formatAmount(amount, "+"),
       status: "Completed",
-      createdAt: nowIso()
+      createdAt: nowIso(),
+      metadata: { reference, amount, senderEmail: sender.email, note }
     });
-    return { transferId: nanoid() };
+    return {
+      reference,
+      amount,
+      fee,
+      total,
+      recipient: { email: recipient.email, displayName: maskDisplayName(recipient.fullName || recipient.email) }
+    };
   });
 
   if (result.error) return res.status(400).json({ message: result.error });
