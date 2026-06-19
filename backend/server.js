@@ -16,6 +16,9 @@ import {
   ADMIN_NAME,
   ADMIN_PASSWORD,
   APP_URL,
+  COMMISSION_DEVELOPER_EMAIL,
+  COMMISSION_DEVELOPER_NAME,
+  COMMISSION_DEVELOPER_PASSWORD,
   MONGODB_URI,
   PORT,
   PUBLIC_ORIGIN,
@@ -457,10 +460,10 @@ function composeUser(db, user) {
     refLink: `${process.env.APP_URL || "http://localhost:" + PORT}/register?ref=${user.refCode}`,
     transactions: db.transactions
       .filter((tx) => tx.userId === user.id)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       .map((tx) => ({
         id: tx.id,
-        date: tx.createdAt.slice(0, 10),
+        date: String(tx.createdAt || "").slice(0, 10),
         type: tx.type,
         description: tx.description,
         amount: tx.displayAmount,
@@ -487,7 +490,16 @@ function composeUser(db, user) {
             metadata: {
               method: tx.metadata?.method || "",
               txRef: tx.metadata?.txRef || "",
-              address: tx.metadata?.address || ""
+              address: tx.metadata?.address || "",
+              phone: tx.metadata?.phone || "",
+              beneficiary: tx.metadata?.beneficiary || "",
+              fee: money(tx.metadata?.fee),
+              netAmount: money(tx.metadata?.netAmount),
+              reservedAmount: money(tx.metadata?.reservedAmount),
+              reference: tx.metadata?.reference || "",
+              localAmount: money(tx.metadata?.localAmount),
+              rate: money(tx.metadata?.rate),
+              paymentMethod: tx.metadata?.paymentMethod || ""
             }
           };
         })
@@ -608,6 +620,11 @@ async function distributeNetworkBonus(db, sourceUser, amount) {
     const unlockedLevels = Math.floor(Number(referrer.activity || 0) / 100);
     if (unlockedLevels > level) {
       const bonus = money((amount * bonusRates[level]) / 100);
+      debitPlatform(db, bonus, `Bonus reseau niveau ${level + 1}`, {
+        source: "network_bonus_payout",
+        referenceId: sourceUser.id,
+        extra: { sourceUserId: sourceUser.id, level: level + 1 }
+      });
       creditUser(db, referrer, bonus, `Bonus reseau niveau ${level + 1}`, {
         source: "network_bonus",
         referenceId: sourceUser.id,
@@ -627,6 +644,50 @@ async function distributeNetworkBonus(db, sourceUser, amount) {
 
     currentReferrerId = referrer.referrerId;
   }
+}
+
+function distributeHouseCommissions(db, sourceUser, amount) {
+  const recipients = [
+    {
+      email: ADMIN_EMAIL,
+      rate: 0.075,
+      label: "Commission admin",
+      source: "admin_activation_commission"
+    },
+    {
+      email: COMMISSION_DEVELOPER_EMAIL,
+      rate: 0.075,
+      label: "Commission developpeur",
+      source: "developer_activation_commission"
+    }
+  ];
+
+  recipients.forEach((recipient) => {
+    if (!recipient.email) return;
+    const account = db.users.find((user) => String(user.email || "").toLowerCase() === recipient.email);
+    if (!account) return;
+    const commission = money(amount * recipient.rate);
+    if (commission <= 0) return;
+    debitPlatform(db, commission, `${recipient.label} activation plan`, {
+      source: `${recipient.source}_payout`,
+      referenceId: sourceUser.id,
+      extra: { sourceUserId: sourceUser.id, rate: recipient.rate }
+    });
+    creditUser(db, account, commission, `${recipient.label} activation plan`, {
+      source: recipient.source,
+      referenceId: sourceUser.id,
+      extra: { sourceUserId: sourceUser.id, rate: recipient.rate }
+    });
+    addTransaction(db, {
+      userId: account.id,
+      type: "Commission",
+      description: `${recipient.label} activation plan`,
+      amount: commission,
+      displayAmount: formatAmount(commission, "+"),
+      status: "Completed",
+      metadata: { sourceUserId: sourceUser.id, rate: recipient.rate, source: recipient.source }
+    });
+  });
 }
 
 function completePlanWithCapitalReturn(db, user, plan, payoutDate) {
@@ -773,6 +834,52 @@ async function ensureAdminUser() {
 
   logger.info({ email: maskEmail(admin.email), userId: admin.id }, "Admin account ready");
   return sanitizeUser(admin);
+}
+
+async function ensureCommissionAccount({ email, password, fullName, role }) {
+  if (!email || !password) return null;
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const accountId = nanoid();
+  const refCode = `AFX-${nanoid(8).toUpperCase()}`;
+  const account = normalizeUserRecord(await UserModel.findOneAndUpdate(
+    { email },
+    {
+      $set: {
+        email,
+        fullName,
+        passwordHash,
+        role,
+        status: "active"
+      },
+      $setOnInsert: {
+        id: accountId,
+        balance: 0,
+        reservedBalance: 0,
+        activity: 0,
+        bonus: 0,
+        wallet: "",
+        refCode,
+        referrerId: null,
+        merchantWallet: { available: 0, pending: 0, bonus: 0 },
+        activePlans: [],
+        createdAt: nowIso()
+      }
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean());
+
+  logger.info({ email: maskEmail(account.email), userId: account.id }, "Commission account ready");
+  return sanitizeUser(account);
+}
+
+async function ensureCommissionAccounts() {
+  await ensureCommissionAccount({
+    email: COMMISSION_DEVELOPER_EMAIL,
+    password: COMMISSION_DEVELOPER_PASSWORD,
+    fullName: COMMISSION_DEVELOPER_NAME,
+    role: "user"
+  });
 }
 
 const app = express();
@@ -1239,18 +1346,18 @@ app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(
     user.activePlans = user.activePlans || [];
     user.activePlans.push(activePlan);
 
-    db.transactions.push({
-      id: nanoid(),
+    addTransaction(db, {
       userId: user.id,
       type: "Plan",
       description: `Activation ${plan.name}`,
       amount: investmentAmount,
       displayAmount: formatAmount(investmentAmount, "-"),
       status: "Active",
-      createdAt: nowIso()
+      metadata: { planId: plan.id, activePlanId: activePlan.id }
     });
 
     await distributeNetworkBonus(db, user, investmentAmount);
+    distributeHouseCommissions(db, user, investmentAmount);
     return { user, activePlan };
   });
 
@@ -1783,11 +1890,17 @@ app.post("/api/disputes", authenticate, validate(z.object({
 app.get("/api/transactions/export", authenticate, (req, res) => {
   const rows = req.db.transactions.filter((tx) => req.user.role === "admin" || tx.userId === req.user.id);
   const csv = [
-    "date,type,description,amount,status",
-    ...rows.map((tx) => [tx.createdAt.slice(0, 10), tx.type, tx.description, tx.displayAmount, tx.status]
+    "date,type,description,amount,status,reference",
+    ...rows
+      .slice()
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+      .map((tx) => [String(tx.createdAt || "").slice(0, 10), tx.type, tx.description, tx.displayAmount, tx.status, tx.metadata?.reference || tx.id]
       .map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))
   ].join("\n");
-  res.type("text/csv").send(csv);
+  res
+    .type("text/csv")
+    .set("Content-Disposition", `attachment; filename="afrix-transactions-${today()}.csv"`)
+    .send(csv);
 });
 
 app.post("/api/admin/settings", authenticate, requireAdmin, validate(z.object({
@@ -1823,6 +1936,7 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
   email: z.string().email().optional(),
   password: z.string().min(10).optional(),
   fullName: z.string().min(2).optional(),
+  note: z.string().max(300).optional(),
   role: z.enum(["user", "admin"]).optional(),
   status: z.enum(["active", "blocked"]).optional()
 })), async (req, res) => {
@@ -1867,6 +1981,36 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
         metadata: { reviewedBy: req.user.id, source: "admin_user_create" }
       });
       return { user: sanitizeUser(user) };
+    }
+
+    if (action === "manual-deposit") {
+      const email = String(req.body.email || "").trim().toLowerCase();
+      if (!email || !amount) return { error: "Email et montant requis." };
+      const target = db.users.find((candidate) => String(candidate.email || "").toLowerCase() === email);
+      if (!target) return { error: "Utilisateur introuvable." };
+      if (target.status && target.status !== "active") return { error: "Ce compte est suspendu." };
+      const reference = `ADM-${nanoid(10).toUpperCase()}`;
+      const description = "Depot manuel admin";
+      creditUser(db, target, amount, description, {
+        source: "admin_manual_deposit",
+        referenceId: reference,
+        extra: { reviewedBy: req.user.id, note: req.body.note || "" }
+      });
+      addTransaction(db, {
+        userId: target.id,
+        type: "Depot",
+        description,
+        amount,
+        displayAmount: formatAmount(amount, "+"),
+        status: "Completed",
+        metadata: {
+          source: "admin_manual_deposit",
+          reviewedBy: req.user.id,
+          reference,
+          note: req.body.note || ""
+        }
+      });
+      return { reference, user: sanitizeUser(target) };
     }
 
     if (action === "user-suspend" || action === "user-reactivate" || action === "user-role") {
@@ -1957,12 +2101,20 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
       }
       if (user && tx.type === "Retrait") {
         const reservedAmount = money(tx.metadata.reservedAmount || tx.amount);
+        const feeAmount = money(tx.metadata.fee || 0);
         if (action === "approve") {
           if (money(user.reservedBalance) >= reservedAmount) {
             consumeReservedFunds(db, user, reservedAmount, tx.description || "Retrait approuve", {
               source: "admin_withdrawal_approval",
               referenceId: tx.id
             });
+            if (feeAmount > 0) {
+              creditPlatform(db, feeAmount, `Frais ${tx.description || "Retrait approuve"}`, {
+                source: "admin_withdrawal_fee",
+                referenceId: tx.id,
+                extra: { userId: user.id, method: tx.metadata.method || "" }
+              });
+            }
           }
         } else if (money(user.reservedBalance) >= reservedAmount) {
           releaseReservedFunds(db, user, reservedAmount, tx.description || "Retrait rejete", {
@@ -2050,6 +2202,7 @@ async function bootstrapServer() {
   if (!skipStorageBoot) {
     await ensureStorage();
     await ensureAdminUser();
+    await ensureCommissionAccounts();
   } else {
     logger.warn("Storage bootstrap skipped for local smoke test");
   }
@@ -2058,8 +2211,7 @@ async function bootstrapServer() {
     logger.info(`AFRIX server listening on http://localhost:${PORT}`);
   });
 
-  const initialPlanEarningsTimer = setTimeout(runDailyPlanEarnings, 5 * 60 * 1000);
-  initialPlanEarningsTimer.unref?.();
+  runDailyPlanEarnings();
   const planEarningsTimer = setInterval(runDailyPlanEarnings, 6 * 60 * 60 * 1000);
   planEarningsTimer.unref?.();
 }

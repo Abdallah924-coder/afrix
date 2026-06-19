@@ -26,6 +26,12 @@ services:
         sync: false
       - key: ADMIN_NAME
         value: Administrateur AFRIX
+      - key: COMMISSION_DEVELOPER_EMAIL
+        sync: false
+      - key: COMMISSION_DEVELOPER_PASSWORD
+        sync: false
+      - key: COMMISSION_DEVELOPER_NAME
+        value: Compte developpeur AFRIX
       - key: BREVO_API_KEY
         sync: false
       - key: BREVO_SENDER_EMAIL

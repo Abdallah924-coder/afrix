@@ -51,7 +51,7 @@
         <div class="list" data-admin-pending-deposits></div>
       </article>
       <article class="panel">
-        <div class="panel-head"><h1>Retraits BEP20 à traiter</h1><span class="badge" data-pending-withdrawals-count>0</span></div>
+        <div class="panel-head"><h1>Retraits à traiter</h1><span class="badge" data-pending-withdrawals-count>0</span></div>
         <div class="list" data-admin-pending-withdrawals></div>
       </article>
     </section>
@@ -62,7 +62,7 @@
       </article>
       <article class="panel">
         <div class="panel-head"><h1>Règle opérationnelle</h1><span class="badge">USDT + Exchange</span></div>
-        <p class="muted">Les dépôts USDT BEP20/TRC20 et les retraits USDT BEP20 sont validés par l'admin. L'Exchange merchant permet aux utilisateurs en monnaie locale d'acheter ou de vendre des USDT via des annonces et une référence WhatsApp.</p>
+        <p class="muted">Les dépôts USDT BEP20/TRC20/MTN et les retraits BEP20/MTN sont validés par l'admin. L'admin peut aussi confirmer les demandes Exchange en attente si nécessaire.</p>
       </article>
     </section>
     <section class="panel admin-queues">
@@ -102,9 +102,24 @@
         </form>
       </article>
       <article class="panel">
+        <div class="panel-head"><h1>Dépôt manuel</h1><span class="badge">Crédit USDT</span></div>
+        <form data-admin-manual-deposit-form>
+          <label>Email utilisateur
+            <input name="email" type="email" required placeholder="client@email.com">
+          </label>
+          <label>Montant USDT
+            <input name="amount" type="number" min="1" step="0.01" required>
+          </label>
+          <label>Note interne
+            <input name="note" type="text" maxlength="300" placeholder="Correction, cash, support...">
+          </label>
+          <button class="btn primary full" type="submit">Créditer le compte</button>
+        </form>
+      </article>
+    </section>
+    <section class="panel admin-queues">
         <div class="panel-head"><h1>Comptes utilisateurs</h1><span class="badge" data-admin-users-count>0</span></div>
         <div class="list" data-admin-users></div>
-      </article>
     </section>
   </main>
   <script src="../app.js?v=20260619-2"></script>

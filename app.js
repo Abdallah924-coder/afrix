@@ -383,6 +383,7 @@ function renderWallet(user) {
   const txRefLabel = document.querySelector("[data-deposit-txref-label]");
   const txRefInput = document.querySelector("[data-deposit-txref]");
   const withdrawAmount = document.querySelector("[data-withdraw-amount]");
+  const mtnWithdrawOption = document.querySelector("[data-withdraw-mtn-cg-option]");
   const withdrawAddress = document.querySelector("[data-withdraw-address]");
   const withdrawPhone = document.querySelector("[data-withdraw-phone]");
   const withdrawBeneficiary = document.querySelector("[data-withdraw-beneficiary]");
@@ -436,6 +437,9 @@ function renderWallet(user) {
   }
 
   function updateWithdrawFields() {
+    const canUseMtn = isCongoBrazzaville(user.country);
+    if (mtnWithdrawOption) mtnWithdrawOption.hidden = !canUseMtn;
+    if (!canUseMtn && withdrawMethod?.value === "mtn_cg") withdrawMethod.value = "bep20";
     const method = withdrawMethod?.value || "bep20";
     const isMtn = method === "mtn_cg";
     if (receiveCrypto) receiveCrypto.hidden = isMtn;
@@ -859,15 +863,30 @@ function renderQueue(selector, rows, options = {}) {
   const list = document.querySelector(selector);
   if (!list) return;
 
-  list.innerHTML = rows.length ? rows.map((item) => `
+  list.innerHTML = rows.length ? rows.map((item) => {
+    const details = [
+      item.userEmail || "",
+      item.date || "",
+      `Ref. ${item.reference || item.id || ""}`,
+      item.metadata?.method ? `Methode ${item.metadata.method.toUpperCase()}` : "",
+      item.metadata?.txRef ? `TX ${item.metadata.txRef}` : "",
+      item.metadata?.address ? `Adresse ${item.metadata.address}` : "",
+      item.metadata?.phone ? `Tel ${item.metadata.phone}` : "",
+      item.metadata?.beneficiary ? `Nom ${item.metadata.beneficiary}` : "",
+      item.metadata?.fee ? `Frais ${formatUsdt(item.metadata.fee)}` : "",
+      item.metadata?.netAmount ? `Net ${formatUsdt(item.metadata.netAmount)}` : ""
+    ].filter(Boolean).join(" - ");
+
+    return `
     <div class="queue-row">
-      <span>${escapeHtml(item.description)}<small>${escapeHtml(item.userEmail || "")} - ${escapeHtml(item.date)} - Réf. ${escapeHtml(item.reference || item.id || "")}${item.metadata?.txRef ? ` - TX ${escapeHtml(item.metadata.txRef)}` : ""}</small></span>
+      <span>${escapeHtml(item.description)}<small>${escapeHtml(details)}</small></span>
       <strong>${escapeHtml(item.amount)}</strong>
       ${options.proof && item.hasProof ? `<button class="btn secondary" type="button" data-admin-proof="${escapeHtml(item.id || item.reference || "")}">Capture</button>` : ""}
       <button class="btn primary" type="button" data-admin-action="approve" data-admin-id="${escapeHtml(item.id || item.reference || "")}" data-admin-approve="${escapeHtml(item.id || item.reference || "")}">Valider</button>
       <button class="btn secondary" type="button" data-admin-action="reject" data-admin-id="${escapeHtml(item.id || item.reference || "")}" data-admin-reject="${escapeHtml(item.id || item.reference || "")}">Rejeter</button>
     </div>
-  `).join("") : `<p class="muted">Aucune demande en attente.</p>`;
+  `;
+  }).join("") : `<p class="muted">Aucune demande en attente.</p>`;
 }
 
 function renderCicoAdminRequests(rows) {
@@ -887,9 +906,10 @@ function renderExchangeAdminOrders(rows) {
   if (!list) return;
 
   list.innerHTML = rows.length ? rows.map((item) => `
-    <div>
-      <span>${escapeHtml(item.reference)}<small>${exchangeTypeLabel(item.type)} - ${escapeHtml(item.customerEmail)} - ${escapeHtml(item.paymentMethod)} - ${escapeHtml(item.status)}</small></span>
+    <div class="queue-row">
+      <span>${escapeHtml(item.reference)}<small>${exchangeTypeLabel(item.type)} - ${escapeHtml(item.customerEmail)} - ${escapeHtml(item.paymentMethod)} - ${escapeHtml(item.status)} - ${formatXaf(item.localAmount)} au taux ${Math.round(Number(item.rate || 0)).toLocaleString("fr-FR")}</small></span>
       <strong>${formatUsdt(item.amount)}</strong>
+      ${item.status === "pending" ? `<button class="btn primary" type="button" data-admin-exchange-confirm="${escapeHtml(item.reference)}">Valider</button>` : ""}
     </div>
   `).join("") : `<p class="muted">Aucune demande Exchange.</p>`;
 }
@@ -1091,9 +1111,17 @@ function setupActions(user) {
 
   document.querySelector("[data-export]")?.addEventListener("click", async () => {
     try {
-      const response = await apiRequest("/transactions/export");
-      if (response.url) window.location.href = response.url;
-      else showToast("Export prepare.");
+      const csv = await apiRequest("/transactions/export");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `afrix-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showToast("Export CSV telecharge.");
     } catch (error) {
       showToast(error.message, "error");
     }
@@ -1380,10 +1408,8 @@ function setupActions(user) {
   });
   if (disputeForm) disputeForm.dataset.boundSubmit = "true";
 
-  if (!document.body.dataset.adminClickBound) {
-    document.body.dataset.adminClickBound = "true";
-    document.addEventListener("click", handleAdminClick);
-  }
+  document.removeEventListener("click", handleAdminClick);
+  document.addEventListener("click", handleAdminClick);
   bindClickOnce("[data-admin-proof-close]", () => {
     const viewer = document.querySelector("[data-admin-proof-viewer]");
     const content = document.querySelector("[data-admin-proof-content]");
@@ -1417,6 +1443,32 @@ function setupActions(user) {
     }
   });
   if (adminCreateUserForm) adminCreateUserForm.dataset.boundSubmit = "true";
+
+  const adminManualDepositForm = document.querySelector("[data-admin-manual-deposit-form]");
+  if (adminManualDepositForm && !adminManualDepositForm.dataset.boundSubmit) adminManualDepositForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = formToObject(form);
+    const submitButton = form.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Credit...");
+    try {
+      await apiJson("/admin/actions", {
+        action: "manual-deposit",
+        email: String(data.email || "").trim().toLowerCase(),
+        amount: Number(data.amount || 0),
+        note: String(data.note || "").trim()
+      });
+      form.reset();
+      const freshUser = await loadCurrentUser();
+      renderProtectedShell(document.body.dataset.page, freshUser);
+      showToast("Depot manuel credite.");
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
+  if (adminManualDepositForm) adminManualDepositForm.dataset.boundSubmit = "true";
 
   document.querySelectorAll("[data-admin-control]").forEach((control) => {
     if (control.dataset.boundAdminControl) return;
@@ -1601,6 +1653,24 @@ async function handleAdminClick(event) {
     return;
   }
 
+  const exchangeConfirmButton = event.target.closest("[data-admin-exchange-confirm]");
+  if (exchangeConfirmButton) {
+    const reference = exchangeConfirmButton.dataset.adminExchangeConfirm;
+    if (!window.confirm(`Valider la demande Exchange ${reference} ?`)) return;
+    const restoreButton = setButtonLoading(exchangeConfirmButton, "Validation...");
+    try {
+      await apiJson(`/exchange/orders/${encodeURIComponent(reference)}/confirm`, {});
+      const freshUser = await loadCurrentUser();
+      renderProtectedShell(document.body.dataset.page, freshUser);
+      showToast("Demande Exchange validee.");
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+    return;
+  }
+
   const action = event.target.closest("[data-admin-action], [data-admin-approve], [data-admin-reject], [data-merchant-approve], [data-merchant-reject], [data-merchant-fund], [data-dispute-close], [data-admin-user-suspend], [data-admin-user-reactivate], [data-admin-user-role]");
   if (!action) return;
 
@@ -1625,6 +1695,18 @@ async function handleAdminClick(event) {
   const amountInput = action.closest(".queue-row")?.querySelector("[data-merchant-fund-amount]");
   const amount = amountInput ? Number(amountInput.value || 0) : undefined;
   const role = action.dataset.role;
+  const confirmationLabels = {
+    approve: "valider cette transaction",
+    reject: "rejeter cette transaction",
+    "merchant-approve": "approuver ce merchant",
+    "merchant-reject": "rejeter ce merchant",
+    "merchant-fund": "approvisionner ce wallet merchant",
+    "dispute-close": "cloturer ce litige",
+    "user-suspend": "suspendre ce compte",
+    "user-reactivate": "reactiver ce compte",
+    "user-role": "modifier le role de ce compte"
+  };
+  if (confirmationLabels[actionName] && !window.confirm(`Confirmer: ${confirmationLabels[actionName]} ?`)) return;
   const restoreButton = setButtonLoading(action, "...");
 
   try {
