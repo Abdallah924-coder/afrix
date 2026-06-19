@@ -314,6 +314,11 @@ function sanitizeUser(user) {
   return safeUser;
 }
 
+function canViewTransaction(user, tx) {
+  if (tx.type === "Commission") return tx.userId === user.id;
+  return user.role === "admin" || tx.userId === user.id;
+}
+
 function signToken(user) {
   return jwt.sign({ sub: user.id, role: user.role }, jwtSecret, { expiresIn: TOKEN_TTL });
 }
@@ -478,6 +483,7 @@ function composeUser(db, user) {
       })),
     adminTransactions: user.role === "admin"
       ? db.transactions
+        .filter((tx) => canViewTransaction(user, tx))
         .slice()
         .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
         .map((tx) => {
@@ -1849,7 +1855,7 @@ app.post("/api/disputes", authenticate, validate(z.object({
 });
 
 app.get("/api/transactions/export", authenticate, (req, res) => {
-  const rows = req.db.transactions.filter((tx) => req.user.role === "admin" || tx.userId === req.user.id);
+  const rows = req.db.transactions.filter((tx) => canViewTransaction(req.user, tx));
   const csv = [
     "date,type,description,amount,status,reference",
     ...rows
