@@ -1231,17 +1231,17 @@ app.post("/api/auth/register", validate(z.object({
       normalizeEmail(PLATFORM_EMAIL || "")
     ].filter(Boolean);
 
+    // Recherche stricte par valeur exacte (insensible à la casse via les deux variantes).
+    // On évite le $regex qui peut retourner des documents inattendus selon les index MongoDB.
     const referrer = await UserModel.findOne({
-      refCode: { $regex: `^${escapeRegExp(refCode)}$`, $options: "i" },
+      refCode: { $in: [refCode, refCode.toLowerCase()] },
       ...(systemEmails.length ? { email: { $nin: systemEmails } } : {})
     }).lean();
 
     if (!referrer) return { error: `Code d'invitation invalide: ${refCode}.` };
 
-    // Vérification finale : le parrain trouvé doit avoir un refCode qui correspond
-    // exactement au code saisi — pas de match partiel possible.
+    // Vérification finale de correspondance exacte.
     if (normalizeInvitationCode(referrer.refCode) !== refCode) {
-      logger.error({ refCode, foundRefCode: referrer.refCode }, "refCode mismatch after query, aborting registration");
       return { error: `Code d'invitation invalide: ${refCode}.` };
     }
 
