@@ -40,9 +40,9 @@ const WITHDRAW_MOBILE_RATE = 550;
 const MTN_WITHDRAW_FEE_RATE = 0.10;
 const P2P_FEE_RATE = 0.01;
 const contactLinks = {
-  telegramSupport: "https://t.me/AfrixCapitalSupport",
-  telegramChannel: "https://t.me/AfrixCapital",
-  whatsappChannel: "https://whatsapp.com/channel/0029VaAfrixCapital"
+  telegramSupport: "",
+  telegramChannel: "https://t.me/ecosysteme_grs",
+  whatsappChannel: "https://whatsapp.com/channel/0029Vb6hyxfF1YlXTyGa0n21"
 };
 let deferredInstallPrompt = null;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
@@ -333,7 +333,7 @@ function renderTopbar(page, user = emptyUser) {
     menuButton.addEventListener("click", () => sidebar.classList.toggle("open"));
   }
   const pwaButton = topbar.querySelector("[data-pwa-install]");
-  if (pwaButton && !isPwaDisplayMode()) {
+  if (pwaButton && !isPwaDisplayMode() && localStorage.getItem("afrixInstallBannerDismissed") !== "1") {
     pwaButton.hidden = false;
     pwaButton.addEventListener("click", promptPwaInstall);
   }
@@ -346,7 +346,7 @@ function isPwaDisplayMode() {
 async function promptPwaInstall() {
   if (!deferredInstallPrompt) {
     showPwaInstallCard({ force: true, instructionsOnly: true });
-    showToast("Installation: utilisez le menu du navigateur si le bouton natif n'apparait pas.", "error");
+    showToast("Installation: ouvrez le menu du navigateur puis choisissez Installer l'application.", "error");
     return;
   }
   deferredInstallPrompt.prompt();
@@ -374,7 +374,7 @@ function showPwaInstallCard({ force = false, instructionsOnly = false } = {}) {
     <div class="brand-mark">A</div>
     <div>
       <strong>Installer AFRIX</strong>
-      <p>${instructionsOnly ? "Si l'installation native n'apparait pas, ouvrez le menu du navigateur puis choisissez Installer l'application ou Ajouter à l'écran d'accueil." : "Accès rapide au wallet, aux plans et à AFRIX Money."}</p>
+      <p>${instructionsOnly ? "Sur Android/Chrome: menu ⋮ puis Installer l'application. Sur iPhone: Partager puis Sur l'écran d'accueil." : "Accès rapide au wallet, aux plans et à AFRIX Money."}</p>
     </div>
     <button type="button" class="btn primary" data-pwa-card-install>Installer</button>
     <button type="button" class="pwa-install-close" aria-label="Fermer">&times;</button>

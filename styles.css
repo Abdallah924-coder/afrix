@@ -1539,10 +1539,10 @@ th { color: var(--muted); font-size: 12px; }
   }
   .menu-btn {
     display: inline-flex;
-    position: fixed;
+    position: fixed !important;
     top: 14px;
     left: 16px;
-    z-index: 80;
+    z-index: 999;
     width: 44px;
     min-width: 44px;
     padding: 0;
@@ -1551,6 +1551,8 @@ th { color: var(--muted); font-size: 12px; }
     box-shadow: 0 10px 28px rgba(0, 0, 0, .36);
   }
   .topbar {
+    position: sticky;
+    top: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: start;

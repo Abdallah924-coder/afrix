@@ -1,10 +1,11 @@
-const CACHE_NAME = "afrix-v1";
+const CACHE_NAME = "afrix-v3";
 const APP_SHELL = [
   "/",
   "/offline.html",
   "/styles.css",
   "/app.js",
   "/manifest.webmanifest",
+  "/assets/pwa-icon.svg",
   "/IMG-20260609-WA0003.jpg"
 ];
 
