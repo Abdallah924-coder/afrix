@@ -1092,6 +1092,42 @@ async function ensureReferralCodes() {
   if (users.length) logger.info({ count: users.length }, "Referral codes backfilled");
 }
 
+async function reconcileReferralLinks() {
+  await ensureStorage();
+  const users = await UserModel.find({}).lean();
+  const byCode = new Map(users
+    .map((user) => [normalizeInvitationCode(user.refCode), user])
+    .filter(([code]) => Boolean(code)));
+  const byEmail = new Map(users
+    .map((user) => [normalizeEmail(user.email), user])
+    .filter(([email]) => Boolean(email)));
+
+  let fixed = 0;
+  for (const user of users) {
+    const sponsor = byCode.get(normalizeInvitationCode(user.referrerCode)) || byEmail.get(normalizeEmail(user.referrerEmail));
+    if (!sponsor || sponsor.id === user.id) continue;
+    const next = {
+      referrerId: sponsor.id,
+      referrerEmail: normalizeEmail(sponsor.email),
+      referrerCode: normalizeInvitationCode(sponsor.refCode)
+    };
+    if (
+      user.referrerId === next.referrerId &&
+      normalizeEmail(user.referrerEmail) === next.referrerEmail &&
+      normalizeInvitationCode(user.referrerCode) === next.referrerCode
+    ) {
+      continue;
+    }
+    await UserModel.updateOne(
+      { id: user.id },
+      { $set: { ...next, referralReconciledAt: nowIso() } }
+    );
+    fixed += 1;
+  }
+  if (fixed) logger.warn({ fixed }, "Referral links reconciled");
+  return fixed;
+}
+
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -3088,6 +3124,7 @@ async function bootstrapServer() {
     await ensurePlatformUser();
     await ensureCommissionAccounts();
     await ensureReferralCodes();
+    await reconcileReferralLinks();
   } else {
     logger.warn("Storage bootstrap skipped for local smoke test");
   }
@@ -3097,6 +3134,10 @@ async function bootstrapServer() {
   });
 
   runDailyPlanEarnings();
+  const referralReconcileTimer = setInterval(() => {
+    reconcileReferralLinks().catch((error) => logger.error({ err: error }, "Referral reconciliation failed"));
+  }, 5 * 60 * 1000);
+  referralReconcileTimer.unref?.();
   const planEarningsTimer = setInterval(runDailyPlanEarnings, 6 * 60 * 60 * 1000);
   planEarningsTimer.unref?.();
 }
