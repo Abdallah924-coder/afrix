@@ -40,7 +40,7 @@ const WITHDRAW_MOBILE_RATE = 550;
 const MTN_WITHDRAW_FEE_RATE = 0.10;
 const P2P_FEE_RATE = 0.01;
 const contactLinks = {
-  telegramSupport: "",
+  telegramSupport: "https://t.me/Assistant_grs_core",
   telegramChannel: "https://t.me/ecosysteme_grs",
   whatsappChannel: "https://whatsapp.com/channel/0029Vb6hyxfF1YlXTyGa0n21"
 };
