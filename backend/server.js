@@ -465,6 +465,10 @@ function normalizeEmail(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
+function isInternalReferralAccount(user) {
+  return normalizeEmail(user?.email).endsWith("@afrix.local");
+}
+
 function referralMatches(candidate, sponsor) {
   const candidateReferrerId = String(candidate?.referrerId || "");
   const sponsorId = String(sponsor?.id || "");
@@ -1170,6 +1174,7 @@ app.post("/api/auth/register", validate(z.object({
     }
     const referrer = await UserModel.findOne({ refCode: { $regex: `^${escapeRegExp(refCode)}$`, $options: "i" } }).lean();
     if (!referrer) return { error: `Code d'invitation invalide: ${refCode || "vide"}.` };
+    if (isInternalReferralAccount(referrer)) return { error: "Code d'invitation invalide: compte parrain interne." };
     try {
       const created = await UserModel.create(await createUserRecord(referrer));
       const referralPatch = {

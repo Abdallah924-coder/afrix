@@ -1,6 +1,5 @@
 const API_BASE = window.AFRIX_API_BASE || "/api";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
-const INVITATION_CODE_KEY = "afrix_invitation_code";
 const API_TIMEOUT_MS = 120_000;
 const MAX_PROOF_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -207,18 +206,7 @@ function getInvitationCodeFromUrl() {
   return normalizeInvitationCode(params.get("ref") || params.get("code") || "");
 }
 
-function storeInvitationCodeFromUrl() {
-  const code = getInvitationCodeFromUrl();
-  if (!code) return "";
-  localStorage.setItem(INVITATION_CODE_KEY, code);
-  return code;
-}
-
-function getStoredInvitationCode() {
-  return normalizeInvitationCode(localStorage.getItem(INVITATION_CODE_KEY) || "");
-}
-
-function withInvitationCode(url, code = getStoredInvitationCode()) {
+function withInvitationCode(url, code = getInvitationCodeFromUrl()) {
   if (!code || !url || !String(url).startsWith("/register")) return url;
   const target = new URL(url, window.location.origin);
   target.searchParams.set("ref", code);
@@ -226,7 +214,7 @@ function withInvitationCode(url, code = getStoredInvitationCode()) {
 }
 
 function hydrateInvitationLinks() {
-  const code = getStoredInvitationCode();
+  const code = getInvitationCodeFromUrl();
   if (!code) return;
   document.querySelectorAll('a[href="/register"], a[href^="/register?"]').forEach((link) => {
     link.href = withInvitationCode(link.getAttribute("href") || "/register", code);
@@ -1195,10 +1183,9 @@ function setupAuthForms() {
     const passwordHelp = registerForm.querySelector("[data-password-help]");
     const refInput = registerForm.querySelector("[data-ref-code]");
     const refFromUrl = getInvitationCodeFromUrl();
-    const storedRef = refFromUrl || getStoredInvitationCode();
-    if (refInput && storedRef) {
-      refInput.value = storedRef;
-      refInput.readOnly = Boolean(refFromUrl);
+    if (refInput && refFromUrl) {
+      refInput.value = refFromUrl;
+      refInput.readOnly = true;
       refInput.classList.add("readonly");
     }
     const updatePasswordMeter = () => {
@@ -1222,7 +1209,7 @@ function setupAuthForms() {
       const data = formToObject(registerForm);
       const email = String(data.email || "").trim().toLowerCase();
       const password = String(data.password || "");
-      const ref = normalizeInvitationCode(data.ref) || getStoredInvitationCode();
+      const ref = normalizeInvitationCode(data.ref);
 
       const country = String(data.country || "").trim();
 
@@ -2042,7 +2029,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const page = document.body.dataset.page;
   const isProtected = document.body.matches("[data-protected]");
 
-  storeInvitationCodeFromUrl();
   hydrateInvitationLinks();
   setupAuthForms();
   setupPwa();
