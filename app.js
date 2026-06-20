@@ -11,6 +11,7 @@ const pageTitles = {
   merchant: "Merchant",
   plans: "Plans",
   network: "Reseau",
+  profile: "Profil",
   elite: "Programme Elite",
   transactions: "Historique",
   admin: "Admin",
@@ -26,6 +27,7 @@ const navItems = [
   ["merchant", "Merchant", "/merchant"],
   ["plans", "Plans", "/plans"],
   ["network", "Reseau", "/network"],
+  ["profile", "Profil", "/profile"],
   ["elite", "Elite", "/elite"],
   ["transactions", "Transactions", "/transactions"],
   ["admin", "Admin", "/admin"]
@@ -73,6 +75,7 @@ const emptyUser = {
   merchantApplications: [],
   disputes: [],
   activePlans: [],
+  bonusLevelsOverride: 0,
   platformControls: {},
   role: "user"
 };
@@ -333,7 +336,10 @@ function renderDashboard(user) {
   const progressText = document.querySelector("[data-progress-text]");
   const refLink = document.querySelector("[data-ref-link]");
   const recentList = document.querySelector("[data-recent-list]");
-  const activeLevels = Math.max(0, Math.min(20, Math.floor(Number(user.activity || 0) / 100)));
+  const activeLevels = Math.max(
+    0,
+    Math.min(20, Math.max(Math.floor(Number(user.activity || 0) / 100), Number(user.bonusLevelsOverride || 0)))
+  );
 
   if (balance) balance.textContent = formatUsdt(user.balance);
   if (activity) activity.textContent = `${Number(user.activity || 0).toFixed(0)} USDT`;
@@ -525,6 +531,7 @@ function renderActivePlans(user) {
     const daysPaid = Math.min(durationDays, Math.max(0, Number(plan.daysPaid || 0)));
     const percent = Math.min(100, Math.round((daysPaid / durationDays) * 100));
     const remainingDays = Math.max(0, durationDays - daysPaid);
+    const dailyGain = Number(plan.amount || 0) * Number(plan.dailyRate || 0);
     const status = plan.status === "completed" ? "Termine" : "Actif";
     return `
       <article class="active-plan-card">
@@ -540,6 +547,7 @@ function renderActivePlans(user) {
         </div>
         <div class="active-plan-stats">
           <small><span>Capital bloqué</span>${formatUsdt(plan.amount || 0)}</small>
+          <small><span>Gain par jour</span>${formatUsdt(dailyGain)}</small>
           <small><span>Gains cumulés</span>${formatUsdt(plan.earnedAmount || 0)}</small>
           <small><span>Jours payés</span>${daysPaid}/${durationDays}</small>
           <small><span>Jours restants</span>${remainingDays}</small>
@@ -573,6 +581,19 @@ function renderNetwork(user) {
       </div>
     `).join("") : `<p class="muted">Aucun partenaire direct pour le moment.</p>`;
   }
+}
+
+function renderProfile(user) {
+  const email = document.querySelector("[data-profile-email]");
+  const country = document.querySelector("[data-profile-country]");
+  const balance = document.querySelector("[data-profile-balance]");
+  const activity = document.querySelector("[data-profile-activity]");
+  const role = document.querySelector("[data-profile-role]");
+  if (email) email.textContent = user.email || "-";
+  if (country) country.textContent = user.country || "-";
+  if (balance) balance.textContent = formatUsdt(user.balance);
+  if (activity) activity.textContent = formatUsdt(user.activity);
+  if (role) role.textContent = user.role || "user";
 }
 
 function merchantCard(merchant, reference = "AFX-...") {
@@ -852,6 +873,13 @@ function renderAdmin(user) {
   if (merchantApplicationsCount) merchantApplicationsCount.textContent = user.merchantApplications.length;
   if (disputesCount) disputesCount.textContent = user.disputes.length;
   if (adminUsersCount) adminUsersCount.textContent = Array.isArray(user.adminUsers) ? user.adminUsers.length : 0;
+  const adminStats = user.adminStats || {};
+  document.querySelectorAll("[data-admin-stat]").forEach((item) => {
+    item.textContent = Number(adminStats[item.dataset.adminStat] || 0).toLocaleString("fr-FR");
+  });
+  document.querySelectorAll("[data-admin-stat-usdt]").forEach((item) => {
+    item.textContent = formatUsdt(adminStats[item.dataset.adminStatUsdt] || 0);
+  });
 
   renderQueue("[data-admin-pending-deposits]", pendingDeposits, { proof: true });
   renderQueue("[data-admin-pending-withdrawals]", pendingWithdrawals);
@@ -889,7 +917,7 @@ function renderAdminUsers(users) {
     const nextRole = item.role === "admin" ? "user" : "admin";
     return `
       <div class="queue-row user-row">
-        <span>${escapeHtml(item.fullName || item.email)}<small>${escapeHtml(item.email)} - ${escapeHtml(item.role)} - ${escapeHtml(item.status)} - ${formatUsdt(item.balance)}</small></span>
+        <span>${escapeHtml(item.fullName || item.email)}<small>${escapeHtml(item.email)} - ${escapeHtml(item.role)} - ${escapeHtml(item.status)} - ${formatUsdt(item.balance)} - Plans actifs: ${Number(item.activePlansCount || 0)} - Bonus: ${Number(item.bonusLevelsOverride || 0)} niveaux</small></span>
         <strong>${escapeHtml(item.merchantStatus || "Aucun profil")}</strong>
         <button class="btn secondary" type="button" data-admin-user-role="${escapeHtml(item.id)}" data-role="${nextRole}">${nextRole === "admin" ? "Admin" : "User"}</button>
         ${isBlocked
@@ -1331,14 +1359,18 @@ function setupActions(user) {
     const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Envoi...");
     try {
-      const response = await apiJson("/p2p-transfers", data);
+      const response = await apiJson("/p2p-transfers", data, { timeoutMs: 20_000 });
       showToast(`Transfert P2P envoye. Reference: ${response.reference || "AFRIX"}.`);
       form.reset();
       p2pRecipient = null;
       renderP2pRecipientPreview(null);
       updateP2pFeePreview();
-      const freshUser = await loadCurrentUser();
-      renderProtectedShell(document.body.dataset.page, freshUser);
+      try {
+        const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((payload) => normalizeUser(payload.user || payload));
+        renderProtectedShell(document.body.dataset.page, freshUser);
+      } catch (refreshError) {
+        showToast(`Transfert envoye, actualisez la page si le solde ne change pas: ${refreshError.message}`, "error");
+      }
     } catch (error) {
       showToast(error.message, "error");
     } finally {
@@ -1346,6 +1378,24 @@ function setupActions(user) {
     }
   });
   if (p2pForm) p2pForm.dataset.boundSubmit = "true";
+
+  const changePasswordForm = document.querySelector("[data-change-password-form]");
+  if (changePasswordForm && !changePasswordForm.dataset.boundSubmit) changePasswordForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Modification...");
+    try {
+      await apiJson("/auth/change-password", formToObject(form), { timeoutMs: 20_000 });
+      form.reset();
+      showToast("Mot de passe modifie.");
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
+  if (changePasswordForm) changePasswordForm.dataset.boundSubmit = "true";
 
   const cicoForm = document.querySelector("[data-cico-form]");
   if (cicoForm && !cicoForm.dataset.boundSubmit) cicoForm.addEventListener("submit", async (event) => {
@@ -1829,6 +1879,7 @@ function renderProtectedShell(page, user) {
   renderWallet(user);
   renderPlans(user);
   renderNetwork(user);
+  renderProfile(user);
   renderExchange(user);
   renderMerchants(user);
   renderAdmin(user);

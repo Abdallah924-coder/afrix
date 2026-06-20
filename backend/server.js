@@ -319,6 +319,87 @@ function canViewTransaction(user, tx) {
   return user.role === "admin" || tx.userId === user.id;
 }
 
+function buildAdminStats(db) {
+  const now = new Date();
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const startOfWeek = new Date(startOfDay);
+  startOfWeek.setUTCDate(startOfDay.getUTCDate() - 6);
+  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const userCreatedAt = (user) => new Date(user.createdAt || 0).getTime();
+  const transactions = db.transactions || [];
+  const users = db.users || [];
+  const activePlans = users.flatMap((user) => (user.activePlans || []).filter((plan) => plan.status === "active"));
+  const completedTransactions = transactions.filter((tx) => tx.status === "Completed" || tx.status === "Active");
+  const platformRevenue = completedTransactions.reduce((total, tx) => {
+    if (tx.type === "Retrait") return total + Number(tx.metadata?.fee || 0);
+    if (tx.type === "P2P" && tx.displayAmount?.startsWith("-")) return total + Number(tx.metadata?.fee || 0);
+    return total;
+  }, 0);
+  const countries = new Set(users.map((user) => String(user.country || "").trim()).filter(Boolean));
+
+  return {
+    totalUsers: users.length,
+    newUsersToday: users.filter((user) => userCreatedAt(user) >= startOfDay.getTime()).length,
+    newUsersWeek: users.filter((user) => userCreatedAt(user) >= startOfWeek.getTime()).length,
+    newUsersMonth: users.filter((user) => userCreatedAt(user) >= startOfMonth.getTime()).length,
+    activeUsers: users.filter((user) => (user.status || "active") === "active").length,
+    activePlansCount: activePlans.length,
+    usersWithActivePlans: users.filter((user) => (user.activePlans || []).some((plan) => plan.status === "active")).length,
+    investedCapital: money(activePlans.reduce((total, plan) => total + Number(plan.amount || 0), 0)),
+    transactionVolume: money(completedTransactions.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0)),
+    platformRevenue: money(platformRevenue),
+    partners: users.filter((user) => user.referrerId).length,
+    approvedMerchants: users.filter((user) => user.merchantProfile?.status === "approved").length,
+    activeCountries: countries.size
+  };
+}
+
+function notifyTransactionDecision(tx) {
+  if (!tx || tx.status !== "Completed") return;
+  UserModel.findOne({ id: tx.userId }).lean()
+    .then((owner) => {
+      if (!owner?.email) return null;
+      if (tx.type === "Depot") {
+        return sendBrevoMail({
+          to: owner.email,
+          subject: "AFRIX - Depot confirme",
+          title: "Votre depot est confirme",
+          intro: "Votre solde AFRIX vient d'etre credite.",
+          rows: [
+            { label: "Montant", value: formatAmount(tx.amount) },
+            { label: "Reference", value: tx.id },
+            { label: "Statut", value: tx.status }
+          ]
+        });
+      }
+      if (tx.type === "Retrait") {
+        return sendBrevoMail({
+          to: owner.email,
+          subject: "AFRIX - Retrait valide",
+          title: "Votre retrait est valide",
+          intro: "Votre demande de retrait vient d'etre validee.",
+          rows: [
+            { label: "Montant demande", value: formatAmount(tx.amount) },
+            { label: "Frais", value: formatAmount(tx.metadata?.fee || 0) },
+            { label: "Net a recevoir", value: formatAmount(tx.metadata?.netAmount || tx.amount) },
+            { label: "Reference", value: tx.id }
+          ]
+        });
+      }
+      return null;
+    })
+    .catch((error) => logger.error({ err: error }, "Transaction decision email failed"));
+}
+
+function notifyPlanActivation(user, activePlan, amount) {
+  notifyAdmin("AFRIX - Plan active", "Plan active", "Un investissement vient d'etre active.", [
+    { label: "Utilisateur", value: user.email },
+    { label: "Plan", value: activePlan?.name },
+    { label: "Montant", value: formatAmount(amount || activePlan?.amount || 0) },
+    { label: "Cycle", value: `${activePlan?.durationDays || 0} jours` }
+  ]).catch((error) => logger.error({ err: error }, "Plan activation admin email failed"));
+}
+
 function signToken(user) {
   return jwt.sign({ sub: user.id, role: user.role }, jwtSecret, { expiresIn: TOKEN_TTL });
 }
@@ -468,6 +549,7 @@ function composeUser(db, user) {
     rank: rankFromActivity(user.activity),
     progress: progressFromActivity(user.activity),
     progressText: "Progression calculee selon votre activite validee.",
+    bonusLevelsOverride: Number(user.bonusLevelsOverride || 0),
     paymentTargets: db.paymentTargets,
     refLink: `${process.env.APP_URL || "http://localhost:" + PORT}/register?ref=${user.refCode}`,
     transactions: db.transactions
@@ -551,6 +633,8 @@ function composeUser(db, user) {
           balance: money(candidate.balance),
           reservedBalance: money(candidate.reservedBalance),
           activity: money(candidate.activity),
+          bonusLevelsOverride: Number(candidate.bonusLevelsOverride || 0),
+          activePlansCount: (candidate.activePlans || []).filter((plan) => plan.status === "active").length,
           merchantStatus: candidate.merchantProfile?.status || "Aucun profil",
           createdAt: candidate.createdAt
         }))
@@ -558,7 +642,8 @@ function composeUser(db, user) {
     ledgerEntries: user.role === "admin"
       ? db.ledgerEntries.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 500)
       : db.ledgerEntries.filter((entry) => entry.accountId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 200),
-    platformAccount: user.role === "admin" ? ensurePlatform(db) : {}
+    platformAccount: user.role === "admin" ? ensurePlatform(db) : {},
+    adminStats: user.role === "admin" ? buildAdminStats(db) : {}
   };
 }
 
@@ -1019,6 +1104,23 @@ app.post("/api/auth/login", validate(z.object({
   res.json({ token: signToken(user), user: sanitizeUser(user) });
 });
 
+app.post("/api/auth/change-password", authenticate, validate(z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(10)
+})), async (req, res) => {
+  await ensureStorage();
+  const user = await UserModel.findOne({ id: req.user.id }).lean();
+  if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
+  if (!(await bcrypt.compare(req.body.currentPassword, user.passwordHash || ""))) {
+    return res.status(400).json({ message: "Mot de passe actuel incorrect." });
+  }
+  await UserModel.updateOne(
+    { id: req.user.id },
+    { $set: { passwordHash: await bcrypt.hash(req.body.newPassword, 12), passwordUpdatedAt: nowIso() } }
+  );
+  res.json({ ok: true });
+});
+
 app.post("/api/auth/forgot-password", validate(z.object({
   email: z.string().email()
 })), async (req, res) => {
@@ -1330,6 +1432,7 @@ app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(
 
   if (result.error) return res.status(400).json({ message: result.error });
   res.json({ user: sanitizeUser(result.user), activePlan: result.activePlan });
+  notifyPlanActivation(result.user, result.activePlan, investmentAmount);
 });
 
 function maskDisplayName(value = "") {
@@ -1365,59 +1468,101 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
   const fee = money(amount * 0.01);
   const total = money(amount + fee);
   const note = String(req.body.note || "").trim().slice(0, 180);
-  const result = await updateDb(async (db) => {
-    const sender = db.users.find((user) => user.id === req.user.id);
-    const recipient = db.users.find((user) => user.email === req.body.recipient.trim().toLowerCase());
-    if (!recipient) return { error: "Destinataire introuvable." };
-    if (recipient.id === sender.id) return { error: "Vous ne pouvez pas vous envoyer des fonds a vous-meme." };
-    if (recipient.status && recipient.status !== "active") return { error: "Ce compte ne peut pas recevoir de transfert." };
-    if (sender.balance < total) return { error: "Solde insuffisant." };
-    const reference = makeReference("P2P", amount);
+  const recipientEmail = req.body.recipient.trim().toLowerCase();
+  const session = await mongoose.startSession();
+  let result;
+  try {
+    await session.withTransaction(async () => {
+      const sender = await UserModel.findOne({ id: req.user.id }, null, { session }).lean();
+      const recipient = await UserModel.findOne({ email: recipientEmail }, null, { session }).lean();
+      if (!recipient) {
+        result = { error: "Destinataire introuvable." };
+        return;
+      }
+      if (recipient.id === sender.id) {
+        result = { error: "Vous ne pouvez pas vous envoyer des fonds a vous-meme." };
+        return;
+      }
+      if (recipient.status && recipient.status !== "active") {
+        result = { error: "Ce compte ne peut pas recevoir de transfert." };
+        return;
+      }
 
-    debitUser(db, sender, total, `Transfert vers ${recipient.email}`, {
-      source: "p2p_transfer",
-      referenceId: reference,
-      extra: { recipientId: recipient.id, amount, fee, note }
+      const reference = makeReference("P2P", amount);
+      const updatedSender = await UserModel.findOneAndUpdate(
+        { id: sender.id, $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, total] } },
+        [{ $set: { balance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$balance", 0] } }, total] }, 2] } } }],
+        { new: true, session, lean: true }
+      );
+      if (!updatedSender) {
+        result = { error: "Solde insuffisant." };
+        return;
+      }
+      const updatedRecipient = await UserModel.findOneAndUpdate(
+        { id: recipient.id },
+        [{ $set: { balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, amount] }, 2] } } }],
+        { new: true, session, lean: true }
+      );
+      const platform = await PlatformAccountModel.findOneAndUpdate(
+        { id: "platform" },
+        { $inc: { balance: fee, fees: fee }, $setOnInsert: { createdAt: nowIso() } },
+        { upsert: true, new: true, session, lean: true }
+      );
+      const ledgerEntries = buildLedgerEntries([{
+        accountType: "user",
+        accountId: sender.id,
+        direction: "debit",
+        amount: total,
+        balanceAfter: updatedSender.balance,
+        description: `Transfert vers ${recipient.email}`
+      }, {
+        accountType: "user",
+        accountId: recipient.id,
+        direction: "credit",
+        amount,
+        balanceAfter: updatedRecipient.balance,
+        description: `Reception depuis ${sender.email}`
+      }, {
+        accountType: "platform",
+        accountId: "platform",
+        direction: "credit",
+        amount: fee,
+        balanceAfter: platform.balance,
+        description: "Frais P2P"
+      }], { source: "p2p_transfer", referenceId: reference, extra: { senderId: sender.id, recipientId: recipient.id, amount, fee, note } });
+      if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+      await TransactionModel.create([{
+        id: nanoid(),
+        userId: sender.id,
+        type: "P2P",
+        description: `Transfert vers ${recipient.email}`,
+        amount: total,
+        displayAmount: formatAmount(total, "-"),
+        status: "Completed",
+        createdAt: nowIso(),
+        metadata: { reference, amount, fee, total, recipientEmail: recipient.email, note }
+      }, {
+        id: nanoid(),
+        userId: recipient.id,
+        type: "P2P",
+        description: `Reception depuis ${sender.email}`,
+        amount,
+        displayAmount: formatAmount(amount, "+"),
+        status: "Completed",
+        createdAt: nowIso(),
+        metadata: { reference, amount, senderEmail: sender.email, note }
+      }], { session });
+      result = {
+        reference,
+        amount,
+        fee,
+        total,
+        recipient: { email: recipient.email, displayName: maskDisplayName(recipient.fullName || recipient.email) }
+      };
     });
-    creditUser(db, recipient, amount, `Reception depuis ${sender.email}`, {
-      source: "p2p_transfer",
-      referenceId: reference,
-      extra: { senderId: sender.id, fee, note }
-    });
-    creditPlatform(db, fee, "Frais P2P", {
-      source: "p2p_fee",
-      referenceId: reference,
-      extra: { senderId: sender.id, recipientId: recipient.id }
-    });
-    db.transactions.push({
-      id: nanoid(),
-      userId: sender.id,
-      type: "P2P",
-      description: `Transfert vers ${recipient.email}`,
-      amount: total,
-      displayAmount: formatAmount(total, "-"),
-      status: "Completed",
-      createdAt: nowIso(),
-      metadata: { reference, amount, fee, total, recipientEmail: recipient.email, note }
-    }, {
-      id: nanoid(),
-      userId: recipient.id,
-      type: "P2P",
-      description: `Reception depuis ${sender.email}`,
-      amount,
-      displayAmount: formatAmount(amount, "+"),
-      status: "Completed",
-      createdAt: nowIso(),
-      metadata: { reference, amount, senderEmail: sender.email, note }
-    });
-    return {
-      reference,
-      amount,
-      fee,
-      total,
-      recipient: { email: recipient.email, displayName: maskDisplayName(recipient.fullName || recipient.email) }
-    };
-  });
+  } finally {
+    await session.endSession();
+  }
 
   if (result.error) return res.status(400).json({ message: result.error });
   res.status(201).json(result);
@@ -2404,7 +2549,10 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
   });
   if (fastResult) {
     if (fastResult.error) return res.status(400).json({ message: fastResult.error });
-    return res.json(fastResult);
+    res.json(fastResult);
+    if (fastResult.transaction) notifyTransactionDecision(fastResult.transaction);
+    if (fastResult.activePlan) notifyPlanActivation(fastResult.user, fastResult.activePlan, fastResult.activePlan.amount);
+    return;
   }
 
   const result = await updateDb(async (db) => {

@@ -43,6 +43,7 @@ export const pageRoutes = {
   "/transactions": "pages/transactions.html",
   "/plans": "pages/plans.html",
   "/network": "pages/network.html",
+  "/profile": "pages/profile.html",
   "/afrix-money": "pages/afrix-money.html",
   "/exchange": "pages/exchange.html",
   "/merchant": "pages/merchant.html",

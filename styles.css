@@ -966,6 +966,10 @@ body[data-page="wallet"] select {
 .info-grid div { min-width: 0; padding: 12px; border-radius: 8px; background: var(--panel2); }
 .info-grid span { display: block; color: var(--muted); font-size: 12px; }
 .info-grid strong { display: block; margin-top: 6px; }
+.admin-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.admin-stat-grid div { min-width: 0; padding: 12px; border-radius: 8px; background: var(--panel2); }
+.admin-stat-grid span { display: block; color: var(--muted); font-size: 12px; }
+.admin-stat-grid strong { display: block; margin-top: 6px; color: var(--gold); overflow-wrap: anywhere; }
 .admin-queues { margin-top: 14px; }
 .queue-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center !important; }
 .admin-inline-input { width: 120px; min-height: 42px; }
@@ -1132,7 +1136,7 @@ body[data-page="wallet"] select {
 .active-plan-head small { color: var(--muted); }
 .active-plan-head b { color: var(--green); font-size: 22px; }
 .active-plan-progress { height: 14px; }
-.active-plan-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.active-plan-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .active-plan-stats small {
   display: grid;
   gap: 5px;
@@ -1477,7 +1481,7 @@ th { color: var(--muted); font-size: 12px; }
   .partner-level-card:nth-child(5) {
     grid-column: auto;
   }
-  .info-grid { grid-template-columns: 1fr 1fr; }
+  .info-grid, .admin-stat-grid { grid-template-columns: 1fr 1fr; }
   .queue-row { grid-template-columns: 1fr !important; }
   .merchant-card { grid-template-columns: 1fr !important; }
   .sidebar {
@@ -1671,7 +1675,7 @@ th { color: var(--muted); font-size: 12px; }
   .wallet-address .btn {
     width: 100%;
   }
-  .info-grid { grid-template-columns: 1fr; }
+  .info-grid, .admin-stat-grid { grid-template-columns: 1fr; }
   body[data-page="wallet"] .panel {
     padding: 16px;
   }

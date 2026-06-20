@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Profil - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body data-protected data-page="profile">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+    <section class="grid two">
+      <article class="panel">
+        <div class="panel-head"><h1>Profil</h1><span class="badge" data-profile-role>Utilisateur</span></div>
+        <div class="list">
+          <div><span>Email</span><strong data-profile-email>-</strong></div>
+          <div><span>Pays</span><strong data-profile-country>-</strong></div>
+          <div><span>Solde</span><strong data-profile-balance>0 USDT</strong></div>
+          <div><span>Activite</span><strong data-profile-activity>0 USDT</strong></div>
+        </div>
+      </article>
+      <form class="panel" data-change-password-form>
+        <div class="panel-head"><h1>Mot de passe</h1><span class="badge">Sécurité</span></div>
+        <label>Mot de passe actuel
+          <input name="currentPassword" type="password" required>
+        </label>
+        <label>Nouveau mot de passe
+          <input name="newPassword" type="password" minlength="10" required>
+        </label>
+        <button class="btn primary full" type="submit">Changer le mot de passe</button>
+      </form>
+    </section>
+  </main>
+  <script src="../app.js?v=20260620-1"></script>
+</body>
+</html>
