@@ -1055,6 +1055,13 @@ function setupAuthForms() {
     const passwordInput = registerForm.querySelector("[data-password-input]");
     const passwordMeter = registerForm.querySelector("[data-password-meter]");
     const passwordHelp = registerForm.querySelector("[data-password-help]");
+    const refInput = registerForm.querySelector("[data-ref-code]");
+    const refFromUrl = new URLSearchParams(window.location.search).get("ref");
+    if (refInput && refFromUrl) {
+      refInput.value = refFromUrl.trim();
+      refInput.readOnly = true;
+      refInput.classList.add("readonly");
+    }
     const updatePasswordMeter = () => {
       if (!passwordInput || !passwordMeter || !passwordHelp) return;
       const length = String(passwordInput.value || "").length;
@@ -1076,17 +1083,18 @@ function setupAuthForms() {
       const data = formToObject(registerForm);
       const email = String(data.email || "").trim().toLowerCase();
       const password = String(data.password || "");
+      const ref = String(data.ref || "").trim();
 
       const country = String(data.country || "").trim();
 
-      if (!email || !country || password.length < 10) {
-        showToast("Renseignez un email, un pays et un mot de passe d'au moins 10 caractères.", "error");
+      if (!email || !country || !ref || password.length < 10) {
+        showToast("Renseignez un email, un pays, un code d'invitation et un mot de passe d'au moins 10 caractères.", "error");
         restoreButton();
         return;
       }
 
       try {
-        const response = await apiJson("/auth/register", { email, password, country });
+        const response = await apiJson("/auth/register", { email, password, country, ref });
         setAuthToken(response.token);
         window.location.href = "/dashboard";
       } catch (error) {

@@ -347,6 +347,7 @@ function buildAdminStats(db) {
     usersWithActivePlans: users.filter((user) => (user.activePlans || []).some((plan) => plan.status === "active")).length,
     investedCapital: money(activePlans.reduce((total, plan) => total + Number(plan.amount || 0), 0)),
     transactionVolume: money(completedTransactions.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0)),
+    platformBalance: money(db.platformAccount?.balance || 0),
     platformRevenue: money(platformRevenue),
     partners: users.filter((user) => user.referrerId).length,
     approvedMerchants: users.filter((user) => user.merchantProfile?.status === "approved").length,
@@ -1028,7 +1029,7 @@ app.post("/api/auth/register", validate(z.object({
   email: z.string().email(),
   password: z.string().min(10),
   country: z.string().min(2),
-  ref: z.string().optional()
+  ref: z.string().min(2)
 })), async (req, res) => {
   const { email, password, ref } = req.body;
   const normalizedEmail = email.trim().toLowerCase();
@@ -1059,7 +1060,8 @@ app.post("/api/auth/register", validate(z.object({
     if (await UserModel.exists({ email: normalizedEmail })) {
       return { error: "Cet email est deja enregistre." };
     }
-    const referrer = ref ? await UserModel.findOne({ refCode: ref }).lean() : null;
+    const referrer = await UserModel.findOne({ refCode: String(ref || "").trim() }).lean();
+    if (!referrer) return { error: "Code d'invitation invalide." };
     try {
       const user = await UserModel.create(await createUserRecord(referrer?.id || null));
       return { user: normalizeUserRecord(user.toObject()) };
@@ -1469,102 +1471,89 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
   const total = money(amount + fee);
   const note = String(req.body.note || "").trim().slice(0, 180);
   const recipientEmail = req.body.recipient.trim().toLowerCase();
-  const session = await mongoose.startSession();
-  let result;
-  try {
-    await session.withTransaction(async () => {
-      const sender = await UserModel.findOne({ id: req.user.id }, null, { session }).lean();
-      const recipient = await UserModel.findOne({ email: recipientEmail }, null, { session }).lean();
-      if (!recipient) {
-        result = { error: "Destinataire introuvable." };
-        return;
-      }
-      if (recipient.id === sender.id) {
-        result = { error: "Vous ne pouvez pas vous envoyer des fonds a vous-meme." };
-        return;
-      }
-      if (recipient.status && recipient.status !== "active") {
-        result = { error: "Ce compte ne peut pas recevoir de transfert." };
-        return;
-      }
-
-      const reference = makeReference("P2P", amount);
-      const updatedSender = await UserModel.findOneAndUpdate(
-        { id: sender.id, $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, total] } },
-        [{ $set: { balance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$balance", 0] } }, total] }, 2] } } }],
-        { new: true, session, lean: true }
-      );
-      if (!updatedSender) {
-        result = { error: "Solde insuffisant." };
-        return;
-      }
-      const updatedRecipient = await UserModel.findOneAndUpdate(
-        { id: recipient.id },
-        [{ $set: { balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, amount] }, 2] } } }],
-        { new: true, session, lean: true }
-      );
-      const platform = await PlatformAccountModel.findOneAndUpdate(
-        { id: "platform" },
-        { $inc: { balance: fee, fees: fee }, $setOnInsert: { createdAt: nowIso() } },
-        { upsert: true, new: true, session, lean: true }
-      );
-      const ledgerEntries = buildLedgerEntries([{
-        accountType: "user",
-        accountId: sender.id,
-        direction: "debit",
-        amount: total,
-        balanceAfter: updatedSender.balance,
-        description: `Transfert vers ${recipient.email}`
-      }, {
-        accountType: "user",
-        accountId: recipient.id,
-        direction: "credit",
-        amount,
-        balanceAfter: updatedRecipient.balance,
-        description: `Reception depuis ${sender.email}`
-      }, {
-        accountType: "platform",
-        accountId: "platform",
-        direction: "credit",
-        amount: fee,
-        balanceAfter: platform.balance,
-        description: "Frais P2P"
-      }], { source: "p2p_transfer", referenceId: reference, extra: { senderId: sender.id, recipientId: recipient.id, amount, fee, note } });
-      if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
-      await TransactionModel.create([{
-        id: nanoid(),
-        userId: sender.id,
-        type: "P2P",
-        description: `Transfert vers ${recipient.email}`,
-        amount: total,
-        displayAmount: formatAmount(total, "-"),
-        status: "Completed",
-        createdAt: nowIso(),
-        metadata: { reference, amount, fee, total, recipientEmail: recipient.email, note }
-      }, {
-        id: nanoid(),
-        userId: recipient.id,
-        type: "P2P",
-        description: `Reception depuis ${sender.email}`,
-        amount,
-        displayAmount: formatAmount(amount, "+"),
-        status: "Completed",
-        createdAt: nowIso(),
-        metadata: { reference, amount, senderEmail: sender.email, note }
-      }], { session });
-      result = {
-        reference,
-        amount,
-        fee,
-        total,
-        recipient: { email: recipient.email, displayName: maskDisplayName(recipient.fullName || recipient.email) }
-      };
-    });
-  } finally {
-    await session.endSession();
+  const sender = await UserModel.findOne({ id: req.user.id }).lean();
+  const recipient = await UserModel.findOne({ email: recipientEmail }).lean();
+  if (!sender) return res.status(404).json({ message: "Expediteur introuvable." });
+  if (!recipient) return res.status(404).json({ message: "Destinataire introuvable." });
+  if (recipient.id === sender.id) {
+    return res.status(400).json({ message: "Vous ne pouvez pas vous envoyer des fonds a vous-meme." });
+  }
+  if (recipient.status && recipient.status !== "active") {
+    return res.status(400).json({ message: "Ce compte ne peut pas recevoir de transfert." });
   }
 
-  if (result.error) return res.status(400).json({ message: result.error });
+  const reference = makeReference("P2P", amount);
+  const updatedSender = await UserModel.findOneAndUpdate(
+    { id: sender.id, $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, total] } },
+    [{ $set: { balance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$balance", 0] } }, total] }, 2] } } }],
+    { new: true, lean: true }
+  );
+  if (!updatedSender) return res.status(400).json({ message: "Solde insuffisant." });
+
+  const updatedRecipient = await UserModel.findOneAndUpdate(
+    { id: recipient.id },
+    [{ $set: { balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, amount] }, 2] } } }],
+    { new: true, lean: true }
+  );
+  if (!updatedRecipient) return res.status(404).json({ message: "Destinataire introuvable." });
+
+  const platform = await PlatformAccountModel.findOneAndUpdate(
+    { id: "platform" },
+    { $inc: { balance: fee, fees: fee }, $setOnInsert: { createdAt: nowIso() } },
+    { upsert: true, new: true, lean: true }
+  );
+  const ledgerEntries = buildLedgerEntries([{
+    accountType: "user",
+    accountId: sender.id,
+    direction: "debit",
+    amount: total,
+    balanceAfter: updatedSender.balance,
+    description: `Transfert vers ${recipient.email}`
+  }, {
+    accountType: "user",
+    accountId: recipient.id,
+    direction: "credit",
+    amount,
+    balanceAfter: updatedRecipient.balance,
+    description: `Reception depuis ${sender.email}`
+  }, {
+    accountType: "platform",
+    accountId: "platform",
+    direction: "credit",
+    amount: fee,
+    balanceAfter: platform.balance,
+    description: "Frais P2P"
+  }], { source: "p2p_transfer", referenceId: reference, extra: { senderId: sender.id, recipientId: recipient.id, amount, fee, note } });
+  if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries);
+  await TransactionModel.insertMany([{
+    id: nanoid(),
+    userId: sender.id,
+    type: "P2P",
+    description: `Transfert vers ${recipient.email}`,
+    amount: total,
+    displayAmount: formatAmount(total, "-"),
+    status: "Completed",
+    createdAt: nowIso(),
+    metadata: { reference, amount, fee, total, recipientEmail: recipient.email, note }
+  }, {
+    id: nanoid(),
+    userId: recipient.id,
+    type: "P2P",
+    description: `Reception depuis ${sender.email}`,
+    amount,
+    displayAmount: formatAmount(amount, "+"),
+    status: "Completed",
+    createdAt: nowIso(),
+    metadata: { reference, amount, senderEmail: sender.email, note }
+  }]);
+
+  const result = {
+    reference,
+    amount,
+    fee,
+    total,
+    recipient: { email: recipient.email, displayName: maskDisplayName(recipient.fullName || recipient.email) }
+  };
   res.status(201).json(result);
 });
 
