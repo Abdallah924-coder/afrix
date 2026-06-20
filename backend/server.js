@@ -465,8 +465,10 @@ function normalizeEmail(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
-function isInternalReferralAccount(user) {
-  return normalizeEmail(user?.email).endsWith("@afrix.local");
+function stableRefCodeFromEmail(email = "") {
+  const normalizedEmail = normalizeEmail(email);
+  const digest = createHash("sha256").update(normalizedEmail).digest("hex").slice(0, 8).toUpperCase();
+  return `AFX-${digest}`;
 }
 
 function referralMatches(candidate, sponsor) {
@@ -991,7 +993,7 @@ async function ensureAdminUser() {
   const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
   await ensureStorage();
   const adminId = nanoid();
-  const refCode = `AFX-${nanoid(8).toUpperCase()}`;
+  const refCode = stableRefCodeFromEmail(ADMIN_EMAIL);
   const admin = normalizeUserRecord(await UserModel.findOneAndUpdate(
     { email: ADMIN_EMAIL },
     {
@@ -1028,7 +1030,7 @@ async function ensureCommissionAccount({ email, password, fullName, role }) {
 
   const passwordHash = await bcrypt.hash(password, 12);
   const accountId = nanoid();
-  const refCode = `AFX-${nanoid(8).toUpperCase()}`;
+  const refCode = stableRefCodeFromEmail(email);
   const account = normalizeUserRecord(await UserModel.findOneAndUpdate(
     { email },
     {
@@ -1084,7 +1086,7 @@ async function ensureReferralCodes() {
   for (const user of users) {
     await UserModel.updateOne(
       { id: user.id, $or: [{ refCode: { $exists: false } }, { refCode: "" }, { refCode: null }] },
-      { $set: { refCode: `AFX-${nanoid(8).toUpperCase()}` } }
+      { $set: { refCode: stableRefCodeFromEmail(user.email || user.id) } }
     );
   }
   if (users.length) logger.info({ count: users.length }, "Referral codes backfilled");
@@ -1158,7 +1160,7 @@ app.post("/api/auth/register", validate(z.object({
     activity: 0,
     bonus: 0,
     wallet: "",
-    refCode: `AFX-${nanoid(8).toUpperCase()}`,
+    refCode: stableRefCodeFromEmail(email),
     referrerId: referrer?.id || null,
     referrerEmail: normalizeEmail(referrer?.email),
     referrerCode: normalizeInvitationCode(referrer?.refCode),
@@ -1174,7 +1176,6 @@ app.post("/api/auth/register", validate(z.object({
     }
     const referrer = await UserModel.findOne({ refCode: { $regex: `^${escapeRegExp(refCode)}$`, $options: "i" } }).lean();
     if (!referrer) return { error: `Code d'invitation invalide: ${refCode || "vide"}.` };
-    if (isInternalReferralAccount(referrer)) return { error: "Code d'invitation invalide: compte parrain interne." };
     try {
       const created = await UserModel.create(await createUserRecord(referrer));
       const referralPatch = {
@@ -2845,7 +2846,7 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
         activity: 0,
         bonus: 0,
         wallet: "",
-        refCode: `AFX-${nanoid(8).toUpperCase()}`,
+        refCode: stableRefCodeFromEmail(email),
         referrerId: null,
         merchantWallet: { available: 0, pending: 0, bonus: 0 },
         activePlans: [],
