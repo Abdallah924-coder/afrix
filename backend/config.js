@@ -47,6 +47,7 @@ export const pageRoutes = {
   "/plans": "pages/plans.html",
   "/network": "pages/network.html",
   "/profile": "pages/profile.html",
+  "/contact": "pages/contact.html",
   "/afrix-money": "pages/afrix-money.html",
   "/exchange": "pages/exchange.html",
   "/merchant": "pages/merchant.html",
@@ -68,6 +69,9 @@ export const legacyPageRoutes = new Map([
 export const publicFiles = new Set([
   "/app.js",
   "/styles.css",
+  "/manifest.webmanifest",
+  "/service-worker.js",
+  "/offline.html",
   "/IMG-20260609-WA0003.jpg"
 ]);
 

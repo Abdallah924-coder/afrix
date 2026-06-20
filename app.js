@@ -12,6 +12,7 @@ const pageTitles = {
   plans: "Plans",
   network: "Reseau",
   profile: "Profil",
+  contact: "Contact",
   elite: "Programme Elite",
   transactions: "Historique",
   admin: "Admin",
@@ -28,6 +29,7 @@ const navItems = [
   ["plans", "Plans", "/plans"],
   ["network", "Reseau", "/network"],
   ["profile", "Profil", "/profile"],
+  ["contact", "Contact", "/contact"],
   ["elite", "Elite", "/elite"],
   ["transactions", "Transactions", "/transactions"],
   ["admin", "Admin", "/admin"]
@@ -37,6 +39,12 @@ const DEPOSIT_MOBILE_RATE = 650;
 const WITHDRAW_MOBILE_RATE = 550;
 const MTN_WITHDRAW_FEE_RATE = 0.10;
 const P2P_FEE_RATE = 0.01;
+const contactLinks = {
+  telegramSupport: "https://t.me/AfrixCapitalSupport",
+  telegramChannel: "https://t.me/AfrixCapital",
+  whatsappChannel: "https://whatsapp.com/channel/0029VaAfrixCapital"
+};
+let deferredInstallPrompt = null;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 const plans = [
   { id: "starter", tier: "Bronze", name: "Starter Plan", minAmount: 10, amount: "10 USDT et plus", daily: "0,50%", duration: "90 jours", cycle: "capital bloque 90 jours + gains journaliers retirable", note: "Premier niveau obligatoire pour ouvrir la progression AFRIX." },
@@ -316,6 +324,7 @@ function renderTopbar(page, user = emptyUser) {
       <span>${escapeHtml(user.email || "Compte AFRIX")}</span>
       <strong>USDT</strong>
     </div>
+    <button class="btn primary pwa-top-btn" type="button" data-pwa-install hidden>Installer</button>
   `;
 
   const menuButton = topbar.querySelector("[data-menu-toggle]");
@@ -323,6 +332,81 @@ function renderTopbar(page, user = emptyUser) {
   if (menuButton && sidebar) {
     menuButton.addEventListener("click", () => sidebar.classList.toggle("open"));
   }
+  const pwaButton = topbar.querySelector("[data-pwa-install]");
+  if (pwaButton && !isPwaDisplayMode()) {
+    pwaButton.hidden = false;
+    pwaButton.addEventListener("click", promptPwaInstall);
+  }
+}
+
+function isPwaDisplayMode() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+async function promptPwaInstall() {
+  if (!deferredInstallPrompt) {
+    showToast("Utilisez le menu du navigateur pour installer AFRIX.", "error");
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  document.querySelector(".pwa-install-card")?.remove();
+}
+
+function showPwaInstallCard() {
+  if (isPwaDisplayMode() || localStorage.getItem("afrixInstallBannerDismissed") === "1" || document.querySelector(".pwa-install-card")) return;
+  const card = document.createElement("div");
+  card.className = "pwa-install-card";
+  card.innerHTML = `
+    <div class="brand-mark">A</div>
+    <div>
+      <strong>Installer AFRIX</strong>
+      <p>Accès rapide au wallet, aux plans et à AFRIX Money.</p>
+    </div>
+    <button type="button" class="btn primary" data-pwa-card-install>Installer</button>
+    <button type="button" class="pwa-install-close" aria-label="Fermer">&times;</button>
+  `;
+  document.body.appendChild(card);
+  card.querySelector("[data-pwa-card-install]")?.addEventListener("click", promptPwaInstall);
+  card.querySelector(".pwa-install-close")?.addEventListener("click", () => {
+    localStorage.setItem("afrixInstallBannerDismissed", "1");
+    card.remove();
+  });
+}
+
+function setupPwa() {
+  if (!document.querySelector("link[rel='manifest']")) {
+    const manifest = document.createElement("link");
+    manifest.rel = "manifest";
+    manifest.href = "/manifest.webmanifest";
+    document.head.appendChild(manifest);
+  }
+  if (!document.querySelector("meta[name='theme-color']")) {
+    const theme = document.createElement("meta");
+    theme.name = "theme-color";
+    theme.content = "#0f5d43";
+    document.head.appendChild(theme);
+  }
+  if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+    });
+  }
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    showPwaInstallCard();
+    document.querySelectorAll("[data-pwa-install]").forEach((button) => {
+      button.hidden = false;
+    });
+  });
+}
+
+function renderContact() {
+  document.querySelectorAll("[data-contact-telegram-support]").forEach((link) => { link.href = contactLinks.telegramSupport; });
+  document.querySelectorAll("[data-contact-telegram-channel]").forEach((link) => { link.href = contactLinks.telegramChannel; });
+  document.querySelectorAll("[data-contact-whatsapp-channel]").forEach((link) => { link.href = contactLinks.whatsappChannel; });
 }
 
 function renderDashboard(user) {
@@ -1888,6 +1972,7 @@ function renderProtectedShell(page, user) {
   renderPlans(user);
   renderNetwork(user);
   renderProfile(user);
+  renderContact();
   renderExchange(user);
   renderMerchants(user);
   renderAdmin(user);
@@ -1899,6 +1984,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const isProtected = document.body.matches("[data-protected]");
 
   setupAuthForms();
+  setupPwa();
 
   if (!isProtected) return;
 

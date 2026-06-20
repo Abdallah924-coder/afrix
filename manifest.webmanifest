@@ -1,0 +1,37 @@
+{
+  "name": "AFRIX Capital Investment",
+  "short_name": "AFRIX",
+  "description": "Wallet, plans, AFRIX Money et reseau AFRIX Capital Investment.",
+  "start_url": "/dashboard?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#06110f",
+  "theme_color": "#0f5d43",
+  "orientation": "portrait-primary",
+  "categories": ["finance", "business", "productivity"],
+  "icons": [
+    {
+      "src": "/IMG-20260609-WA0003.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Wallet",
+      "short_name": "Wallet",
+      "url": "/wallet?source=pwa_shortcut"
+    },
+    {
+      "name": "Plans",
+      "short_name": "Plans",
+      "url": "/plans?source=pwa_shortcut"
+    },
+    {
+      "name": "AFRIX Money",
+      "short_name": "Money",
+      "url": "/afrix-money?source=pwa_shortcut"
+    }
+  ]
+}

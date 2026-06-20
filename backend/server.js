@@ -350,7 +350,7 @@ function buildAdminStats(db) {
     usersWithActivePlans: users.filter((user) => (user.activePlans || []).some((plan) => plan.status === "active")).length,
     investedCapital: money(activePlans.reduce((total, plan) => total + Number(plan.amount || 0), 0)),
     transactionVolume: money(completedTransactions.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0)),
-    platformBalance: money(db.platformAccount?.balance || 0),
+    platformBalance: money(platformRevenue),
     platformRevenue: money(platformRevenue),
     partners: users.filter((user) => user.referrerId).length,
     approvedMerchants: users.filter((user) => user.merchantProfile?.status === "approved").length,
