@@ -194,7 +194,7 @@ function normalizeInvitationCode(value = "") {
   let code = String(value || "").trim();
   if (!code) return "";
   try {
-    const parsedUrl = new URL(code);
+    const parsedUrl = new URL(code, window.location.origin);
     code = parsedUrl.searchParams.get("ref") || parsedUrl.searchParams.get("code") || code;
   } catch {
     // Plain invitation codes are not valid URLs.

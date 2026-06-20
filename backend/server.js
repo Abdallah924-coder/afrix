@@ -449,12 +449,16 @@ function normalizeInvitationCode(value = "") {
   let code = String(value || "").trim();
   if (!code) return "";
   try {
-    const parsedUrl = new URL(code);
+    const parsedUrl = new URL(code, APP_URL);
     code = parsedUrl.searchParams.get("ref") || parsedUrl.searchParams.get("code") || code;
   } catch {
     // The value is usually just the code, not a full URL.
   }
   return code.trim().replace(/\s+/g, "").toUpperCase();
+}
+
+function escapeRegExp(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeEmail(value = "") {
@@ -1164,11 +1168,26 @@ app.post("/api/auth/register", validate(z.object({
     if (await UserModel.exists({ email: normalizedEmail })) {
       return { error: "Cet email est deja enregistre." };
     }
-    const referrer = await UserModel.findOne({ refCode }).lean();
+    const referrer = await UserModel.findOne({ refCode: { $regex: `^${escapeRegExp(refCode)}$`, $options: "i" } }).lean();
     if (!referrer) return { error: `Code d'invitation invalide: ${refCode || "vide"}.` };
     try {
-      const user = await UserModel.create(await createUserRecord(referrer));
-      return { user: normalizeUserRecord(user.toObject()) };
+      const created = await UserModel.create(await createUserRecord(referrer));
+      const referralPatch = {
+        referrerId: referrer.id,
+        referrerEmail: normalizeEmail(referrer.email),
+        referrerCode: normalizeInvitationCode(referrer.refCode),
+        referredAt: nowIso()
+      };
+      const user = normalizeUserRecord(await UserModel.findOneAndUpdate(
+        { id: created.id },
+        { $set: referralPatch },
+        { new: true, lean: true }
+      ));
+      if (!referralMatches(user, referrer)) {
+        logger.error({ userId: user?.id, refCode, referrerId: referrer.id }, "Referral attribution failed after registration");
+        return { error: "Inscription interrompue: le parrainage n'a pas ete enregistre. Reessayez avec le lien du parrain." };
+      }
+      return { user };
     } catch (error) {
       if (error?.code === 11000) return { error: "Cet email est deja enregistre." };
       throw error;
