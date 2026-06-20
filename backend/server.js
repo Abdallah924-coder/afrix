@@ -1187,10 +1187,10 @@ app.post("/api/auth/register", validate(z.object({
   const country = req.body.country.trim();
   const refCode = normalizeInvitationCode(ref);
 
-  // Un code AFRIX valide suit le format AFX-XXXXXXXX (12 caractères).
-  // On rejette immédiatement tout code qui ne correspond pas à ce format
-  // pour éviter qu'une recherche MongoDB ambiguë remonte un compte inattendu.
-  if (!refCode || !/^AFX-[0-9A-F]{8}$/.test(refCode)) {
+  // Un code AFRIX valide commence par AFX- suivi de caractères alphanumériques.
+  // On rejette les codes vides ou sans le préfixe AFX- pour éviter qu'une
+  // recherche MongoDB ambiguë remonte un compte inattendu (ex: l'admin).
+  if (!refCode || !/^AFX-[A-Z0-9]+$/.test(refCode)) {
     return res.status(400).json({ message: `Code d'invitation invalide: ${ref || "vide"}.` });
   }
 
