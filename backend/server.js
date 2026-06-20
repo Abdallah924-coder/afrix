@@ -1165,7 +1165,7 @@ app.post("/api/auth/register", validate(z.object({
       return { error: "Cet email est deja enregistre." };
     }
     const referrer = await UserModel.findOne({ refCode }).lean();
-    if (!referrer) return { error: "Code d'invitation invalide." };
+    if (!referrer) return { error: `Code d'invitation invalide: ${refCode || "vide"}.` };
     try {
       const user = await UserModel.create(await createUserRecord(referrer));
       return { user: normalizeUserRecord(user.toObject()) };
