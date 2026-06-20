@@ -1187,6 +1187,13 @@ app.post("/api/auth/register", validate(z.object({
   const country = req.body.country.trim();
   const refCode = normalizeInvitationCode(ref);
 
+  // Un code AFRIX valide suit le format AFX-XXXXXXXX (12 caractères).
+  // On rejette immédiatement tout code qui ne correspond pas à ce format
+  // pour éviter qu'une recherche MongoDB ambiguë remonte un compte inattendu.
+  if (!refCode || !/^AFX-[0-9A-F]{8}$/.test(refCode)) {
+    return res.status(400).json({ message: `Code d'invitation invalide: ${ref || "vide"}.` });
+  }
+
   const createUserRecord = async (referrer = null) => ({
     id: nanoid(),
     email: normalizedEmail,
@@ -1214,8 +1221,30 @@ app.post("/api/auth/register", validate(z.object({
     if (await UserModel.exists({ email: normalizedEmail })) {
       return { error: "Cet email est deja enregistre." };
     }
-    const referrer = await UserModel.findOne({ refCode: { $regex: `^${escapeRegExp(refCode)}$`, $options: "i" } }).lean();
-    if (!referrer) return { error: `Code d'invitation invalide: ${refCode || "vide"}.` };
+
+    // Recherche stricte : correspondance exacte sur refCode (insensible à la casse).
+    // On exclut explicitement les comptes système (platform, developer) qui ne
+    // doivent jamais apparaître comme parrains via le formulaire d'inscription.
+    // Seul le compte platform (compte comptable interne) est exclu du parrainage.
+    // Le compte developpeur peut parrainer normalement comme n'importe quel utilisateur.
+    const systemEmails = [
+      normalizeEmail(PLATFORM_EMAIL || "")
+    ].filter(Boolean);
+
+    const referrer = await UserModel.findOne({
+      refCode: { $regex: `^${escapeRegExp(refCode)}$`, $options: "i" },
+      ...(systemEmails.length ? { email: { $nin: systemEmails } } : {})
+    }).lean();
+
+    if (!referrer) return { error: `Code d'invitation invalide: ${refCode}.` };
+
+    // Vérification finale : le parrain trouvé doit avoir un refCode qui correspond
+    // exactement au code saisi — pas de match partiel possible.
+    if (normalizeInvitationCode(referrer.refCode) !== refCode) {
+      logger.error({ refCode, foundRefCode: referrer.refCode }, "refCode mismatch after query, aborting registration");
+      return { error: `Code d'invitation invalide: ${refCode}.` };
+    }
+
     try {
       const created = await UserModel.create(await createUserRecord(referrer));
       const referralPatch = {
