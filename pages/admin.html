@@ -194,8 +194,16 @@
         </form>
       </article>
       <article class="panel">
-        <div class="panel-head"><h1>Autres actions</h1><span class="badge">Admin</span></div>
-        <p class="muted">Les actions sensibles disponibles sont: valider/rejeter les transactions, créer un compte, suspendre/réactiver, changer le rôle, ajouter ou déduire des fonds, activer un investissement et ouvrir les niveaux bonus.</p>
+        <div class="panel-head"><h1>Réparer parrainage</h1><span class="badge">Urgence</span></div>
+        <form data-admin-referral-repair-form>
+          <label>Email filleul
+            <input name="email" type="email" required placeholder="filleul@email.com">
+          </label>
+          <label>Email parrain
+            <input name="referrerEmail" type="email" required placeholder="parrain@email.com">
+          </label>
+          <button class="btn primary full" type="submit">Rattacher et payer bonus</button>
+        </form>
       </article>
     </section>
     <section class="panel admin-queues">

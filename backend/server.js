@@ -2355,7 +2355,7 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
   }
 }
 
-async function performFastAdminAction({ action, id, amount, role, adminId, email, note, levels, plan }) {
+async function performFastAdminAction({ action, id, amount, role, adminId, email, referrerEmail, note, levels, plan }) {
   if (action === "manual-deposit" || action === "admin-fund-add" || action === "admin-fund-deduct") {
     const targetEmail = String(email || "").trim().toLowerCase();
     if (!targetEmail || !amount) return { error: "Email et montant requis." };
@@ -2433,6 +2433,117 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
     );
     if (!user) return { error: "Utilisateur introuvable." };
     return { user: sanitizeUser(normalizeUserRecord(user)) };
+  }
+
+  if (action === "repair-referral") {
+    const targetEmail = String(email || "").trim().toLowerCase();
+    const sponsorEmail = String(referrerEmail || "").trim().toLowerCase();
+    if (!targetEmail || !sponsorEmail) return { error: "Email filleul et email parrain requis." };
+    if (targetEmail === sponsorEmail) return { error: "Un compte ne peut pas etre son propre parrain." };
+
+    const session = await mongoose.startSession();
+    try {
+      let result;
+      await session.withTransaction(async () => {
+        const target = normalizeUserRecord(await UserModel.findOne({ email: targetEmail }, null, { session }).lean());
+        const sponsor = normalizeUserRecord(await UserModel.findOne({ email: sponsorEmail }, null, { session }).lean());
+        if (!target) {
+          result = { error: "Filleul introuvable." };
+          return;
+        }
+        if (!sponsor) {
+          result = { error: "Parrain introuvable." };
+          return;
+        }
+        if (target.id === sponsor.id) {
+          result = { error: "Un compte ne peut pas etre son propre parrain." };
+          return;
+        }
+
+        await UserModel.updateOne(
+          { id: target.id },
+          {
+            $set: {
+              referrerId: sponsor.id,
+              referralRepairedAt: nowIso(),
+              referralRepairedBy: adminId
+            }
+          },
+          { session }
+        );
+
+        const alreadyPaid = await TransactionModel.exists({
+          type: "Bonus",
+          "metadata.sourceUserId": target.id
+        }).session(session);
+        let paidAmount = 0;
+        let paidCount = 0;
+
+        if (!alreadyPaid) {
+          const activePlans = (target.activePlans || []).filter((item) => Number(item.amount || 0) > 0);
+          for (const activePlan of activePlans) {
+            let currentReferrerId = sponsor.id;
+            for (let level = 0; level < bonusRates.length && currentReferrerId; level += 1) {
+              const referrer = normalizeUserRecord(await UserModel.findOne({ id: currentReferrerId }, null, { session }).lean());
+              if (!referrer) break;
+              if (unlockedReferralLevels(referrer) > level) {
+                const bonus = money((Number(activePlan.amount || 0) * bonusRates[level]) / 100);
+                const updatedReferrer = await UserModel.findOneAndUpdate(
+                  { id: referrer.id },
+                  [{
+                    $set: {
+                      balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, bonus] }, 2] },
+                      bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, bonus] }, 2] }
+                    }
+                  }],
+                  { new: true, session, lean: true }
+                );
+                const updatedPlatform = await PlatformAccountModel.findOneAndUpdate(
+                  { id: "platform" },
+                  { $inc: { balance: -bonus } },
+                  { new: true, session, lean: true }
+                );
+                const entries = buildLedgerEntries([{
+                  accountType: "platform",
+                  accountId: "platform",
+                  direction: "debit",
+                  amount: bonus,
+                  balanceAfter: updatedPlatform.balance,
+                  description: `Bonus reseau repare niveau ${level + 1}`
+                }, {
+                  accountType: "user",
+                  accountId: referrer.id,
+                  direction: "credit",
+                  amount: bonus,
+                  balanceAfter: updatedReferrer.balance,
+                  description: `Bonus reseau repare niveau ${level + 1}`
+                }], { source: "network_bonus_repair", referenceId: target.id, extra: { sourceUserId: target.id, level: level + 1, activePlanId: activePlan.id || "" } });
+                if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+                await TransactionModel.create([{
+                  id: nanoid(),
+                  userId: referrer.id,
+                  type: "Bonus",
+                  description: `Bonus reseau repare niveau ${level + 1}`,
+                  amount: bonus,
+                  displayAmount: formatAmount(bonus, "+"),
+                  status: "Completed",
+                  createdAt: nowIso(),
+                  metadata: { sourceUserId: target.id, level: level + 1, activePlanId: activePlan.id || "", repairedBy: adminId }
+                }], { session });
+                paidAmount = money(paidAmount + bonus);
+                paidCount += 1;
+              }
+              currentReferrerId = referrer.referrerId;
+            }
+          }
+        }
+
+        result = { user: sanitizeUser({ ...target, referrerId: sponsor.id }), paidAmount, paidCount };
+      });
+      return result;
+    } finally {
+      await session.endSession();
+    }
   }
 
   if (action === "admin-plan-activate") {
@@ -2628,6 +2739,7 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
   id: z.string().optional(),
   amount: z.coerce.number().positive().optional(),
   email: z.string().email().optional(),
+  referrerEmail: z.string().email().optional(),
   password: z.string().min(10).optional(),
   fullName: z.string().min(2).optional(),
   note: z.string().max(300).optional(),
@@ -2643,6 +2755,7 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
     role: req.body.role,
     adminId: req.user.id,
     email: req.body.email,
+    referrerEmail: req.body.referrerEmail,
     note: req.body.note,
     levels: req.body.levels,
     plan: req.body.plan

@@ -669,7 +669,7 @@ function renderNetwork(user) {
   const partnersList = document.querySelector("[data-direct-partners-list]");
   const partnersCount = document.querySelector("[data-direct-partners-count]");
   const refLink = document.querySelector("[data-ref-link]");
-  const activeLevels = Math.max(0, Math.min(20, Math.floor(Number(user.activity || 0) / 100)));
+  const activeLevels = Math.max(0, Math.min(20, Math.max(Math.floor(Number(user.activity || 0) / 100), Number(user.bonusLevelsOverride || 0))));
 
   if (levelsList) {
     levelsList.innerHTML = bonusRates.map((rate, index) => {
@@ -1721,6 +1721,10 @@ function setupActions(user) {
   bindAdminSimpleForm("[data-admin-bonus-levels-form]", "bonus-levels", "Activation...", "Niveaux bonus actives.", (data) => ({
     email: String(data.email || "").trim().toLowerCase(),
     levels: Number(data.levels || 0)
+  }));
+  bindAdminSimpleForm("[data-admin-referral-repair-form]", "repair-referral", "Réparation...", "Parrainage repare.", (data) => ({
+    email: String(data.email || "").trim().toLowerCase(),
+    referrerEmail: String(data.referrerEmail || "").trim().toLowerCase()
   }));
 
   document.querySelectorAll("[data-admin-control]").forEach((control) => {
