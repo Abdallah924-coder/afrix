@@ -324,18 +324,12 @@ function renderTopbar(page, user = emptyUser) {
       <span>${escapeHtml(user.email || "Compte AFRIX")}</span>
       <strong>USDT</strong>
     </div>
-    <button class="btn primary pwa-top-btn" type="button" data-pwa-install hidden>Installer</button>
   `;
 
   const menuButton = topbar.querySelector("[data-menu-toggle]");
   const sidebar = document.querySelector("[data-sidebar]");
   if (menuButton && sidebar) {
     menuButton.addEventListener("click", () => sidebar.classList.toggle("open"));
-  }
-  const pwaButton = topbar.querySelector("[data-pwa-install]");
-  if (pwaButton && !isPwaDisplayMode() && localStorage.getItem("afrixInstallBannerDismissed") !== "1") {
-    pwaButton.hidden = false;
-    pwaButton.addEventListener("click", promptPwaInstall);
   }
 }
 

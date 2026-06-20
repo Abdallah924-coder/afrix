@@ -915,7 +915,6 @@ body.public-page {
 .user-box { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(16, 31, 28, .76); }
 .user-box span { min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-btn { display: none; }
-.pwa-top-btn { min-width: fit-content; margin: 0; }
 .hero-card {
   margin-bottom: 22px;
   padding: 32px;
@@ -1563,7 +1562,6 @@ th { color: var(--muted); font-size: 12px; }
     width: 100%;
     justify-content: space-between;
   }
-  .pwa-top-btn { grid-column: 1 / -1; justify-content: center; width: 100%; }
   .pwa-install-card {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
