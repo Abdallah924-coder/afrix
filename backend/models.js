@@ -6,7 +6,8 @@ export { mongoose };
 
 export const UserModel = mongoose.models.User || mongoose.model("User", new mongoose.Schema({
   id: { type: String, required: true, unique: true },
-  email: { type: String, required: true, unique: true, index: true }
+  email: { type: String, required: true, unique: true, index: true },
+  refCode: { type: String, sparse: true, unique: true, index: true }
 }, flexibleOptions));
 
 export const TransactionModel = mongoose.models.Transaction || mongoose.model("Transaction", new mongoose.Schema({
