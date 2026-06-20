@@ -445,6 +445,18 @@ function prunePasswordResetTokens(db) {
   db.passwordResetTokens = (db.passwordResetTokens || []).filter((item) => !item.usedAt && Date.parse(item.expiresAt) > now);
 }
 
+function normalizeInvitationCode(value = "") {
+  let code = String(value || "").trim();
+  if (!code) return "";
+  try {
+    const parsedUrl = new URL(code);
+    code = parsedUrl.searchParams.get("ref") || parsedUrl.searchParams.get("code") || code;
+  } catch {
+    // The value is usually just the code, not a full URL.
+  }
+  return code.trim().replace(/\s+/g, "").toUpperCase();
+}
+
 function parsePlan(planName) {
   const normalized = String(planName || "").toLowerCase();
   if (normalized.includes("starter")) return plans[0];
@@ -1021,6 +1033,18 @@ async function ensurePlatformUser() {
   });
 }
 
+async function ensureReferralCodes() {
+  await ensureStorage();
+  const users = await UserModel.find({ $or: [{ refCode: { $exists: false } }, { refCode: "" }, { refCode: null }] }).lean();
+  for (const user of users) {
+    await UserModel.updateOne(
+      { id: user.id, $or: [{ refCode: { $exists: false } }, { refCode: "" }, { refCode: null }] },
+      { $set: { refCode: `AFX-${nanoid(8).toUpperCase()}` } }
+    );
+  }
+  if (users.length) logger.info({ count: users.length }, "Referral codes backfilled");
+}
+
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -1074,6 +1098,7 @@ app.post("/api/auth/register", validate(z.object({
   const { email, password, ref } = req.body;
   const normalizedEmail = email.trim().toLowerCase();
   const country = req.body.country.trim();
+  const refCode = normalizeInvitationCode(ref);
 
   const createUserRecord = async (referrerId = null) => ({
     id: nanoid(),
@@ -1100,7 +1125,7 @@ app.post("/api/auth/register", validate(z.object({
     if (await UserModel.exists({ email: normalizedEmail })) {
       return { error: "Cet email est deja enregistre." };
     }
-    const referrer = await UserModel.findOne({ refCode: String(ref || "").trim() }).lean();
+    const referrer = await UserModel.findOne({ refCode }).lean();
     if (!referrer) return { error: "Code d'invitation invalide." };
     try {
       const user = await UserModel.create(await createUserRecord(referrer?.id || null));
@@ -2894,6 +2919,7 @@ async function bootstrapServer() {
     await ensureAdminUser();
     await ensurePlatformUser();
     await ensureCommissionAccounts();
+    await ensureReferralCodes();
   } else {
     logger.warn("Storage bootstrap skipped for local smoke test");
   }

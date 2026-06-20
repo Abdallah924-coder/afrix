@@ -189,6 +189,18 @@ function formToObject(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
 
+function normalizeInvitationCode(value = "") {
+  let code = String(value || "").trim();
+  if (!code) return "";
+  try {
+    const parsedUrl = new URL(code);
+    code = parsedUrl.searchParams.get("ref") || parsedUrl.searchParams.get("code") || code;
+  } catch {
+    // Plain invitation codes are not valid URLs.
+  }
+  return code.trim().replace(/\s+/g, "").toUpperCase();
+}
+
 async function loadCurrentUser() {
   const data = await apiRequest("/me");
   return normalizeUser(data.user || data);
@@ -1150,9 +1162,10 @@ function setupAuthForms() {
     const passwordMeter = registerForm.querySelector("[data-password-meter]");
     const passwordHelp = registerForm.querySelector("[data-password-help]");
     const refInput = registerForm.querySelector("[data-ref-code]");
-    const refFromUrl = new URLSearchParams(window.location.search).get("ref");
+    const urlParams = new URLSearchParams(window.location.search);
+    const refFromUrl = urlParams.get("ref") || urlParams.get("code");
     if (refInput && refFromUrl) {
-      refInput.value = refFromUrl.trim();
+      refInput.value = normalizeInvitationCode(refFromUrl);
       refInput.readOnly = true;
       refInput.classList.add("readonly");
     }
@@ -1177,7 +1190,7 @@ function setupAuthForms() {
       const data = formToObject(registerForm);
       const email = String(data.email || "").trim().toLowerCase();
       const password = String(data.password || "");
-      const ref = String(data.ref || "").trim();
+      const ref = normalizeInvitationCode(data.ref);
 
       const country = String(data.country || "").trim();
 
