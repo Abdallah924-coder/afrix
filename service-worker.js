@@ -1,4 +1,4 @@
-const CACHE_NAME = "afrix-v3";
+const CACHE_NAME = "afrix-v4";
 const APP_SHELL = [
   "/",
   "/offline.html",

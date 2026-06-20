@@ -1024,7 +1024,7 @@ function renderAdminUsers(users) {
     const nextRole = item.role === "admin" ? "user" : "admin";
     return `
       <div class="queue-row user-row">
-        <span>${escapeHtml(item.fullName || item.email)}<small>${escapeHtml(item.email)} - ${escapeHtml(item.role)} - ${escapeHtml(item.status)} - ${formatUsdt(item.balance)} - Plans actifs: ${Number(item.activePlansCount || 0)} - Bonus: ${Number(item.bonusLevelsOverride || 0)} niveaux</small></span>
+        <span>${escapeHtml(item.fullName || item.email)}<small>${escapeHtml(item.email)} - ${escapeHtml(item.role)} - ${escapeHtml(item.status)} - ${formatUsdt(item.balance)} - Plans actifs: ${Number(item.activePlansCount || 0)} - Bonus: ${Number(item.bonusLevelsOverride || 0)} niveaux${item.referrerEmail ? ` - Parrain: ${escapeHtml(item.referrerEmail)}` : ""}</small></span>
         <strong>${escapeHtml(item.merchantStatus || "Aucun profil")}</strong>
         <button class="btn secondary" type="button" data-admin-user-role="${escapeHtml(item.id)}" data-role="${nextRole}">${nextRole === "admin" ? "Admin" : "User"}</button>
         ${isBlocked
@@ -1691,9 +1691,12 @@ function setupActions(user) {
       const submitButton = form.querySelector('button[type="submit"]');
       const restoreButton = setButtonLoading(submitButton, loadingLabel);
       try {
-        await apiJson("/admin/actions", { action: actionName, ...data }, { timeoutMs: 25_000 });
+        const response = await apiJson("/admin/actions", { action: actionName, ...data }, { timeoutMs: 25_000 });
         form.reset();
-        showToast(successMessage);
+        const detail = actionName === "repair-referral" && response
+          ? ` ${Number(response.paidCount || 0)} bonus, ${formatUsdt(response.paidAmount || 0)}.`
+          : "";
+        showToast(`${successMessage}${detail}`);
         try {
           const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((payload) => normalizeUser(payload.user || payload));
           renderProtectedShell(document.body.dataset.page, freshUser);
