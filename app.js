@@ -345,24 +345,36 @@ function isPwaDisplayMode() {
 
 async function promptPwaInstall() {
   if (!deferredInstallPrompt) {
-    showToast("Utilisez le menu du navigateur pour installer AFRIX.", "error");
+    showPwaInstallCard({ force: true, instructionsOnly: true });
+    showToast("Installation: utilisez le menu du navigateur si le bouton natif n'apparait pas.", "error");
     return;
   }
   deferredInstallPrompt.prompt();
-  await deferredInstallPrompt.userChoice;
+  const choice = await deferredInstallPrompt.userChoice;
   deferredInstallPrompt = null;
   document.querySelector(".pwa-install-card")?.remove();
+  if (choice?.outcome === "accepted") {
+    localStorage.setItem("afrixInstallBannerDismissed", "1");
+    hidePwaInstallUi();
+  }
 }
 
-function showPwaInstallCard() {
-  if (isPwaDisplayMode() || localStorage.getItem("afrixInstallBannerDismissed") === "1" || document.querySelector(".pwa-install-card")) return;
+function hidePwaInstallUi() {
+  document.querySelector(".pwa-install-card")?.remove();
+  document.querySelectorAll("[data-pwa-install]").forEach((button) => {
+    button.hidden = true;
+  });
+}
+
+function showPwaInstallCard({ force = false, instructionsOnly = false } = {}) {
+  if (isPwaDisplayMode() || (!force && localStorage.getItem("afrixInstallBannerDismissed") === "1") || document.querySelector(".pwa-install-card")) return;
   const card = document.createElement("div");
   card.className = "pwa-install-card";
   card.innerHTML = `
     <div class="brand-mark">A</div>
     <div>
       <strong>Installer AFRIX</strong>
-      <p>Accès rapide au wallet, aux plans et à AFRIX Money.</p>
+      <p>${instructionsOnly ? "Si l'installation native n'apparait pas, ouvrez le menu du navigateur puis choisissez Installer l'application ou Ajouter à l'écran d'accueil." : "Accès rapide au wallet, aux plans et à AFRIX Money."}</p>
     </div>
     <button type="button" class="btn primary" data-pwa-card-install>Installer</button>
     <button type="button" class="pwa-install-close" aria-label="Fermer">&times;</button>
@@ -400,6 +412,11 @@ function setupPwa() {
     document.querySelectorAll("[data-pwa-install]").forEach((button) => {
       button.hidden = false;
     });
+  });
+  window.addEventListener("appinstalled", () => {
+    localStorage.setItem("afrixInstallBannerDismissed", "1");
+    deferredInstallPrompt = null;
+    hidePwaInstallUi();
   });
 }
 
