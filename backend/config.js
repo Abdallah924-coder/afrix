@@ -17,6 +17,9 @@ export const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 export const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
 export const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "").trim();
 export const ADMIN_NAME = process.env.ADMIN_NAME || "Administrateur AFRIX";
+export const PLATFORM_EMAIL = String(process.env.PLATFORM_EMAIL || "").trim().toLowerCase();
+export const PLATFORM_PASSWORD = String(process.env.PLATFORM_PASSWORD || "").trim();
+export const PLATFORM_NAME = process.env.PLATFORM_NAME || "Compte plateforme AFRIX";
 export const COMMISSION_DEVELOPER_EMAIL = String(process.env.COMMISSION_DEVELOPER_EMAIL || "").trim().toLowerCase();
 export const COMMISSION_DEVELOPER_PASSWORD = String(process.env.COMMISSION_DEVELOPER_PASSWORD || "").trim();
 export const COMMISSION_DEVELOPER_NAME = process.env.COMMISSION_DEVELOPER_NAME || "Compte developpeur AFRIX";
@@ -122,12 +125,15 @@ if (isProduction && JWT_SECRET.length < 32) {
 }
 
 if (isProduction) {
-  const missing = ["MONGODB_URI", "APP_URL", "PUBLIC_ORIGIN", "ADMIN_EMAIL", "ADMIN_PASSWORD"]
+  const missing = ["MONGODB_URI", "APP_URL", "PUBLIC_ORIGIN", "ADMIN_EMAIL", "ADMIN_PASSWORD", "PLATFORM_EMAIL", "PLATFORM_PASSWORD"]
     .filter((key) => !String(process.env[key] || "").trim());
   if (missing.length) {
     throw new Error(`Missing production environment variables: ${missing.join(", ")}`);
   }
   if (ADMIN_PASSWORD.length < 12) {
     throw new Error("ADMIN_PASSWORD must be at least 12 characters in production.");
+  }
+  if (PLATFORM_PASSWORD.length < 12) {
+    throw new Error("PLATFORM_PASSWORD must be at least 12 characters in production.");
   }
 }

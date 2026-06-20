@@ -20,6 +20,9 @@ import {
   COMMISSION_DEVELOPER_NAME,
   COMMISSION_DEVELOPER_PASSWORD,
   MONGODB_URI,
+  PLATFORM_EMAIL,
+  PLATFORM_NAME,
+  PLATFORM_PASSWORD,
   PORT,
   PUBLIC_ORIGIN,
   TOKEN_TTL,
@@ -399,6 +402,34 @@ function notifyPlanActivation(user, activePlan, amount) {
     { label: "Montant", value: formatAmount(amount || activePlan?.amount || 0) },
     { label: "Cycle", value: `${activePlan?.durationDays || 0} jours` }
   ]).catch((error) => logger.error({ err: error }, "Plan activation admin email failed"));
+}
+
+async function creditPlatformUserFee({ amount, description, source, referenceId, extra = {}, session = null }) {
+  const fee = money(amount);
+  if (!PLATFORM_EMAIL || fee <= 0) return null;
+  const options = session ? { session, new: true, lean: true } : { new: true, lean: true };
+  const platformUser = await UserModel.findOneAndUpdate(
+    { email: PLATFORM_EMAIL },
+    [{
+      $set: {
+        balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, fee] }, 2] }
+      }
+    }],
+    options
+  );
+  if (!platformUser) return null;
+  await TransactionModel.create([{
+    id: nanoid(),
+    userId: platformUser.id,
+    type: "Frais",
+    description,
+    amount: fee,
+    displayAmount: formatAmount(fee, "+"),
+    status: "Completed",
+    createdAt: nowIso(),
+    metadata: { source, referenceId, ...extra }
+  }], session ? { session } : undefined);
+  return platformUser;
 }
 
 function signToken(user) {
@@ -981,6 +1012,15 @@ async function ensureCommissionAccounts() {
   });
 }
 
+async function ensurePlatformUser() {
+  return ensureCommissionAccount({
+    email: PLATFORM_EMAIL,
+    password: PLATFORM_PASSWORD,
+    fullName: PLATFORM_NAME,
+    role: "user"
+  });
+}
+
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -1502,6 +1542,13 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
     { $inc: { balance: fee, fees: fee }, $setOnInsert: { createdAt: nowIso() } },
     { upsert: true, new: true, lean: true }
   );
+  await creditPlatformUserFee({
+    amount: fee,
+    description: "Frais transfert AFRIX Money",
+    source: "p2p_fee",
+    referenceId: reference,
+    extra: { senderId: sender.id, recipientId: recipient.id }
+  });
   const ledgerEntries = buildLedgerEntries([{
     accountType: "user",
     accountId: sender.id,
@@ -2450,6 +2497,14 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
               description: `Frais ${tx.description || "Retrait approuve"}`
             }], { source: "admin_withdrawal_fee", referenceId: tx.id, extra: { reviewedBy: adminId, userId: tx.userId } });
             if (feeEntries.length) await LedgerEntryModel.insertMany(feeEntries, { session });
+            await creditPlatformUserFee({
+              amount: feeAmount,
+              description: `Frais ${tx.description || "Retrait approuve"}`,
+              source: "admin_withdrawal_fee",
+              referenceId: tx.id,
+              extra: { reviewedBy: adminId, userId: tx.userId, method: tx.metadata?.method || "" },
+              session
+            });
           }
         } else {
           const updatedUser = await UserModel.findOneAndUpdate(
@@ -2806,6 +2861,7 @@ async function bootstrapServer() {
   if (!skipStorageBoot) {
     await ensureStorage();
     await ensureAdminUser();
+    await ensurePlatformUser();
     await ensureCommissionAccounts();
   } else {
     logger.warn("Storage bootstrap skipped for local smoke test");

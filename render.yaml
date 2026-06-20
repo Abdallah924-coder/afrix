@@ -26,6 +26,12 @@ services:
         sync: false
       - key: ADMIN_NAME
         value: Administrateur AFRIX
+      - key: PLATFORM_EMAIL
+        sync: false
+      - key: PLATFORM_PASSWORD
+        sync: false
+      - key: PLATFORM_NAME
+        value: Compte plateforme AFRIX
       - key: COMMISSION_DEVELOPER_EMAIL
         sync: false
       - key: COMMISSION_DEVELOPER_PASSWORD
