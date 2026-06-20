@@ -1167,55 +1167,60 @@ app.post("/api/auth/forgot-password", validate(z.object({
   email: z.string().email()
 })), async (req, res) => {
   const normalizedEmail = req.body.email.trim().toLowerCase();
-  let resetUrl = "";
+  let otpCode = "";
 
   await updateDb(async (db) => {
     prunePasswordResetTokens(db);
     const user = db.users.find((candidate) => candidate.email === normalizedEmail);
     if (!user) return null;
 
-    const token = randomBytes(32).toString("hex");
-    resetUrl = `${APP_URL}/reset-password?token=${token}`;
+    otpCode = String(randomBytes(4).readUInt32BE(0) % 1000000).padStart(6, "0");
     db.passwordResetTokens = db.passwordResetTokens.filter((item) => item.userId !== user.id);
     db.passwordResetTokens.push({
       id: nanoid(),
       userId: user.id,
-      tokenHash: hashResetToken(token),
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      tokenHash: hashResetToken(otpCode),
+      type: "otp",
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       createdAt: nowIso()
     });
     return null;
   });
 
-  if (resetUrl) {
+  if (otpCode) {
     sendBrevoMail({
       to: normalizedEmail,
-      subject: "AFRIX - Réinitialisation du mot de passe",
-      title: "Réinitialisation du mot de passe",
-      intro: "Utilisez ce lien pour définir un nouveau mot de passe. Il expire dans 1 heure.",
-      rows: [{ label: "Compte", value: normalizedEmail }],
-      actionLabel: "Réinitialiser le mot de passe",
-      actionUrl: resetUrl
+      subject: "AFRIX - Code de reinitialisation",
+      title: "Code de reinitialisation",
+      intro: "Utilisez ce code pour definir un nouveau mot de passe. Il expire dans 10 minutes.",
+      rows: [
+        { label: "Compte", value: normalizedEmail },
+        { label: "Code OTP", value: otpCode },
+        { label: "Expiration", value: "10 minutes" }
+      ]
     }).catch((error) => logger.error({ err: error }, "Forgot password email failed"));
   }
 
-  res.json({ message: "Si ce compte existe, un lien de reinitialisation a ete envoye." });
+  res.json({ message: "Si ce compte existe, un code OTP de reinitialisation a ete envoye." });
 });
 
 app.post("/api/auth/reset-password", validate(z.object({
-  token: z.string().min(32),
+  email: z.string().email(),
+  otp: z.string().regex(/^\d{6}$/),
   password: z.string().min(10)
 })), async (req, res) => {
+  const normalizedEmail = req.body.email.trim().toLowerCase();
   const result = await updateDb(async (db) => {
     prunePasswordResetTokens(db);
-    const tokenHash = hashResetToken(req.body.token);
-    const resetToken = db.passwordResetTokens.find((item) => item.tokenHash === tokenHash);
-    if (!resetToken) return { error: "Lien de reinitialisation invalide ou expire." };
-
-    const user = db.users.find((candidate) => candidate.id === resetToken.userId);
+    const user = db.users.find((candidate) => candidate.email === normalizedEmail);
     if (!user) return { error: "Compte introuvable." };
 
+    const tokenHash = hashResetToken(req.body.otp);
+    const resetToken = db.passwordResetTokens.find((item) => item.userId === user.id && item.tokenHash === tokenHash);
+    if (!resetToken) return { error: "Code OTP invalide ou expire." };
+
     user.passwordHash = await bcrypt.hash(req.body.password, 12);
+    user.passwordUpdatedAt = nowIso();
     resetToken.usedAt = nowIso();
     db.passwordResetTokens = db.passwordResetTokens.filter((item) => item.id !== resetToken.id);
     return { user };

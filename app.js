@@ -1118,7 +1118,6 @@ function setupAuthForms() {
   const registerForm = document.querySelector("[data-register-form]");
   const forgotPasswordForm = document.querySelector("[data-forgot-password-form]");
   const resetPasswordForm = document.querySelector("[data-reset-password-form]");
-  const resetToken = new URLSearchParams(window.location.search).get("token");
 
   if (loginForm) {
     loginForm.addEventListener("submit", async (event) => {
@@ -1199,12 +1198,6 @@ function setupAuthForms() {
     });
   }
 
-  if (forgotPasswordForm && resetPasswordForm && resetToken) {
-    forgotPasswordForm.hidden = true;
-    resetPasswordForm.hidden = false;
-    resetPasswordForm.querySelector('[name="token"]').value = resetToken;
-  }
-
   if (forgotPasswordForm) {
     forgotPasswordForm.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -1220,7 +1213,8 @@ function setupAuthForms() {
 
       try {
         const response = await apiJson("/auth/forgot-password", { email });
-        showToast(response.message || "Lien envoye si le compte existe.");
+        resetPasswordForm?.querySelector('[name="email"]') && (resetPasswordForm.querySelector('[name="email"]').value = email);
+        showToast(response.message || "Code OTP envoye si le compte existe.");
       } catch (error) {
         showToast(error.message, "error");
       }
@@ -1234,16 +1228,18 @@ function setupAuthForms() {
       const submitButton = resetPasswordForm.querySelector('button[type="submit"]');
       const restoreButton = setButtonLoading(submitButton, "Changement...");
       const data = formToObject(resetPasswordForm);
+      const email = String(data.email || "").trim().toLowerCase();
+      const otp = String(data.otp || "").trim();
       const password = String(data.password || "");
 
-      if (!data.token || password.length < 10) {
-        showToast("Lien invalide ou mot de passe trop court.", "error");
+      if (!email || !/^\d{6}$/.test(otp) || password.length < 10) {
+        showToast("Email, code OTP et mot de passe valide requis.", "error");
         restoreButton();
         return;
       }
 
       try {
-        const response = await apiJson("/auth/reset-password", { token: data.token, password });
+        const response = await apiJson("/auth/reset-password", { email, otp, password });
         setAuthToken(response.token);
         window.location.href = "/dashboard";
       } catch (error) {
