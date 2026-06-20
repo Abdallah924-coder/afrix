@@ -1602,6 +1602,32 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
     recipient: { email: recipient.email, displayName: maskDisplayName(recipient.fullName || recipient.email) }
   };
   res.status(201).json(result);
+  Promise.all([
+    sendBrevoMail({
+      to: sender.email,
+      subject: "AFRIX - Transfert AFRIX Money envoye",
+      title: "Votre transfert est confirme",
+      intro: "Votre transfert AFRIX Money a ete execute avec succes.",
+      rows: [
+        { label: "Destinataire", value: recipient.email },
+        { label: "Montant envoye", value: formatAmount(amount) },
+        { label: "Frais", value: formatAmount(fee) },
+        { label: "Total debite", value: formatAmount(total) },
+        { label: "Reference", value: reference }
+      ]
+    }),
+    sendBrevoMail({
+      to: recipient.email,
+      subject: "AFRIX - Transfert AFRIX Money recu",
+      title: "Vous avez recu un transfert",
+      intro: "Un transfert AFRIX Money vient d'etre credite sur votre compte.",
+      rows: [
+        { label: "Expediteur", value: sender.email },
+        { label: "Montant recu", value: formatAmount(amount) },
+        { label: "Reference", value: reference }
+      ]
+    })
+  ]).catch((error) => logger.error({ err: error }, "P2P transfer email failed"));
 });
 
 app.get("/api/exchange/ads", authenticate, requirePlatformAccess(), async (req, res) => {
