@@ -101,7 +101,11 @@ function normalizeCountry(value) {
 
 function isCongoBrazzaville(value) {
   const country = normalizeCountry(value);
-  return country === "congo brazzaville" || country === "republique du congo" || country === "congo" || country === "cg";
+  return country === "congo brazzaville" ||
+    country === "republique du congo" ||
+    country === "congo" ||
+    country === "cg" ||
+    country.includes("republique du congo");
 }
 
 function normalizePaymentMethods(value) {

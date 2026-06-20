@@ -74,7 +74,6 @@ import {
 
 let mongoReadyPromise = null;
 const transactionListProjection = { "metadata.proof.dataBase64": 0 };
-const REFERRAL_COOKIE_NAME = "afrix_ref";
 
 function normalizeDb(db = {}) {
   return {
@@ -458,13 +457,6 @@ function normalizeInvitationCode(value = "") {
   return code.trim().replace(/\s+/g, "").toUpperCase();
 }
 
-function readCookie(req, name) {
-  const cookies = String(req.headers.cookie || "").split(";").map((item) => item.trim()).filter(Boolean);
-  const match = cookies.find((item) => item.startsWith(`${name}=`));
-  if (!match) return "";
-  return decodeURIComponent(match.slice(name.length + 1));
-}
-
 function escapeRegExp(value = "") {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -577,7 +569,11 @@ function normalizeCountry(value) {
 
 function isCongoBrazzaville(value) {
   const country = normalizeCountry(value);
-  return country === "congo brazzaville" || country === "republique du congo" || country === "congo" || country === "cg";
+  return country === "congo brazzaville" ||
+    country === "republique du congo" ||
+    country === "congo" ||
+    country === "cg" ||
+    country.includes("republique du congo");
 }
 
 function publicExchangeAd(ad, merchant) {
@@ -1189,7 +1185,7 @@ app.post("/api/auth/register", validate(z.object({
   const { email, password, ref } = req.body;
   const normalizedEmail = email.trim().toLowerCase();
   const country = req.body.country.trim();
-  const refCode = normalizeInvitationCode(readCookie(req, REFERRAL_COOKIE_NAME) || ref);
+  const refCode = normalizeInvitationCode(ref);
 
   const createUserRecord = async (referrer = null) => ({
     id: nanoid(),
@@ -1245,7 +1241,6 @@ app.post("/api/auth/register", validate(z.object({
   })();
 
   if (result.error) return res.status(409).json({ message: result.error });
-  res.clearCookie(REFERRAL_COOKIE_NAME, { path: "/" });
   res.status(201).json({ token: signToken(result.user), user: sanitizeUser(result.user) });
   Promise.all([
     sendBrevoMail({
@@ -3096,20 +3091,6 @@ app.use((req, res, next) => {
   if (req.method === "GET") {
     const cleanPath = req.path.replace(/\/+$/, "") || "/";
     if (pageRoutes[cleanPath]) {
-      if (cleanPath === "/register") {
-        const referralCode = normalizeInvitationCode(req.query.ref || req.query.code || "");
-        if (referralCode) {
-          res.cookie(REFERRAL_COOKIE_NAME, referralCode, {
-            httpOnly: true,
-            sameSite: "lax",
-            secure: isProduction,
-            path: "/",
-            maxAge: 30 * 60 * 1000
-          });
-        } else {
-          res.clearCookie(REFERRAL_COOKIE_NAME, { path: "/" });
-        }
-      }
       res.sendFile(path.join(rootDir, pageRoutes[cleanPath]));
       return;
     }
