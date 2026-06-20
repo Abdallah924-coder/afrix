@@ -941,12 +941,12 @@ async function ensureAdminUser() {
       $set: {
         email: ADMIN_EMAIL,
         fullName: ADMIN_NAME,
-        passwordHash,
         role: "admin",
         status: "active"
       },
       $setOnInsert: {
         id: adminId,
+        passwordHash,
         balance: 0,
         reservedBalance: 0,
         activity: 0,
@@ -978,12 +978,12 @@ async function ensureCommissionAccount({ email, password, fullName, role }) {
       $set: {
         email,
         fullName,
-        passwordHash,
         role,
         status: "active"
       },
       $setOnInsert: {
         id: accountId,
+        passwordHash,
         balance: 0,
         reservedBalance: 0,
         activity: 0,
