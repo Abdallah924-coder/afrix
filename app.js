@@ -26,7 +26,7 @@ const navItems = [
   ["afrix-money", "AFRIX Money", "/afrix-money"],
   ["exchange", "Exchange", "/exchange"],
   ["merchant", "Merchant", "/merchant"],
-  ["plans", "Trading", "/plans"],
+  ["plans", "AFRIX Trading Program", "/plans"],
   ["network", "Reseau", "/network"],
   ["profile", "Profil", "/profile"],
   ["contact", "Contact", "/contact"],
@@ -52,6 +52,15 @@ const plans = [
   { id: "premium", tier: "Gold", name: "Premium Trading", minAmount: 300, amount: "300 USDT et plus", daily: "0,70%", duration: "270 jours", cycle: "capital bloque 270 jours + gains journaliers retirable", note: "Ouvert apres 2500 USDT d'activite dans Smart Trading.", requiredPlan: "smart", requiredAmount: 2500 },
   { id: "elite", tier: "Elite", name: "Elite Trading", minAmount: 500, amount: "500 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "capital bloque 365 jours + gains journaliers retirable", note: "Ouvert apres 5000 USDT d'activite dans Premium Trading.", requiredPlan: "premium", requiredAmount: 5000 }
 ];
+
+function tradingPlanName(nameOrId = "") {
+  const normalized = String(nameOrId || "").toLowerCase();
+  if (normalized.includes("starter")) return "Starter Trading";
+  if (normalized.includes("smart")) return "Smart Trading";
+  if (normalized.includes("premium")) return "Premium Trading";
+  if (normalized.includes("elite")) return "Elite Trading";
+  return String(nameOrId || "Plan");
+}
 
 const emptyUser = {
   fullName: "",
@@ -668,12 +677,12 @@ function renderActivePlans(user) {
       <article class="active-plan-card">
         <div class="active-plan-head">
           <span>
-            <strong>${escapeHtml(plan.name || "Plan")}</strong>
+            <strong>${escapeHtml(tradingPlanName(plan.name || plan.planId))}</strong>
             <small>${escapeHtml(status)} depuis ${escapeHtml(String(plan.activatedAt || "").slice(0, 10) || "-")}</small>
           </span>
           <b>${percent}%</b>
         </div>
-        <div class="progress active-plan-progress" aria-label="Progression ${escapeHtml(plan.name || "plan")}">
+        <div class="progress active-plan-progress" aria-label="Progression ${escapeHtml(tradingPlanName(plan.name || plan.planId))}">
           <span style="width:${percent}%"></span>
         </div>
         <div class="active-plan-stats">
