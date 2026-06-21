@@ -6,12 +6,28 @@
   <meta name="theme-color" content="#0f5d43">
   <link rel="manifest" href="/manifest.webmanifest">
   <title>Admin - AFRIX</title>
-  <link rel="stylesheet" href="../styles.css?v=20260620-8">
+  <link rel="stylesheet" href="../styles.css?v=20260621-1">
 </head>
 <body data-protected data-page="admin">
   <aside class="sidebar" data-sidebar></aside>
   <main class="app">
     <header class="topbar" data-topbar></header>
+    <section class="admin-section-nav">
+      <a class="btn secondary" href="#admin-priority">Validations</a>
+      <a class="btn secondary" href="#admin-search">Recherche</a>
+      <a class="btn secondary" href="#admin-users-section">Comptes</a>
+      <a class="btn secondary" href="#admin-actions">Actions</a>
+    </section>
+    <section class="grid two admin-queues" id="admin-priority">
+      <article class="panel">
+        <div class="panel-head"><h1>Dépôts USDT à valider</h1><span class="badge" data-pending-deposits-count>0</span></div>
+        <div class="list" data-admin-pending-deposits></div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h1>Retraits à traiter</h1><span class="badge" data-pending-withdrawals-count>0</span></div>
+        <div class="list" data-admin-pending-withdrawals></div>
+      </article>
+    </section>
     <section class="grid two">
       <article class="panel">
         <h1>Contrôles plateforme</h1>
@@ -48,7 +64,7 @@
         <div><span>Pays actifs</span><strong data-admin-stat="activeCountries">0</strong></div>
       </div>
     </section>
-    <section class="panel admin-search-panel">
+    <section class="panel admin-search-panel" id="admin-search">
       <div class="panel-head"><h1>Recherche admin</h1><span class="badge">Filtres</span></div>
       <div class="grid two">
         <label>Rechercher un utilisateur par email
@@ -58,6 +74,7 @@
           <input type="search" data-admin-tx-search data-admin-filter placeholder="ID transaction ou référence blockchain">
         </label>
       </div>
+      <div class="admin-lookup-result" data-admin-user-activity></div>
     </section>
     <section class="panel admin-proof-viewer" data-admin-proof-viewer hidden>
       <div class="panel-head">
@@ -66,17 +83,7 @@
       </div>
       <div data-admin-proof-content></div>
     </section>
-    <section class="grid two admin-queues">
-      <article class="panel">
-        <div class="panel-head"><h1>Dépôts USDT à valider</h1><span class="badge" data-pending-deposits-count>0</span></div>
-        <div class="list" data-admin-pending-deposits></div>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h1>Retraits à traiter</h1><span class="badge" data-pending-withdrawals-count>0</span></div>
-        <div class="list" data-admin-pending-withdrawals></div>
-      </article>
-    </section>
-    <section class="grid two admin-queues">
+    <section class="grid two admin-queues" id="admin-actions">
       <article class="panel">
         <div class="panel-head"><h1>Demandes Exchange</h1><span class="badge">P2P local</span></div>
         <div class="list" data-admin-exchange-orders></div>
@@ -86,7 +93,7 @@
         <p class="muted">Les dépôts USDT BEP20/TRC20/MTN et les retraits BEP20/MTN sont validés par l'admin. L'admin peut aussi confirmer les demandes Exchange en attente si nécessaire.</p>
       </article>
     </section>
-    <section class="panel admin-queues">
+    <section class="panel admin-queues" id="admin-users-section">
       <div class="panel-head"><h1>Historique CICO</h1><span class="badge" data-cico-requests-count>0</span></div>
       <div class="list" data-admin-cico-requests></div>
     </section>
@@ -162,10 +169,10 @@
           </label>
           <label>Plan
             <select name="plan" required>
-              <option value="starter">Starter</option>
-              <option value="smart">Smart</option>
-              <option value="premium">Premium</option>
-              <option value="elite">Elite</option>
+              <option value="starter">Starter Trading</option>
+              <option value="smart">Smart Trading</option>
+              <option value="premium">Premium Trading</option>
+              <option value="elite">Elite Trading</option>
             </select>
           </label>
           <label>Montant USDT
@@ -202,7 +209,7 @@
           <label>Email parrain
             <input name="referrerEmail" type="email" required placeholder="parrain@email.com">
           </label>
-          <button class="btn primary full" type="submit">Rattacher et payer bonus</button>
+          <button class="btn primary full" type="submit">Rattacher le parrain</button>
         </form>
       </article>
     </section>
@@ -211,6 +218,6 @@
         <div class="list" data-admin-users></div>
     </section>
   </main>
-  <script src="../app.js?v=20260620-8"></script>
+  <script src="../app.js?v=20260621-1"></script>
 </body>
 </html>

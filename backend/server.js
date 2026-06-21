@@ -601,6 +601,14 @@ function progressFromActivity(activity) {
   return Math.max(0, Math.min(100, Number(activity || 0) % 100));
 }
 
+function formatTransactionDateTime(value) {
+  const date = new Date(value || 0);
+  if (!Number.isFinite(date.getTime())) return String(value || "").slice(0, 10);
+  const day = date.toISOString().slice(0, 10);
+  const time = date.toISOString().slice(11, 16);
+  return `${day} ${time}`;
+}
+
 function composeUser(db, user) {
   const directPartners = db.users
     .filter((candidate) => referralMatches(candidate, user))
@@ -645,7 +653,7 @@ function composeUser(db, user) {
       .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       .map((tx) => ({
         id: tx.id,
-        date: String(tx.createdAt || "").slice(0, 10),
+        date: formatTransactionDateTime(tx.createdAt),
         type: tx.type,
         description: tx.description,
         amount: tx.displayAmount,
@@ -663,7 +671,7 @@ function composeUser(db, user) {
             reference: tx.id,
             userId: tx.userId,
             userEmail: owner?.email || "",
-            date: String(tx.createdAt || "").slice(0, 10),
+            date: formatTransactionDateTime(tx.createdAt),
             type: tx.type,
             description: tx.description,
             amount: tx.displayAmount,
@@ -800,45 +808,6 @@ function validate(schema) {
   };
 }
 
-async function distributeNetworkBonus(db, sourceUser, amount) {
-  let currentReferrer = { id: sourceUser.referrerId, email: sourceUser.referrerEmail, code: sourceUser.referrerCode };
-  for (let level = 0; level < bonusRates.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
-    const referrer = db.users.find((user) => (
-      (currentReferrer.id && user.id === currentReferrer.id) ||
-      (currentReferrer.email && normalizeEmail(user.email) === normalizeEmail(currentReferrer.email)) ||
-      (currentReferrer.code && normalizeInvitationCode(user.refCode) === normalizeInvitationCode(currentReferrer.code))
-    ));
-    if (!referrer) break;
-
-    const unlockedLevels = unlockedReferralLevels(referrer);
-    if (unlockedLevels > level) {
-      const bonus = money((amount * bonusRates[level]) / 100);
-      debitPlatform(db, bonus, `Bonus reseau niveau ${level + 1}`, {
-        source: "network_bonus_payout",
-        referenceId: sourceUser.id,
-        extra: { sourceUserId: sourceUser.id, level: level + 1 }
-      });
-      creditUser(db, referrer, bonus, `Bonus reseau niveau ${level + 1}`, {
-        source: "network_bonus",
-        referenceId: sourceUser.id,
-        extra: { sourceUserId: sourceUser.id, level: level + 1 }
-      });
-      referrer.bonus = money(referrer.bonus + bonus);
-      addTransaction(db, {
-        userId: referrer.id,
-        type: "Bonus",
-        description: `Bonus reseau niveau ${level + 1}`,
-        amount: bonus,
-        displayAmount: formatAmount(bonus, "+"),
-        status: "Completed",
-        metadata: { sourceUserId: sourceUser.id, level: level + 1 }
-      });
-    }
-
-    currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
-  }
-}
-
 function distributeHouseCommissions(db, sourceUser, amount) {
   const recipients = [
     {
@@ -923,11 +892,60 @@ function completePlanWithCapitalReturn(db, user, plan, payoutDate) {
   return true;
 }
 
+function creditDailyNetworkBonuses(db, sourceUser, plan, payout, dueDays, payoutDate) {
+  let creditedAmount = 0;
+  let creditedCount = 0;
+  let currentReferrer = { id: sourceUser.referrerId, email: sourceUser.referrerEmail, code: sourceUser.referrerCode };
+
+  for (let level = 0; level < bonusRates.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
+    const referrer = db.users.find((user) => (
+      (currentReferrer.id && user.id === currentReferrer.id) ||
+      (currentReferrer.email && normalizeEmail(user.email) === normalizeEmail(currentReferrer.email)) ||
+      (currentReferrer.code && normalizeInvitationCode(user.refCode) === normalizeInvitationCode(currentReferrer.code))
+    ));
+    if (!referrer) break;
+
+    if (unlockedReferralLevels(referrer) > level) {
+      const bonus = money((payout * bonusRates[level]) / 100);
+      if (bonus > 0) {
+        debitPlatform(db, bonus, `Bonus reseau journalier niveau ${level + 1}`, {
+          source: "network_daily_bonus",
+          referenceId: plan.id,
+          extra: { sourceUserId: sourceUser.id, level: level + 1, activePlanId: plan.id, planId: plan.planId, days: dueDays, payoutDate }
+        });
+        creditUser(db, referrer, bonus, `Bonus reseau journalier niveau ${level + 1}`, {
+          source: "network_daily_bonus",
+          referenceId: plan.id,
+          extra: { sourceUserId: sourceUser.id, level: level + 1, activePlanId: plan.id, planId: plan.planId, days: dueDays, payoutDate }
+        });
+        referrer.bonus = money(Number(referrer.bonus || 0) + bonus);
+        addTransaction(db, {
+          userId: referrer.id,
+          type: "Bonus",
+          description: `Bonus reseau journalier niveau ${level + 1} (${dueDays} jour${dueDays > 1 ? "s" : ""})`,
+          amount: bonus,
+          displayAmount: formatAmount(bonus, "+"),
+          status: "Completed",
+          metadata: { sourceUserId: sourceUser.id, level: level + 1, activePlanId: plan.id, planId: plan.planId, days: dueDays, payoutDate }
+        });
+        creditedAmount = money(creditedAmount + bonus);
+        creditedCount += 1;
+      }
+    }
+
+    currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
+  }
+
+  return { creditedAmount, creditedCount };
+}
+
 async function processDailyPlanEarnings() {
   const payoutDate = today();
   return updateDb(async (db) => {
     let creditedUsers = 0;
     let creditedAmount = 0;
+    let creditedNetworkBonuses = 0;
+    let creditedNetworkAmount = 0;
 
     db.users.forEach((user) => {
       const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
@@ -973,6 +991,8 @@ async function processDailyPlanEarnings() {
           metadata: { planId: plan.planId, activePlanId: plan.id, days: dueDays, payoutDate }
         });
 
+        const networkResult = creditDailyNetworkBonuses(db, user, plan, payout, dueDays, payoutDate);
+
         plan.daysPaid = daysPaid + dueDays;
         plan.earnedAmount = money(Number(plan.earnedAmount || 0) + payout);
         plan.lastPayoutDate = payoutDate;
@@ -981,10 +1001,12 @@ async function processDailyPlanEarnings() {
         }
         creditedUsers += 1;
         creditedAmount = money(creditedAmount + payout);
+        creditedNetworkBonuses += networkResult.creditedCount;
+        creditedNetworkAmount = money(creditedNetworkAmount + networkResult.creditedAmount);
       });
     });
 
-    return { creditedUsers, creditedAmount, payoutDate };
+    return { creditedUsers, creditedAmount, creditedNetworkBonuses, creditedNetworkAmount, payoutDate };
   });
 }
 
@@ -2386,58 +2408,6 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         metadata: { planId: plan.id, activePlanId: activePlan.id, initiatedBy }
       }], { session });
 
-      let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
-      for (let level = 0; level < bonusRates.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
-        const referrer = await findUserByReferralPointer(currentReferrer, session);
-        if (!referrer) break;
-        if (unlockedReferralLevels(referrer) > level) {
-          const bonus = money((investmentAmount * bonusRates[level]) / 100);
-          const updatedReferrer = await UserModel.findOneAndUpdate(
-            { id: referrer.id },
-            [{
-              $set: {
-                balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, bonus] }, 2] },
-                bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, bonus] }, 2] }
-              }
-            }],
-            { new: true, session, lean: true }
-          );
-          const updatedPlatform = await PlatformAccountModel.findOneAndUpdate(
-            { id: "platform" },
-            { $inc: { balance: -bonus } },
-            { new: true, session, lean: true }
-          );
-          const entries = buildLedgerEntries([{
-            accountType: "platform",
-            accountId: "platform",
-            direction: "debit",
-            amount: bonus,
-            balanceAfter: updatedPlatform.balance,
-            description: `Bonus reseau niveau ${level + 1}`
-          }, {
-            accountType: "user",
-            accountId: referrer.id,
-            direction: "credit",
-            amount: bonus,
-            balanceAfter: updatedReferrer.balance,
-            description: `Bonus reseau niveau ${level + 1}`
-          }], { source: "network_bonus", referenceId: user.id, extra: { sourceUserId: user.id, level: level + 1, activePlanId: activePlan.id } });
-          if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
-          await TransactionModel.create([{
-            id: nanoid(),
-            userId: referrer.id,
-            type: "Bonus",
-            description: `Bonus reseau niveau ${level + 1}`,
-            amount: bonus,
-            displayAmount: formatAmount(bonus, "+"),
-            status: "Completed",
-            createdAt: nowIso(),
-            metadata: { sourceUserId: user.id, level: level + 1, activePlanId: activePlan.id }
-          }], { session });
-        }
-        currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
-      }
-
       const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
       const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
       await payDirectCommission({
@@ -2573,79 +2543,10 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
       }
     );
 
-    const activePlans = (target.activePlans || []).filter((item) => Number(item.amount || 0) > 0);
-    let paidAmount = 0;
-    let paidCount = 0;
-
-    for (const activePlan of activePlans) {
-      let currentReferrer = { id: sponsor.id, email: sponsor.email, code: sponsor.refCode };
-      for (let level = 0; level < bonusRates.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
-        const referrer = await findUserByReferralPointer(currentReferrer);
-        if (!referrer) break;
-        const existingBonus = await TransactionModel.exists({
-          type: "Bonus",
-          "metadata.sourceUserId": target.id,
-          "metadata.level": level + 1,
-          $or: [
-            { "metadata.activePlanId": activePlan.id || "" },
-            { "metadata.activePlanId": { $exists: false } }
-          ]
-        });
-        if (!existingBonus && unlockedReferralLevels(referrer) > level) {
-          const bonus = money((Number(activePlan.amount || 0) * bonusRates[level]) / 100);
-          const updatedReferrer = await UserModel.findOneAndUpdate(
-            { id: referrer.id },
-            [{
-              $set: {
-                balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, bonus] }, 2] },
-                bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, bonus] }, 2] }
-              }
-            }],
-            { new: true, lean: true }
-          );
-          const updatedPlatform = await PlatformAccountModel.findOneAndUpdate(
-            { id: "platform" },
-            { $inc: { balance: -bonus }, $setOnInsert: { createdAt: nowIso() } },
-            { upsert: true, new: true, lean: true }
-          );
-          const entries = buildLedgerEntries([{
-            accountType: "platform",
-            accountId: "platform",
-            direction: "debit",
-            amount: bonus,
-            balanceAfter: updatedPlatform.balance,
-            description: `Bonus reseau repare niveau ${level + 1}`
-          }, {
-            accountType: "user",
-            accountId: referrer.id,
-            direction: "credit",
-            amount: bonus,
-            balanceAfter: updatedReferrer.balance,
-            description: `Bonus reseau repare niveau ${level + 1}`
-          }], { source: "network_bonus_repair", referenceId: target.id, extra: { sourceUserId: target.id, level: level + 1, activePlanId: activePlan.id || "" } });
-          if (entries.length) await LedgerEntryModel.insertMany(entries);
-          await TransactionModel.create({
-            id: nanoid(),
-            userId: referrer.id,
-            type: "Bonus",
-            description: `Bonus reseau repare niveau ${level + 1}`,
-            amount: bonus,
-            displayAmount: formatAmount(bonus, "+"),
-            status: "Completed",
-            createdAt: nowIso(),
-            metadata: { sourceUserId: target.id, level: level + 1, activePlanId: activePlan.id || "", repairedBy: adminId }
-          });
-          paidAmount = money(paidAmount + bonus);
-          paidCount += 1;
-        }
-        currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
-      }
-    }
-
     return {
       user: sanitizeUser({ ...target, referrerId: sponsor.id, referrerEmail: sponsor.email, referrerCode: sponsor.refCode }),
-      paidAmount,
-      paidCount
+      paidAmount: 0,
+      paidCount: 0
     };
   }
 

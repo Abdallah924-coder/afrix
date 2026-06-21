@@ -9,7 +9,7 @@ const pageTitles = {
   "afrix-money": "AFRIX Money",
   exchange: "Exchange",
   merchant: "Merchant",
-  plans: "Plans",
+  plans: "AFRIX Trading Program",
   network: "Reseau",
   profile: "Profil",
   contact: "Contact",
@@ -26,7 +26,7 @@ const navItems = [
   ["afrix-money", "AFRIX Money", "/afrix-money"],
   ["exchange", "Exchange", "/exchange"],
   ["merchant", "Merchant", "/merchant"],
-  ["plans", "Plans", "/plans"],
+  ["plans", "Trading", "/plans"],
   ["network", "Reseau", "/network"],
   ["profile", "Profil", "/profile"],
   ["contact", "Contact", "/contact"],
@@ -47,10 +47,10 @@ const contactLinks = {
 let deferredInstallPrompt = null;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 const plans = [
-  { id: "starter", tier: "Bronze", name: "Starter Plan", minAmount: 10, amount: "10 USDT et plus", daily: "0,50%", duration: "90 jours", cycle: "capital bloque 90 jours + gains journaliers retirable", note: "Premier niveau obligatoire pour ouvrir la progression AFRIX." },
-  { id: "smart", tier: "Silver", name: "Smart Plan", minAmount: 50, amount: "50 USDT et plus", daily: "0,60%", duration: "180 jours", cycle: "capital bloque 180 jours + gains journaliers retirable", note: "Ouvert apres 500 USDT d'activite dans le Starter Plan.", requiredPlan: "starter", requiredAmount: 500, featured: true },
-  { id: "premium", tier: "Gold", name: "Premium Plan", minAmount: 300, amount: "300 USDT et plus", daily: "0,70%", duration: "270 jours", cycle: "capital bloque 270 jours + gains journaliers retirable", note: "Ouvert apres 2500 USDT d'activite dans le Smart Plan.", requiredPlan: "smart", requiredAmount: 2500 },
-  { id: "elite", tier: "Elite", name: "Elite Plan", minAmount: 500, amount: "500 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "capital bloque 365 jours + gains journaliers retirable", note: "Ouvert apres 5000 USDT d'activite dans le Premium Plan.", requiredPlan: "premium", requiredAmount: 5000 }
+  { id: "starter", tier: "Bronze", name: "Starter Trading", minAmount: 10, amount: "10 USDT et plus", daily: "0,50%", duration: "90 jours", cycle: "capital bloque 90 jours + gains journaliers retirable", note: "Premier niveau obligatoire pour ouvrir la progression AFRIX." },
+  { id: "smart", tier: "Silver", name: "Smart Trading", minAmount: 50, amount: "50 USDT et plus", daily: "0,60%", duration: "180 jours", cycle: "capital bloque 180 jours + gains journaliers retirable", note: "Ouvert apres 500 USDT d'activite dans Starter Trading.", requiredPlan: "starter", requiredAmount: 500, featured: true },
+  { id: "premium", tier: "Gold", name: "Premium Trading", minAmount: 300, amount: "300 USDT et plus", daily: "0,70%", duration: "270 jours", cycle: "capital bloque 270 jours + gains journaliers retirable", note: "Ouvert apres 2500 USDT d'activite dans Smart Trading.", requiredPlan: "smart", requiredAmount: 2500 },
+  { id: "elite", tier: "Elite", name: "Elite Trading", minAmount: 500, amount: "500 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "capital bloque 365 jours + gains journaliers retirable", note: "Ouvert apres 5000 USDT d'activite dans Premium Trading.", requiredPlan: "premium", requiredAmount: 5000 }
 ];
 
 const emptyUser = {
@@ -1027,6 +1027,7 @@ function renderAdmin(user) {
     return String(item.email || "").toLowerCase().includes(userQuery) || String(item.fullName || "").toLowerCase().includes(userQuery);
   });
   renderAdminUsers(filteredAdminUsers);
+  renderAdminUserActivity(user.adminUsers || [], userQuery);
 
   document.querySelectorAll("[data-admin-control]").forEach((control) => {
     control.checked = Boolean(platformControls[control.dataset.adminControl]);
@@ -1037,6 +1038,36 @@ function renderAdmin(user) {
     field.dataset.boundAdminFilter = "true";
     field.addEventListener("input", () => renderAdmin(user));
   });
+}
+
+function renderAdminUserActivity(users, query) {
+  const target = document.querySelector("[data-admin-user-activity]");
+  if (!target) return;
+  const search = String(query || "").trim().toLowerCase();
+  if (!search) {
+    target.innerHTML = `<p class="muted">Saisissez un email ou un nom pour afficher l'activite du compte.</p>`;
+    return;
+  }
+
+  const item = users.find((candidate) => String(candidate.email || "").toLowerCase() === search) ||
+    users.find((candidate) => String(candidate.email || "").toLowerCase().includes(search) || String(candidate.fullName || "").toLowerCase().includes(search));
+
+  if (!item) {
+    target.innerHTML = `<p class="muted">Aucun compte trouve pour cette recherche.</p>`;
+    return;
+  }
+
+  target.innerHTML = `
+    <div class="admin-activity-card">
+      <span><strong>${escapeHtml(item.fullName || item.email)}</strong><small>${escapeHtml(item.email)}</small></span>
+      <div><span>Solde</span><strong>${formatUsdt(item.balance)}</strong></div>
+      <div><span>Activite</span><strong>${formatUsdt(item.activity)}</strong></div>
+      <div><span>Plans actifs</span><strong>${Number(item.activePlansCount || 0)}</strong></div>
+      <div><span>Niveaux bonus</span><strong>${Number(item.bonusLevelsOverride || 0)}</strong></div>
+      <div><span>Parrain</span><strong>${escapeHtml(item.referrerEmail || "-")}</strong></div>
+      <div><span>Statut</span><strong>${escapeHtml(item.status || "active")}</strong></div>
+    </div>
+  `;
 }
 
 function renderAdminUsers(users) {
@@ -1717,7 +1748,7 @@ function setupActions(user) {
         const response = await apiJson("/admin/actions", { action: actionName, ...data }, { timeoutMs: 25_000 });
         form.reset();
         const detail = actionName === "repair-referral" && response
-          ? ` ${Number(response.paidCount || 0)} bonus, ${formatUsdt(response.paidAmount || 0)}.`
+          ? " Les prochains bonus suivront les gains journaliers."
           : "";
         showToast(`${successMessage}${detail}`);
         try {

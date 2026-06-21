@@ -1000,6 +1000,40 @@ body[data-page="wallet"] select {
   color: var(--text);
   background: var(--panel2);
 }
+.admin-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+.admin-lookup-result {
+  margin-top: 14px;
+}
+.admin-activity-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(6, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+}
+.admin-activity-card > span,
+.admin-activity-card > div {
+  min-width: 0;
+}
+.admin-activity-card span,
+.admin-activity-card small {
+  display: block;
+}
+.admin-activity-card small,
+.admin-activity-card div span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.admin-activity-card strong {
+  overflow-wrap: anywhere;
+}
 .admin-queues { margin-top: 14px; }
 .queue-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center !important; }
 .admin-inline-input { width: 120px; min-height: 42px; }
@@ -1512,6 +1546,7 @@ th { color: var(--muted); font-size: 12px; }
     grid-column: auto;
   }
   .info-grid, .admin-stat-grid { grid-template-columns: 1fr 1fr; }
+  .admin-activity-card { grid-template-columns: 1fr 1fr; }
   .queue-row { grid-template-columns: 1fr !important; }
   .merchant-card { grid-template-columns: 1fr !important; }
   .sidebar {
@@ -1729,6 +1764,7 @@ th { color: var(--muted); font-size: 12px; }
     width: 100%;
   }
   .info-grid, .admin-stat-grid { grid-template-columns: 1fr; }
+  .admin-activity-card { grid-template-columns: 1fr; }
   body[data-page="wallet"] .panel {
     padding: 16px;
   }
