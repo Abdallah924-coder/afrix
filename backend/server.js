@@ -75,6 +75,7 @@ let mongoReadyPromise = null;
 let dailyEarningsPromise = null;
 const transactionListProjection = { "metadata.proof.dataBase64": 0 };
 const PLAN_EARNINGS_INTERVAL_MS = 60 * 1000;
+const PLAN_PAYOUT_INTERVAL_MS = 86_400_000;
 
 function normalizeDb(db = {}) {
   return {
@@ -621,13 +622,25 @@ function fullDaysBetweenTimestamps(startValue, endValue = nowIso()) {
 function addDaysToTimestamp(value, days) {
   const start = Date.parse(value);
   if (!Number.isFinite(start)) return nowIso();
-  return new Date(start + (Number(days || 0) * 86_400_000)).toISOString();
+  return new Date(start + (Number(days || 0) * PLAN_PAYOUT_INTERVAL_MS)).toISOString();
 }
 
 function planLastPayoutTimestamp(plan = {}) {
   if (plan.lastPayoutAt) return plan.lastPayoutAt;
   if (Number(plan.daysPaid || 0) > 0 && plan.lastPayoutDate) return `${String(plan.lastPayoutDate).slice(0, 10)}T00:00:00.000Z`;
   return plan.activatedAt || `${String(plan.lastPayoutDate || today()).slice(0, 10)}T00:00:00.000Z`;
+}
+
+function planNextPayoutTimestamp(plan = {}) {
+  if (plan.nextPayoutAt) return plan.nextPayoutAt;
+  return addDaysToTimestamp(planLastPayoutTimestamp(plan), 1);
+}
+
+function duePayoutSlots(nextPayoutAt, endValue = nowIso()) {
+  const next = Date.parse(nextPayoutAt);
+  const end = Date.parse(endValue);
+  if (!Number.isFinite(next) || !Number.isFinite(end) || end < next) return 0;
+  return Math.floor((end - next) / PLAN_PAYOUT_INTERVAL_MS) + 1;
 }
 
 function positiveFiniteNumber(value) {
@@ -996,8 +1009,8 @@ async function processDailyPlanEarnings(options = {}) {
           return;
         }
 
-        const lastPayoutAt = planLastPayoutTimestamp(plan);
-        const dueDays = Math.min(fullDaysBetweenTimestamps(lastPayoutAt), durationDays - daysPaid);
+        const nextPayoutAt = planNextPayoutTimestamp(plan);
+        const dueDays = Math.min(duePayoutSlots(nextPayoutAt), durationDays - daysPaid);
         if (dueDays <= 0) return;
 
         const payout = money(amount * dailyRate * dueDays);
@@ -1027,8 +1040,9 @@ async function processDailyPlanEarnings(options = {}) {
 
         plan.daysPaid = daysPaid + dueDays;
         plan.earnedAmount = money(Number(plan.earnedAmount || 0) + payout);
-        plan.lastPayoutAt = addDaysToTimestamp(lastPayoutAt, dueDays);
-        plan.lastPayoutDate = payoutDate;
+        plan.lastPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays - 1);
+        plan.lastPayoutDate = String(plan.lastPayoutAt).slice(0, 10);
+        plan.nextPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays);
         if (plan.daysPaid >= durationDays) {
           if (completePlanWithCapitalReturn(db, user, plan, payoutDate)) completedPlans += 1;
         }
@@ -2397,6 +2411,7 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         }
       }
 
+      const activatedAt = nowIso();
       const activePlan = {
         id: nanoid(),
         planId: plan.id,
@@ -2404,9 +2419,10 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         amount: investmentAmount,
         dailyRate: plan.dailyRate,
         durationDays: plan.durationDays,
-        activatedAt: nowIso(),
-        lastPayoutAt: nowIso(),
+        activatedAt,
+        lastPayoutAt: null,
         lastPayoutDate: today(),
+        nextPayoutAt: addDaysToTimestamp(activatedAt, 1),
         daysPaid: 0,
         earnedAmount: 0,
         capitalReturnedAt: null,
