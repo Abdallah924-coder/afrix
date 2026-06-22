@@ -44,7 +44,6 @@ import {
   creditMerchantBonus,
   creditPlatform,
   creditUser,
-  daysBetween,
   debitMerchantAvailable,
   debitPlatform,
   debitUser,
@@ -73,6 +72,7 @@ import {
 } from "./models.js";
 
 let mongoReadyPromise = null;
+let dailyEarningsPromise = null;
 const transactionListProjection = { "metadata.proof.dataBase64": 0 };
 
 function normalizeDb(db = {}) {
@@ -609,6 +609,25 @@ function formatTransactionDateTime(value) {
   return `${day} ${time}`;
 }
 
+function fullDaysBetweenTimestamps(startValue, endValue = nowIso()) {
+  const start = Date.parse(startValue);
+  const end = Date.parse(endValue);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return Math.floor((end - start) / 86_400_000);
+}
+
+function addDaysToTimestamp(value, days) {
+  const start = Date.parse(value);
+  if (!Number.isFinite(start)) return nowIso();
+  return new Date(start + (Number(days || 0) * 86_400_000)).toISOString();
+}
+
+function planLastPayoutTimestamp(plan = {}) {
+  if (plan.lastPayoutAt) return plan.lastPayoutAt;
+  if (Number(plan.daysPaid || 0) > 0 && plan.lastPayoutDate) return `${String(plan.lastPayoutDate).slice(0, 10)}T00:00:00.000Z`;
+  return plan.activatedAt || `${String(plan.lastPayoutDate || today()).slice(0, 10)}T00:00:00.000Z`;
+}
+
 function composeUser(db, user) {
   const directPartners = db.users
     .filter((candidate) => referralMatches(candidate, user))
@@ -964,8 +983,8 @@ async function processDailyPlanEarnings() {
           return;
         }
 
-        const lastPayoutDate = String(plan.lastPayoutDate || plan.activatedAt || payoutDate).slice(0, 10);
-        const dueDays = Math.min(daysBetween(lastPayoutDate, payoutDate), durationDays - daysPaid);
+        const lastPayoutAt = planLastPayoutTimestamp(plan);
+        const dueDays = Math.min(fullDaysBetweenTimestamps(lastPayoutAt), durationDays - daysPaid);
         if (dueDays <= 0) return;
 
         const payout = money(Number(plan.amount || 0) * Number(plan.dailyRate || 0) * dueDays);
@@ -995,6 +1014,7 @@ async function processDailyPlanEarnings() {
 
         plan.daysPaid = daysPaid + dueDays;
         plan.earnedAmount = money(Number(plan.earnedAmount || 0) + payout);
+        plan.lastPayoutAt = addDaysToTimestamp(lastPayoutAt, dueDays);
         plan.lastPayoutDate = payoutDate;
         if (plan.daysPaid >= durationDays) {
           completePlanWithCapitalReturn(db, user, plan, payoutDate);
@@ -1008,6 +1028,15 @@ async function processDailyPlanEarnings() {
 
     return { creditedUsers, creditedAmount, creditedNetworkBonuses, creditedNetworkAmount, payoutDate };
   });
+}
+
+async function ensureDailyPlanEarnings() {
+  if (dailyEarningsPromise) return dailyEarningsPromise;
+  dailyEarningsPromise = processDailyPlanEarnings().finally(() => {
+    dailyEarningsPromise = null;
+  });
+
+  return dailyEarningsPromise;
 }
 
 async function ensureAdminUser() {
@@ -1389,8 +1418,16 @@ app.post("/api/auth/reset-password", validate(z.object({
   res.json({ token: signToken(result.user), user: sanitizeUser(result.user) });
 });
 
-app.get("/api/me", authenticate, (req, res) => {
-  res.json({ user: composeUser(req.db, req.user) });
+app.get("/api/me", authenticate, async (req, res, next) => {
+  try {
+    await ensureDailyPlanEarnings();
+    const db = await readDb();
+    const user = db.users.find((candidate) => candidate.id === req.user.id);
+    if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
+    res.json({ user: composeUser(db, user) });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/merchants", authenticate, (req, res) => {
@@ -2349,6 +2386,7 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         dailyRate: plan.dailyRate,
         durationDays: plan.durationDays,
         activatedAt: nowIso(),
+        lastPayoutAt: nowIso(),
         lastPayoutDate: today(),
         daysPaid: 0,
         earnedAmount: 0,
@@ -3022,7 +3060,7 @@ app.use((err, _req, res, _next) => {
 });
 
 function runDailyPlanEarnings() {
-  processDailyPlanEarnings()
+  ensureDailyPlanEarnings()
     .then((result) => {
       if (result.creditedUsers) logger.info(result, "Daily plan earnings processed");
     })
