@@ -1434,13 +1434,15 @@ app.post("/api/auth/reset-password", validate(z.object({
 
 app.get("/api/me", authenticate, async (req, res, next) => {
   try {
-    const earningsResult = await processDailyPlanEarnings({ userId: req.user.id });
-    if (earningsResult.creditedUsers) logger.info(earningsResult, "Daily plan earnings processed for current user");
-    if (earningsResult.skippedInvalidPlans) logger.error(earningsResult, "Invalid current user active plans skipped");
-
     const db = await readDb();
     const user = db.users.find((candidate) => candidate.id === req.user.id);
     if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
+    void processDailyPlanEarnings({ userId: req.user.id })
+      .then((earningsResult) => {
+        if (earningsResult.creditedUsers) logger.info(earningsResult, "Daily plan earnings processed for current user");
+        if (earningsResult.skippedInvalidPlans) logger.error(earningsResult, "Invalid current user active plans skipped");
+      })
+      .catch((error) => logger.error({ err: error, userId: req.user.id }, "Daily plan earnings failed for current user"));
     res.json({ user: composeUser(db, user) });
   } catch (error) {
     next(error);
