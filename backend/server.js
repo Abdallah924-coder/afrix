@@ -628,6 +628,11 @@ function planLastPayoutTimestamp(plan = {}) {
   return plan.activatedAt || `${String(plan.lastPayoutDate || today()).slice(0, 10)}T00:00:00.000Z`;
 }
 
+function positiveFiniteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
 function composeUser(db, user) {
   const directPartners = db.users
     .filter((candidate) => referralMatches(candidate, user))
@@ -965,21 +970,24 @@ async function processDailyPlanEarnings() {
     let creditedAmount = 0;
     let creditedNetworkBonuses = 0;
     let creditedNetworkAmount = 0;
+    let skippedInvalidPlans = 0;
 
     db.users.forEach((user) => {
       const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
       activePlans.forEach((plan) => {
         if (plan.status !== "active") return;
 
-        const durationDays = Number(plan.durationDays || 0);
-        const daysPaid = Number(plan.daysPaid || 0);
-        if (!durationDays || daysPaid >= durationDays) {
-          if (durationDays && daysPaid >= durationDays) {
-            completePlanWithCapitalReturn(db, user, plan, payoutDate);
-          } else {
-            plan.status = "completed";
-            plan.completedAt = plan.completedAt || nowIso();
-          }
+        const amount = positiveFiniteNumber(plan.amount);
+        const dailyRate = positiveFiniteNumber(plan.dailyRate);
+        const durationDays = positiveFiniteNumber(plan.durationDays);
+        const daysPaid = Math.max(0, Number.isFinite(Number(plan.daysPaid)) ? Number(plan.daysPaid) : 0);
+        if (!amount || !dailyRate || !durationDays) {
+          skippedInvalidPlans += 1;
+          logger.error({ userId: user.id, planId: plan.id, amount: plan.amount, dailyRate: plan.dailyRate, durationDays: plan.durationDays }, "Invalid active plan skipped during daily earnings");
+          return;
+        }
+        if (daysPaid >= durationDays) {
+          completePlanWithCapitalReturn(db, user, plan, payoutDate);
           return;
         }
 
@@ -987,7 +995,7 @@ async function processDailyPlanEarnings() {
         const dueDays = Math.min(fullDaysBetweenTimestamps(lastPayoutAt), durationDays - daysPaid);
         if (dueDays <= 0) return;
 
-        const payout = money(Number(plan.amount || 0) * Number(plan.dailyRate || 0) * dueDays);
+        const payout = money(amount * dailyRate * dueDays);
         if (payout <= 0) return;
 
         creditUser(db, user, payout, `Gain journalier ${plan.name}`, {
@@ -1026,7 +1034,7 @@ async function processDailyPlanEarnings() {
       });
     });
 
-    return { creditedUsers, creditedAmount, creditedNetworkBonuses, creditedNetworkAmount, payoutDate };
+    return { creditedUsers, creditedAmount, creditedNetworkBonuses, creditedNetworkAmount, skippedInvalidPlans, payoutDate };
   });
 }
 
@@ -1418,16 +1426,15 @@ app.post("/api/auth/reset-password", validate(z.object({
   res.json({ token: signToken(result.user), user: sanitizeUser(result.user) });
 });
 
-app.get("/api/me", authenticate, async (req, res, next) => {
-  try {
-    await ensureDailyPlanEarnings();
-    const db = await readDb();
-    const user = db.users.find((candidate) => candidate.id === req.user.id);
-    if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
-    res.json({ user: composeUser(db, user) });
-  } catch (error) {
-    next(error);
-  }
+app.get("/api/me", authenticate, (req, res) => {
+  ensureDailyPlanEarnings()
+    .then((result) => {
+      if (result.creditedUsers) logger.info(result, "Daily plan earnings processed from /api/me");
+      if (result.skippedInvalidPlans) logger.error(result, "Invalid active plans skipped from /api/me");
+    })
+    .catch((error) => logger.error({ err: error }, "Daily plan earnings failed from /api/me"));
+
+  res.json({ user: composeUser(req.db, req.user) });
 });
 
 app.get("/api/merchants", authenticate, (req, res) => {
@@ -3063,6 +3070,7 @@ function runDailyPlanEarnings() {
   ensureDailyPlanEarnings()
     .then((result) => {
       if (result.creditedUsers) logger.info(result, "Daily plan earnings processed");
+      if (result.skippedInvalidPlans) logger.error(result, "Invalid active plans skipped during daily earnings");
     })
     .catch((error) => logger.error({ err: error }, "Daily plan earnings failed"));
 }
