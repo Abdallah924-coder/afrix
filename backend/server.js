@@ -130,6 +130,7 @@ async function ensureStorage() {
       SettingModel.updateOne({ key: "platformControls" }, { $setOnInsert: { value: defaultDb.platformControls } }, { upsert: true }),
       SettingModel.updateOne({ key: "paymentTargets" }, { $setOnInsert: { value: defaultDb.paymentTargets } }, { upsert: true }),
       SettingModel.updateOne({ key: "passwordResetTokens" }, { $setOnInsert: { value: defaultDb.passwordResetTokens } }, { upsert: true }),
+      SettingModel.updateOne({ key: "dailyPlanEarningsLock" }, { $setOnInsert: { value: null } }, { upsert: true }),
       PlatformAccountModel.updateOne({ id: "platform" }, { $setOnInsert: { ...defaultDb.platformAccount, createdAt: nowIso() } }, { upsert: true })
     ]);
   } catch (error) {
@@ -981,86 +982,242 @@ function creditDailyNetworkBonuses(db, sourceUser, plan, payout, dueDays, payout
 async function processDailyPlanEarnings(options = {}) {
   const onlyUserId = options.userId || "";
   const payoutDate = today();
-  return updateDb(async (db) => {
-    let creditedUsers = 0;
-    let creditedAmount = 0;
-    let creditedNetworkBonuses = 0;
-    let creditedNetworkAmount = 0;
-    let completedPlans = 0;
-    let skippedInvalidPlans = 0;
+  await ensureStorage();
 
-    db.users.forEach((user) => {
-      if (onlyUserId && user.id !== onlyUserId) return;
-      const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
-      activePlans.forEach((plan) => {
-        if (plan.status !== "active") return;
+  const users = await UserModel.find(
+    {
+      ...(onlyUserId ? { id: onlyUserId } : {}),
+      activePlans: { $elemMatch: { status: "active" } }
+    }
+  ).lean();
 
-        const amount = positiveFiniteNumber(plan.amount);
-        const dailyRate = positiveFiniteNumber(plan.dailyRate);
-        const durationDays = positiveFiniteNumber(plan.durationDays);
-        const daysPaid = Math.max(0, Number.isFinite(Number(plan.daysPaid)) ? Number(plan.daysPaid) : 0);
-        if (!amount || !dailyRate || !durationDays) {
-          skippedInvalidPlans += 1;
-          logger.error({ userId: user.id, planId: plan.id, amount: plan.amount, dailyRate: plan.dailyRate, durationDays: plan.durationDays }, "Invalid active plan skipped during daily earnings");
-          return;
+  const result = {
+    creditedUsers: 0,
+    creditedAmount: 0,
+    creditedNetworkBonuses: 0,
+    creditedNetworkAmount: 0,
+    completedPlans: 0,
+    skippedInvalidPlans: 0,
+    payoutDate
+  };
+
+  for (const userSnapshot of users) {
+    const activePlans = Array.isArray(userSnapshot.activePlans) ? userSnapshot.activePlans : [];
+    for (const planSnapshot of activePlans) {
+      if (planSnapshot.status !== "active") continue;
+
+      const amount = positiveFiniteNumber(planSnapshot.amount);
+      const dailyRate = positiveFiniteNumber(planSnapshot.dailyRate);
+      const durationDays = positiveFiniteNumber(planSnapshot.durationDays);
+      if (!amount || !dailyRate || !durationDays) {
+        result.skippedInvalidPlans += 1;
+        logger.error({ userId: userSnapshot.id, planId: planSnapshot.id, amount: planSnapshot.amount, dailyRate: planSnapshot.dailyRate, durationDays: planSnapshot.durationDays }, "Invalid active plan skipped during daily earnings");
+        continue;
+      }
+
+      const session = await mongoose.startSession();
+      try {
+        await withMongoRetry(() => session.withTransaction(async () => {
+          const user = normalizeUserRecord(await UserModel.findOne({ id: userSnapshot.id }, null, { session }).lean());
+          if (!user) return;
+          const plansList = Array.isArray(user.activePlans) ? user.activePlans : [];
+          const plan = plansList.find((item) => item.id === planSnapshot.id);
+          if (!plan || plan.status !== "active") return;
+
+          const currentDaysPaid = Math.max(0, Number.isFinite(Number(plan.daysPaid)) ? Number(plan.daysPaid) : 0);
+          const currentAmount = positiveFiniteNumber(plan.amount);
+          const currentDailyRate = positiveFiniteNumber(plan.dailyRate);
+          const currentDurationDays = positiveFiniteNumber(plan.durationDays);
+          if (!currentAmount || !currentDailyRate || !currentDurationDays || currentDaysPaid >= currentDurationDays) return;
+
+          const nextPayoutAt = planNextPayoutTimestamp(plan);
+          const dueDays = Math.min(duePayoutSlots(nextPayoutAt), currentDurationDays - currentDaysPaid);
+          if (dueDays <= 0) return;
+
+          const payout = money(currentAmount * currentDailyRate * dueDays);
+          if (payout <= 0) return;
+
+          const lastPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays - 1);
+          plan.daysPaid = currentDaysPaid + dueDays;
+          plan.earnedAmount = money(Number(plan.earnedAmount || 0) + payout);
+          plan.lastPayoutAt = lastPayoutAt;
+          plan.lastPayoutDate = String(lastPayoutAt).slice(0, 10);
+          plan.nextPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays);
+          if (plan.daysPaid >= currentDurationDays) {
+            plan.status = "completed";
+            plan.completedAt = nowIso();
+          }
+
+          const updatedBalance = money(Number(user.balance || 0) + payout);
+          await UserModel.updateOne(
+            { id: user.id },
+            { $set: { balance: updatedBalance, activePlans: plansList } },
+            { session }
+          );
+
+          const platform = await PlatformAccountModel.findOneAndUpdate(
+            { id: "platform" },
+            { $inc: { balance: -payout }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
+            { upsert: true, new: true, session, lean: true }
+          );
+
+          const ledgerEntries = buildLedgerEntries([{
+            accountType: "user",
+            accountId: user.id,
+            direction: "credit",
+            amount: payout,
+            balanceAfter: updatedBalance,
+            description: `Gain journalier ${plan.name}`
+          }, {
+            accountType: "platform",
+            accountId: "platform",
+            direction: "debit",
+            amount: payout,
+            balanceAfter: platform.balance,
+            description: `Gain journalier ${plan.name}`
+          }], {
+            source: "plan_daily_earning",
+            referenceId: plan.id,
+            extra: { userId: user.id, planId: plan.planId, days: dueDays, payoutDate }
+          });
+          if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+
+          await TransactionModel.create([{
+            id: nanoid(),
+            userId: user.id,
+            type: "Gain",
+            description: `Gain journalier ${plan.name} (${dueDays} jour${dueDays > 1 ? "s" : ""})`,
+            amount: payout,
+            displayAmount: formatAmount(payout, "+"),
+            status: "Completed",
+            createdAt: nowIso(),
+            metadata: { planId: plan.planId, activePlanId: plan.id, days: dueDays, payoutDate }
+          }], { session });
+
+          let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
+          for (let level = 0; level < bonusRates.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
+            const referrerQuery = [];
+            if (currentReferrer.id) referrerQuery.push({ id: currentReferrer.id });
+            if (currentReferrer.email) referrerQuery.push({ email: normalizeEmail(currentReferrer.email) });
+            if (currentReferrer.code) referrerQuery.push({ refCode: normalizeInvitationCode(currentReferrer.code) });
+            const referrer = referrerQuery.length ? normalizeUserRecord(await UserModel.findOne({ $or: referrerQuery }, null, { session }).lean()) : null;
+            if (!referrer) break;
+
+            if (unlockedReferralLevels(referrer) > level) {
+              const bonus = money((payout * bonusRates[level]) / 100);
+              if (bonus > 0) {
+                const referrerBalance = money(Number(referrer.balance || 0) + bonus);
+                const referrerBonus = money(Number(referrer.bonus || 0) + bonus);
+                await UserModel.updateOne(
+                  { id: referrer.id },
+                  { $set: { balance: referrerBalance, bonus: referrerBonus } },
+                  { session }
+                );
+                const bonusPlatform = await PlatformAccountModel.findOneAndUpdate(
+                  { id: "platform" },
+                  { $inc: { balance: -bonus }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
+                  { upsert: true, new: true, session, lean: true }
+                );
+                const bonusLedger = buildLedgerEntries([{
+                  accountType: "platform",
+                  accountId: "platform",
+                  direction: "debit",
+                  amount: bonus,
+                  balanceAfter: bonusPlatform.balance,
+                  description: `Bonus reseau journalier niveau ${level + 1}`
+                }, {
+                  accountType: "user",
+                  accountId: referrer.id,
+                  direction: "credit",
+                  amount: bonus,
+                  balanceAfter: referrerBalance,
+                  description: `Bonus reseau journalier niveau ${level + 1}`
+                }], {
+                  source: "network_daily_bonus",
+                  referenceId: plan.id,
+                  extra: { sourceUserId: user.id, level: level + 1, activePlanId: plan.id, planId: plan.planId, days: dueDays, payoutDate }
+                });
+                if (bonusLedger.length) await LedgerEntryModel.insertMany(bonusLedger, { session });
+                await TransactionModel.create([{
+                  id: nanoid(),
+                  userId: referrer.id,
+                  type: "Bonus",
+                  description: `Bonus reseau journalier niveau ${level + 1} (${dueDays} jour${dueDays > 1 ? "s" : ""})`,
+                  amount: bonus,
+                  displayAmount: formatAmount(bonus, "+"),
+                  status: "Completed",
+                  createdAt: nowIso(),
+                  metadata: { sourceUserId: user.id, level: level + 1, activePlanId: plan.id, planId: plan.planId, days: dueDays, payoutDate }
+                }], { session });
+                result.creditedNetworkBonuses += 1;
+                result.creditedNetworkAmount = money(result.creditedNetworkAmount + bonus);
+              }
+            }
+
+            currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
+          }
+
+          result.creditedUsers += 1;
+          result.creditedAmount = money(result.creditedAmount + payout);
+          if (plan.status === "completed") result.completedPlans += 1;
+        }));
+      } finally {
+        await session.endSession();
+      }
+    }
+  }
+
+  return result;
+}
+
+async function acquireDailyEarningsLock() {
+  await ensureStorage();
+  const owner = `${process.pid}-${nanoid()}`;
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 2 * 60 * 1000).toISOString();
+  const staleBefore = now.toISOString();
+  const lock = await SettingModel.findOneAndUpdate(
+    {
+      key: "dailyPlanEarningsLock",
+      $or: [
+        { "value.expiresAt": { $exists: false } },
+        { "value.expiresAt": { $lte: staleBefore } },
+        { value: null }
+      ]
+    },
+    {
+      $set: {
+        value: {
+          owner,
+          acquiredAt: now.toISOString(),
+          expiresAt
         }
-        if (daysPaid >= durationDays) {
-          if (completePlanWithCapitalReturn(db, user, plan, payoutDate)) completedPlans += 1;
-          return;
-        }
+      }
+    },
+    { new: true, lean: true }
+  );
+  return lock?.value?.owner === owner ? owner : null;
+}
 
-        const nextPayoutAt = planNextPayoutTimestamp(plan);
-        const dueDays = Math.min(duePayoutSlots(nextPayoutAt), durationDays - daysPaid);
-        if (dueDays <= 0) return;
-
-        const payout = money(amount * dailyRate * dueDays);
-        if (payout <= 0) return;
-
-        creditUser(db, user, payout, `Gain journalier ${plan.name}`, {
-          source: "plan_daily_earning",
-          referenceId: plan.id,
-          extra: { planId: plan.planId, days: dueDays, payoutDate }
-        });
-        debitPlatform(db, payout, `Gain journalier ${plan.name}`, {
-          source: "plan_daily_earning",
-          referenceId: plan.id,
-          extra: { userId: user.id, planId: plan.planId, days: dueDays, payoutDate }
-        });
-        addTransaction(db, {
-          userId: user.id,
-          type: "Gain",
-          description: `Gain journalier ${plan.name} (${dueDays} jour${dueDays > 1 ? "s" : ""})`,
-          amount: payout,
-          displayAmount: formatAmount(payout, "+"),
-          status: "Completed",
-          metadata: { planId: plan.planId, activePlanId: plan.id, days: dueDays, payoutDate }
-        });
-
-        const networkResult = creditDailyNetworkBonuses(db, user, plan, payout, dueDays, payoutDate);
-
-        plan.daysPaid = daysPaid + dueDays;
-        plan.earnedAmount = money(Number(plan.earnedAmount || 0) + payout);
-        plan.lastPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays - 1);
-        plan.lastPayoutDate = String(plan.lastPayoutAt).slice(0, 10);
-        plan.nextPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays);
-        if (plan.daysPaid >= durationDays) {
-          if (completePlanWithCapitalReturn(db, user, plan, payoutDate)) completedPlans += 1;
-        }
-        creditedUsers += 1;
-        creditedAmount = money(creditedAmount + payout);
-        creditedNetworkBonuses += networkResult.creditedCount;
-        creditedNetworkAmount = money(creditedNetworkAmount + networkResult.creditedAmount);
-      });
-    });
-
-    const hasChanges = creditedUsers > 0 || creditedNetworkBonuses > 0 || completedPlans > 0;
-    return { creditedUsers, creditedAmount, creditedNetworkBonuses, creditedNetworkAmount, completedPlans, skippedInvalidPlans, payoutDate, skipWrite: !hasChanges };
-  });
+async function releaseDailyEarningsLock(owner) {
+  if (!owner) return;
+  await SettingModel.updateOne(
+    { key: "dailyPlanEarningsLock", "value.owner": owner },
+    { $set: { value: { releasedAt: nowIso() } } }
+  ).catch((error) => logger.warn({ err: error }, "Daily earnings lock release failed"));
 }
 
 async function ensureDailyPlanEarnings() {
   if (dailyEarningsPromise) return dailyEarningsPromise;
-  dailyEarningsPromise = processDailyPlanEarnings().finally(() => {
+  dailyEarningsPromise = (async () => {
+    const lockOwner = await acquireDailyEarningsLock();
+    if (!lockOwner) return { skipped: true, reason: "daily_earnings_locked" };
+    try {
+      return await processDailyPlanEarnings();
+    } finally {
+      await releaseDailyEarningsLock(lockOwner);
+    }
+  })().finally(() => {
     dailyEarningsPromise = null;
   });
 
@@ -1451,12 +1608,12 @@ app.get("/api/me", authenticate, async (req, res, next) => {
     const db = await readDb();
     const user = db.users.find((candidate) => candidate.id === req.user.id);
     if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
-    void processDailyPlanEarnings({ userId: req.user.id })
+    void ensureDailyPlanEarnings()
       .then((earningsResult) => {
-        if (earningsResult.creditedUsers) logger.info(earningsResult, "Daily plan earnings processed for current user");
-        if (earningsResult.skippedInvalidPlans) logger.error(earningsResult, "Invalid current user active plans skipped");
+        if (earningsResult.creditedUsers) logger.info(earningsResult, "Daily plan earnings processed");
+        if (earningsResult.skippedInvalidPlans) logger.error(earningsResult, "Invalid active plans skipped");
       })
-      .catch((error) => logger.error({ err: error, userId: req.user.id }, "Daily plan earnings failed for current user"));
+      .catch((error) => logger.error({ err: error }, "Daily plan earnings failed"));
     res.json({ user: composeUser(db, user) });
   } catch (error) {
     next(error);
