@@ -74,6 +74,7 @@ import {
 let mongoReadyPromise = null;
 let dailyEarningsPromise = null;
 const transactionListProjection = { "metadata.proof.dataBase64": 0 };
+const PLAN_EARNINGS_INTERVAL_MS = 60 * 1000;
 
 function normalizeDb(db = {}) {
   return {
@@ -261,6 +262,7 @@ async function updateDb(mutator) {
       await session.withTransaction(async () => {
         const db = await readDb(session);
         result = await mutator(db);
+        if (result?.skipWrite) return;
         await writeDb(db, session);
       });
       return result;
@@ -963,16 +965,19 @@ function creditDailyNetworkBonuses(db, sourceUser, plan, payout, dueDays, payout
   return { creditedAmount, creditedCount };
 }
 
-async function processDailyPlanEarnings() {
+async function processDailyPlanEarnings(options = {}) {
+  const onlyUserId = options.userId || "";
   const payoutDate = today();
   return updateDb(async (db) => {
     let creditedUsers = 0;
     let creditedAmount = 0;
     let creditedNetworkBonuses = 0;
     let creditedNetworkAmount = 0;
+    let completedPlans = 0;
     let skippedInvalidPlans = 0;
 
     db.users.forEach((user) => {
+      if (onlyUserId && user.id !== onlyUserId) return;
       const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
       activePlans.forEach((plan) => {
         if (plan.status !== "active") return;
@@ -987,7 +992,7 @@ async function processDailyPlanEarnings() {
           return;
         }
         if (daysPaid >= durationDays) {
-          completePlanWithCapitalReturn(db, user, plan, payoutDate);
+          if (completePlanWithCapitalReturn(db, user, plan, payoutDate)) completedPlans += 1;
           return;
         }
 
@@ -1025,7 +1030,7 @@ async function processDailyPlanEarnings() {
         plan.lastPayoutAt = addDaysToTimestamp(lastPayoutAt, dueDays);
         plan.lastPayoutDate = payoutDate;
         if (plan.daysPaid >= durationDays) {
-          completePlanWithCapitalReturn(db, user, plan, payoutDate);
+          if (completePlanWithCapitalReturn(db, user, plan, payoutDate)) completedPlans += 1;
         }
         creditedUsers += 1;
         creditedAmount = money(creditedAmount + payout);
@@ -1034,7 +1039,8 @@ async function processDailyPlanEarnings() {
       });
     });
 
-    return { creditedUsers, creditedAmount, creditedNetworkBonuses, creditedNetworkAmount, skippedInvalidPlans, payoutDate };
+    const hasChanges = creditedUsers > 0 || creditedNetworkBonuses > 0 || completedPlans > 0;
+    return { creditedUsers, creditedAmount, creditedNetworkBonuses, creditedNetworkAmount, completedPlans, skippedInvalidPlans, payoutDate, skipWrite: !hasChanges };
   });
 }
 
@@ -1426,15 +1432,19 @@ app.post("/api/auth/reset-password", validate(z.object({
   res.json({ token: signToken(result.user), user: sanitizeUser(result.user) });
 });
 
-app.get("/api/me", authenticate, (req, res) => {
-  ensureDailyPlanEarnings()
-    .then((result) => {
-      if (result.creditedUsers) logger.info(result, "Daily plan earnings processed from /api/me");
-      if (result.skippedInvalidPlans) logger.error(result, "Invalid active plans skipped from /api/me");
-    })
-    .catch((error) => logger.error({ err: error }, "Daily plan earnings failed from /api/me"));
+app.get("/api/me", authenticate, async (req, res, next) => {
+  try {
+    const earningsResult = await processDailyPlanEarnings({ userId: req.user.id });
+    if (earningsResult.creditedUsers) logger.info(earningsResult, "Daily plan earnings processed for current user");
+    if (earningsResult.skippedInvalidPlans) logger.error(earningsResult, "Invalid current user active plans skipped");
 
-  res.json({ user: composeUser(req.db, req.user) });
+    const db = await readDb();
+    const user = db.users.find((candidate) => candidate.id === req.user.id);
+    if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
+    res.json({ user: composeUser(db, user) });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/merchants", authenticate, (req, res) => {
@@ -3097,7 +3107,7 @@ async function bootstrapServer() {
     reconcileReferralLinks().catch((error) => logger.error({ err: error }, "Referral reconciliation failed"));
   }, 5 * 60 * 1000);
   referralReconcileTimer.unref?.();
-  const planEarningsTimer = setInterval(runDailyPlanEarnings, 6 * 60 * 60 * 1000);
+  const planEarningsTimer = setInterval(runDailyPlanEarnings, PLAN_EARNINGS_INTERVAL_MS);
   planEarningsTimer.unref?.();
 }
 
