@@ -377,6 +377,7 @@ function renderTopbar(page, user = emptyUser) {
     const syncMenuButton = () => {
       const isOpen = sidebar.classList.contains("open");
       menuButton.textContent = isOpen ? "×" : "☰";
+      menuButton.classList.toggle("is-open", isOpen);
       menuButton.setAttribute("aria-label", isOpen ? "Fermer le menu" : "Ouvrir le menu");
       menuButton.setAttribute("aria-expanded", String(isOpen));
     };

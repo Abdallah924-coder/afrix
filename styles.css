@@ -1577,17 +1577,28 @@ th { color: var(--muted); font-size: 12px; }
     position: fixed !important;
     top: 14px;
     left: 16px;
-    z-index: 999;
+    z-index: 1001;
     width: 44px;
+    height: 44px;
     min-width: 44px;
+    min-height: 44px;
     padding: 0;
+    align-items: center;
+    justify-content: center;
     font-size: 24px;
     line-height: 1;
     box-shadow: 0 10px 28px rgba(0, 0, 0, .36);
   }
+  .menu-btn.is-open {
+    background: var(--green);
+    color: #04130b;
+    border-color: transparent;
+    font-size: 30px;
+  }
   .topbar {
     position: sticky;
     top: 0;
+    z-index: 1000;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
