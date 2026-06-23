@@ -360,9 +360,9 @@ function renderTopbar(page, user = emptyUser) {
   if (!topbar) return;
 
   topbar.innerHTML = `
-    <button class="btn secondary menu-btn" type="button" data-menu-toggle>☰</button>
+    <button class="btn secondary menu-btn" type="button" data-menu-toggle aria-label="Ouvrir le menu" aria-expanded="false">☰</button>
     <div class="topbar-title">
-      <p>Wallet • Trading • Blockchain</p>
+      <p>Wallet • Trading • Staking • Blockchain</p>
       <h1>${pageTitles[page] || "AFRIX"}</h1>
     </div>
     <div class="user-box">
@@ -374,7 +374,17 @@ function renderTopbar(page, user = emptyUser) {
   const menuButton = topbar.querySelector("[data-menu-toggle]");
   const sidebar = document.querySelector("[data-sidebar]");
   if (menuButton && sidebar) {
-    menuButton.addEventListener("click", () => sidebar.classList.toggle("open"));
+    const syncMenuButton = () => {
+      const isOpen = sidebar.classList.contains("open");
+      menuButton.textContent = isOpen ? "×" : "☰";
+      menuButton.setAttribute("aria-label", isOpen ? "Fermer le menu" : "Ouvrir le menu");
+      menuButton.setAttribute("aria-expanded", String(isOpen));
+    };
+    menuButton.addEventListener("click", () => {
+      sidebar.classList.toggle("open");
+      syncMenuButton();
+    });
+    syncMenuButton();
   }
 }
 
@@ -1034,9 +1044,10 @@ function renderAdmin(user) {
   const filteredAdminUsers = (user.adminUsers || []).filter((item) => {
     if (!userQuery) return true;
     return String(item.email || "").toLowerCase().includes(userQuery) || String(item.fullName || "").toLowerCase().includes(userQuery);
-  });
+  }).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
   renderAdminUsers(filteredAdminUsers);
   renderAdminUserActivity(user.adminUsers || [], userQuery);
+  bindAdminUsersPanel();
 
   document.querySelectorAll("[data-admin-control]").forEach((control) => {
     control.checked = Boolean(platformControls[control.dataset.adminControl]);
@@ -1047,6 +1058,29 @@ function renderAdmin(user) {
     field.dataset.boundAdminFilter = "true";
     field.addEventListener("input", () => renderAdmin(user));
   });
+}
+
+function bindAdminUsersPanel() {
+  const section = document.querySelector("[data-admin-users-section]");
+  const toggle = document.querySelector("[data-admin-users-toggle]");
+  const close = document.querySelector("[data-admin-users-close]");
+  if (!section || !toggle) return;
+
+  const setOpen = (open) => {
+    section.hidden = !open;
+    toggle.textContent = open ? "Fermer comptes" : "Comptes";
+    if (open) section.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  if (!toggle.dataset.boundAdminUsersToggle) {
+    toggle.dataset.boundAdminUsersToggle = "true";
+    toggle.addEventListener("click", () => setOpen(section.hidden));
+  }
+
+  if (close && !close.dataset.boundAdminUsersClose) {
+    close.dataset.boundAdminUsersClose = "true";
+    close.addEventListener("click", () => setOpen(false));
+  }
 }
 
 function renderAdminUserActivity(users, query) {
