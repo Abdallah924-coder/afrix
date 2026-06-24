@@ -1038,6 +1038,9 @@ async function processDailyPlanEarnings(options = {}) {
           if (payout <= 0) return;
 
           const lastPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays - 1);
+          const paidDayFrom = currentDaysPaid + 1;
+          const paidDayTo = currentDaysPaid + dueDays;
+          const paidDayLabel = paidDayFrom === paidDayTo ? `Jour ${paidDayTo}` : `Jours ${paidDayFrom}-${paidDayTo}`;
           plan.daysPaid = currentDaysPaid + dueDays;
           plan.earnedAmount = money(Number(plan.earnedAmount || 0) + payout);
           plan.lastPayoutAt = lastPayoutAt;
@@ -1086,12 +1089,12 @@ async function processDailyPlanEarnings(options = {}) {
             id: nanoid(),
             userId: user.id,
             type: "Gain",
-            description: `Gain journalier ${plan.name} (${dueDays} jour${dueDays > 1 ? "s" : ""})`,
+            description: `Gain journalier ${plan.name} (${paidDayLabel})`,
             amount: payout,
             displayAmount: formatAmount(payout, "+"),
             status: "Completed",
             createdAt: nowIso(),
-            metadata: { planId: plan.planId, activePlanId: plan.id, days: dueDays, payoutDate }
+            metadata: { planId: plan.planId, activePlanId: plan.id, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
           }], { session });
 
           let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
@@ -1142,12 +1145,12 @@ async function processDailyPlanEarnings(options = {}) {
                   id: nanoid(),
                   userId: referrer.id,
                   type: "Bonus",
-                  description: `Bonus reseau journalier niveau ${level + 1} (${dueDays} jour${dueDays > 1 ? "s" : ""})`,
+                  description: `Bonus reseau journalier niveau ${level + 1} (${paidDayLabel})`,
                   amount: bonus,
                   displayAmount: formatAmount(bonus, "+"),
                   status: "Completed",
                   createdAt: nowIso(),
-                  metadata: { sourceUserId: user.id, level: level + 1, activePlanId: plan.id, planId: plan.planId, days: dueDays, payoutDate }
+                  metadata: { sourceUserId: user.id, level: level + 1, activePlanId: plan.id, planId: plan.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
                 }], { session });
                 result.creditedNetworkBonuses += 1;
                 result.creditedNetworkAmount = money(result.creditedNetworkAmount + bonus);

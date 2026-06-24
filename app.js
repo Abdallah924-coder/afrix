@@ -376,6 +376,7 @@ function renderTopbar(page, user = emptyUser) {
   if (menuButton && sidebar) {
     const syncMenuButton = () => {
       const isOpen = sidebar.classList.contains("open");
+      document.body.classList.toggle("menu-open", isOpen);
       menuButton.textContent = isOpen ? "×" : "☰";
       menuButton.classList.toggle("is-open", isOpen);
       menuButton.setAttribute("aria-label", isOpen ? "Fermer le menu" : "Ouvrir le menu");
@@ -682,6 +683,7 @@ function renderActivePlans(user) {
     const daysPaid = Math.min(durationDays, Math.max(0, Number(plan.daysPaid || 0)));
     const percent = Math.min(100, Math.round((daysPaid / durationDays) * 100));
     const remainingDays = Math.max(0, durationDays - daysPaid);
+    const daysProgressLabel = `${daysPaid}/${durationDays} jours`;
     const dailyGain = Number(plan.amount || 0) * Number(plan.dailyRate || 0);
     const status = plan.status === "completed" ? "Termine" : "Actif";
     return `
@@ -691,9 +693,9 @@ function renderActivePlans(user) {
             <strong>${escapeHtml(tradingPlanName(plan.name || plan.planId))}</strong>
             <small>${escapeHtml(status)} depuis ${escapeHtml(String(plan.activatedAt || "").slice(0, 10) || "-")}</small>
           </span>
-          <b>${percent}%</b>
+          <b>${daysProgressLabel}</b>
         </div>
-        <div class="progress active-plan-progress" aria-label="Progression ${escapeHtml(tradingPlanName(plan.name || plan.planId))}">
+        <div class="progress active-plan-progress" aria-label="Progression ${escapeHtml(tradingPlanName(plan.name || plan.planId))}: ${daysProgressLabel}">
           <span style="width:${percent}%"></span>
         </div>
         <div class="active-plan-stats">

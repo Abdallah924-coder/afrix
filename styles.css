@@ -1551,14 +1551,17 @@ th { color: var(--muted); font-size: 12px; }
   .queue-row { grid-template-columns: 1fr !important; }
   .merchant-card { grid-template-columns: 1fr !important; }
   .sidebar {
-    width: min(260px, 86vw);
-    padding: 16px;
+    width: 100vw;
+    max-width: 100vw;
+    padding: 78px 16px 18px;
     transform: none;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     transition: opacity .2s ease, visibility .2s ease;
-    z-index: 20;
+    z-index: 990;
   }
   .sidebar.open {
     opacity: 1;
@@ -1566,6 +1569,18 @@ th { color: var(--muted); font-size: 12px; }
     pointer-events: auto;
   }
   .side-card { position: static; margin-top: 12px; }
+  body.menu-open {
+    overflow: hidden;
+  }
+  body.menu-open .topbar-title,
+  body.menu-open .user-box {
+    visibility: hidden;
+  }
+  body.menu-open .topbar {
+    background: transparent;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
   .app {
     width: 100%;
     max-width: 100%;
