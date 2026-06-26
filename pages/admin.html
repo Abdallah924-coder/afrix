@@ -11,77 +11,108 @@
   <meta property="og:image" content="/assets/pwa-icon.svg">
   <meta name="twitter:image" content="/assets/pwa-icon.svg">
   <title>Admin - AFRIX</title>
-  <link rel="stylesheet" href="../styles.css?v=20260624-3">
+  <link rel="stylesheet" href="../styles.css?v=20260626-3">
 </head>
 <body data-protected data-page="admin">
   <aside class="sidebar" data-sidebar></aside>
   <main class="app">
     <header class="topbar" data-topbar></header>
-    <section class="admin-section-nav">
-      <a class="btn secondary" href="#admin-priority">Validations</a>
-      <a class="btn secondary" href="#admin-search">Recherche</a>
-      <button class="btn secondary" type="button" data-admin-users-toggle>Comptes</button>
-      <a class="btn secondary" href="#admin-actions">Actions</a>
+
+    <section class="admin-header-panel">
+      <div>
+        <span class="pill">Administration</span>
+        <h1>Centre de contrôle AFRIX</h1>
+        <p>Traitez les validations, comptes et opérations depuis des sections séparées.</p>
+      </div>
+      <button class="btn secondary" type="button" data-admin-users-toggle>Comptes utilisateurs</button>
     </section>
-    <section class="grid two admin-queues" id="admin-priority">
+
+    <section class="admin-section-nav" aria-label="Sections admin">
+      <button class="admin-section-tab is-active" type="button" data-admin-section-trigger="overview">Vue d'ensemble</button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="deposits">Dépôts <span class="admin-tab-badge" data-pending-deposits-count>0</span></button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="withdrawals">Retraits <span class="admin-tab-badge" data-pending-withdrawals-count>0</span></button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="accounts">Comptes <span class="admin-tab-badge" data-admin-users-count>0</span></button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="operations">Opérations</button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="tools">Outils</button>
+    </section>
+
+    <section class="admin-dashboard-stats">
+      <article><span>Total utilisateurs</span><strong data-admin-stat="totalUsers">0</strong></article>
+      <article><span>Actifs</span><strong data-admin-stat="activeUsers">0</strong></article>
+      <article><span>Nouveaux aujourd'hui</span><strong data-admin-stat="newUsersToday">0</strong></article>
+      <article><span>Dépôts validés</span><strong data-admin-deposits>0 USDT</strong></article>
+      <article><span>Retraits</span><strong data-admin-withdrawals>0 USDT</strong></article>
+      <article><span>Capital investi</span><strong data-admin-stat-usdt="investedCapital">0 USDT</strong></article>
+      <article><span>Revenus plateforme</span><strong data-admin-stat-usdt="platformRevenue">0 USDT</strong></article>
+      <article><span>Transactions</span><strong data-admin-tx>0</strong></article>
+    </section>
+
+    <section class="admin-section-panel" data-admin-section="overview">
+      <div class="grid two">
+        <article class="panel admin-overview-card">
+          <div class="panel-head"><h1>Navigation rapide</h1><span class="badge">Admin</span></div>
+          <p class="muted">Ouvrez uniquement la section nécessaire pour éviter une page saturée et traiter plus vite les opérations.</p>
+          <div class="admin-overview-actions">
+            <button class="btn secondary" type="button" data-admin-section-trigger="deposits">Traiter les dépôts</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="withdrawals">Traiter les retraits</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="accounts">Gérer les comptes</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="tools">Outils admin</button>
+          </div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h1>Contrôles plateforme</h1><span class="badge">Temps réel</span></div>
+          <div class="switch-row"><span>Exchange via merchants</span><input type="checkbox" data-admin-control="cicoMerchants"></div>
+          <div class="switch-row"><span>WhatsApp merchant obligatoire</span><input type="checkbox" data-admin-control="merchantWhatsappRequired"></div>
+          <div class="switch-row"><span>Mode maintenance</span><input type="checkbox" data-admin-control="maintenanceMode"></div>
+        </article>
+      </div>
+
+      <article class="panel admin-search-panel" id="admin-search">
+        <div class="panel-head"><h1>Recherche admin</h1><span class="badge">Filtres</span></div>
+        <div class="grid two">
+          <label>Rechercher un utilisateur par email
+            <input type="search" data-admin-user-search data-admin-filter placeholder="client@email.com">
+          </label>
+          <label>Rechercher une transaction par référence
+            <input type="search" data-admin-tx-search data-admin-filter placeholder="ID transaction ou référence blockchain">
+          </label>
+        </div>
+        <div class="admin-lookup-result" data-admin-user-activity></div>
+      </article>
+
+      <article class="panel admin-stats-panel">
+        <div class="panel-head"><h1>Statistiques détaillées</h1><span class="badge">Plateforme</span></div>
+        <div class="admin-stat-grid">
+          <div><span>Nouveaux semaine</span><strong data-admin-stat="newUsersWeek">0</strong></div>
+          <div><span>Nouveaux mois</span><strong data-admin-stat="newUsersMonth">0</strong></div>
+          <div><span>Plans actifs</span><strong data-admin-stat="activePlansCount">0</strong></div>
+          <div><span>Utilisateurs avec plans</span><strong data-admin-stat="usersWithActivePlans">0</strong></div>
+          <div><span>Volume transactions</span><strong data-admin-stat-usdt="transactionVolume">0 USDT</strong></div>
+          <div><span>Solde compte plateforme</span><strong data-admin-stat-usdt="platformBalance">0 USDT</strong></div>
+          <div><span>Partenaires</span><strong data-admin-stat="partners">0</strong></div>
+          <div><span>Merchants agréés</span><strong data-admin-stat="approvedMerchants">0</strong></div>
+          <div><span>Pays actifs</span><strong data-admin-stat="activeCountries">0</strong></div>
+          <div><span>Membres équipe</span><strong data-admin-team>0</strong></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="admin-section-panel admin-queues" data-admin-section="deposits" hidden>
       <article class="panel">
         <div class="panel-head"><h1>Dépôts USDT à valider</h1><span class="badge" data-pending-deposits-count>0</span></div>
         <div class="list" data-admin-pending-deposits></div>
       </article>
+    </section>
+
+    <section class="admin-section-panel admin-queues" data-admin-section="withdrawals" hidden>
       <article class="panel">
         <div class="panel-head"><h1>Retraits à traiter</h1><span class="badge" data-pending-withdrawals-count>0</span></div>
         <div class="list" data-admin-pending-withdrawals></div>
       </article>
     </section>
-    <section class="grid two">
-      <article class="panel">
-        <h1>Contrôles plateforme</h1>
-        <div class="switch-row"><span>Exchange via merchants</span><input type="checkbox" data-admin-control="cicoMerchants"></div>
-        <div class="switch-row"><span>WhatsApp merchant obligatoire</span><input type="checkbox" data-admin-control="merchantWhatsappRequired"></div>
-        <div class="switch-row"><span>Mode maintenance</span><input type="checkbox" data-admin-control="maintenanceMode"></div>
-      </article>
-      <article class="panel">
-        <h1>Résumé admin</h1>
-        <div class="list">
-          <div><span>Volume dépôts</span><strong data-admin-deposits>0 USDT</strong></div>
-          <div><span>Volume retraits</span><strong data-admin-withdrawals>0 USDT</strong></div>
-          <div><span>Transactions</span><strong data-admin-tx>0</strong></div>
-          <div><span>Membres équipe</span><strong data-admin-team>0</strong></div>
-        </div>
-      </article>
-    </section>
-    <section class="panel admin-stats-panel">
-      <div class="panel-head"><h1>Statistiques plateforme</h1><span class="badge">Temps réel</span></div>
-      <div class="admin-stat-grid">
-        <div><span>Total utilisateurs</span><strong data-admin-stat="totalUsers">0</strong></div>
-        <div><span>Nouveaux aujourd'hui</span><strong data-admin-stat="newUsersToday">0</strong></div>
-        <div><span>Nouveaux semaine</span><strong data-admin-stat="newUsersWeek">0</strong></div>
-        <div><span>Nouveaux mois</span><strong data-admin-stat="newUsersMonth">0</strong></div>
-        <div><span>Utilisateurs actifs</span><strong data-admin-stat="activeUsers">0</strong></div>
-        <div><span>Plans actifs</span><strong data-admin-stat="activePlansCount">0</strong></div>
-        <div><span>Utilisateurs avec plans</span><strong data-admin-stat="usersWithActivePlans">0</strong></div>
-        <div><span>Capital investi</span><strong data-admin-stat-usdt="investedCapital">0 USDT</strong></div>
-        <div><span>Volume transactions</span><strong data-admin-stat-usdt="transactionVolume">0 USDT</strong></div>
-        <div><span>Solde compte plateforme</span><strong data-admin-stat-usdt="platformBalance">0 USDT</strong></div>
-        <div><span>Revenus plateforme</span><strong data-admin-stat-usdt="platformRevenue">0 USDT</strong></div>
-        <div><span>Partenaires</span><strong data-admin-stat="partners">0</strong></div>
-        <div><span>Merchants agréés</span><strong data-admin-stat="approvedMerchants">0</strong></div>
-        <div><span>Pays actifs</span><strong data-admin-stat="activeCountries">0</strong></div>
-      </div>
-    </section>
-    <section class="panel admin-search-panel" id="admin-search">
-      <div class="panel-head"><h1>Recherche admin</h1><span class="badge">Filtres</span></div>
-      <div class="grid two">
-        <label>Rechercher un utilisateur par email
-          <input type="search" data-admin-user-search data-admin-filter placeholder="client@email.com">
-        </label>
-        <label>Rechercher une transaction par référence
-          <input type="search" data-admin-tx-search data-admin-filter placeholder="ID transaction ou référence blockchain">
-        </label>
-      </div>
-      <div class="admin-lookup-result" data-admin-user-activity></div>
-    </section>
-    <section class="panel admin-queues" id="admin-users-section" data-admin-users-section hidden>
+
+    <section class="admin-section-panel" data-admin-section="accounts" hidden>
+      <section class="panel admin-queues" id="admin-users-section" data-admin-users-section>
         <div class="panel-head">
           <h1>Comptes utilisateurs</h1>
           <div class="admin-panel-actions">
@@ -90,7 +121,147 @@
           </div>
         </div>
         <div class="list" data-admin-users></div>
+      </section>
+
+      <section class="grid two admin-queues">
+        <article class="panel">
+          <div class="panel-head"><h1>Créer un compte</h1><span class="badge">Admin</span></div>
+          <form data-admin-create-user-form>
+            <label>Nom complet
+              <input name="fullName" type="text" required>
+            </label>
+            <label>Email
+              <input name="email" type="email" required>
+            </label>
+            <label>Mot de passe
+              <input name="password" type="password" minlength="10" required>
+            </label>
+            <label>Rôle
+              <select name="role">
+                <option value="user">Utilisateur</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <button class="btn primary full" type="submit">Créer le compte</button>
+          </form>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h1>Réparer parrainage</h1><span class="badge">Urgence</span></div>
+          <form data-admin-referral-repair-form>
+            <label>Email filleul
+              <input name="email" type="email" required placeholder="filleul@email.com">
+            </label>
+            <label>Email parrain
+              <input name="referrerEmail" type="email" required placeholder="parrain@email.com">
+            </label>
+            <button class="btn primary full" type="submit">Rattacher le parrain</button>
+          </form>
+        </article>
+      </section>
     </section>
+
+    <section class="admin-section-panel" data-admin-section="operations" hidden>
+      <section class="grid two admin-queues">
+        <article class="panel">
+          <div class="panel-head"><h1>Demandes Exchange</h1><span class="badge">P2P local</span></div>
+          <div class="list" data-admin-exchange-orders></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h1>Historique CICO</h1><span class="badge" data-cico-requests-count>0</span></div>
+          <div class="list" data-admin-cico-requests></div>
+        </article>
+      </section>
+      <section class="grid two admin-queues">
+        <article class="panel">
+          <div class="panel-head"><h1>Demandes merchant</h1><span class="badge" data-merchant-applications-count>0</span></div>
+          <div class="list" data-admin-merchant-applications></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h1>Litiges ouverts</h1><span class="badge" data-disputes-count>0</span></div>
+          <div class="list" data-admin-disputes></div>
+        </article>
+      </section>
+      <article class="panel">
+        <div class="panel-head"><h1>Règle opérationnelle</h1><span class="badge">USDT + Exchange</span></div>
+        <p class="muted">Les dépôts USDT BEP20/TRC20/MTN et les retraits BEP20/MTN sont validés par l'admin. L'admin peut aussi confirmer les demandes Exchange en attente si nécessaire.</p>
+      </article>
+    </section>
+
+    <section class="admin-section-panel" data-admin-section="tools" hidden>
+      <section class="grid two admin-queues" id="admin-actions">
+        <article class="panel">
+          <div class="panel-head"><h1>Ajouter des fonds</h1><span class="badge">Crédit USDT</span></div>
+          <form data-admin-manual-deposit-form>
+            <label>Email utilisateur
+              <input name="email" type="email" required placeholder="client@email.com">
+            </label>
+            <label>Montant USDT
+              <input name="amount" type="number" min="1" step="0.01" required>
+            </label>
+            <label>Note interne
+              <input name="note" type="text" maxlength="300" placeholder="Correction, cash, support...">
+            </label>
+            <button class="btn primary full" type="submit">Créditer le compte</button>
+          </form>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h1>Déduire des fonds</h1><span class="badge">Débit USDT</span></div>
+          <form data-admin-fund-deduct-form>
+            <label>Email utilisateur
+              <input name="email" type="email" required placeholder="client@email.com">
+            </label>
+            <label>Montant USDT
+              <input name="amount" type="number" min="1" step="0.01" required>
+            </label>
+            <label>Note interne
+              <input name="note" type="text" maxlength="300" placeholder="Correction, retrait manuel...">
+            </label>
+            <button class="btn secondary full" type="submit">Déduire le montant</button>
+          </form>
+        </article>
+      </section>
+
+      <section class="grid two admin-queues">
+        <article class="panel">
+          <div class="panel-head"><h1>Activer un investissement</h1><span class="badge">Admin</span></div>
+          <form data-admin-plan-activate-form>
+            <label>Email utilisateur
+              <input name="email" type="email" required placeholder="client@email.com">
+            </label>
+            <label>Plan
+              <select name="plan" required>
+                <option value="starter">Starter Trading</option>
+                <option value="smart">Smart Trading</option>
+                <option value="premium">Premium Trading</option>
+                <option value="elite">Elite Trading</option>
+              </select>
+            </label>
+            <label>Montant USDT
+              <input name="amount" type="number" min="10" step="0.01" required>
+            </label>
+            <button class="btn primary full" type="submit">Activer l'investissement</button>
+          </form>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h1>Niveaux bonus</h1><span class="badge">Parrainage</span></div>
+          <form data-admin-bonus-levels-form>
+            <label>Email partenaire
+              <input name="email" type="email" required placeholder="partenaire@email.com">
+            </label>
+            <label>Niveaux activés
+              <select name="levels" required>
+                <option value="5">5 niveaux</option>
+                <option value="10">10 niveaux</option>
+                <option value="15">15 niveaux</option>
+                <option value="20">20 niveaux</option>
+              </select>
+            </label>
+            <button class="btn primary full" type="submit">Activer les niveaux</button>
+          </form>
+        </article>
+      </section>
+    </section>
+
     <section class="panel admin-proof-viewer" data-admin-proof-viewer hidden>
       <div class="panel-head">
         <h1>Capture de dépôt</h1>
@@ -98,137 +269,7 @@
       </div>
       <div data-admin-proof-content></div>
     </section>
-    <section class="grid two admin-queues" id="admin-actions">
-      <article class="panel">
-        <div class="panel-head"><h1>Demandes Exchange</h1><span class="badge">P2P local</span></div>
-        <div class="list" data-admin-exchange-orders></div>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h1>Règle opérationnelle</h1><span class="badge">USDT + Exchange</span></div>
-        <p class="muted">Les dépôts USDT BEP20/TRC20/MTN et les retraits BEP20/MTN sont validés par l'admin. L'admin peut aussi confirmer les demandes Exchange en attente si nécessaire.</p>
-      </article>
-    </section>
-    <section class="panel admin-queues" id="admin-users-section">
-      <div class="panel-head"><h1>Historique CICO</h1><span class="badge" data-cico-requests-count>0</span></div>
-      <div class="list" data-admin-cico-requests></div>
-    </section>
-    <section class="grid two admin-queues">
-      <article class="panel">
-        <div class="panel-head"><h1>Demandes merchant</h1><span class="badge" data-merchant-applications-count>0</span></div>
-        <div class="list" data-admin-merchant-applications></div>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h1>Litiges ouverts</h1><span class="badge" data-disputes-count>0</span></div>
-        <div class="list" data-admin-disputes></div>
-      </article>
-    </section>
-    <section class="grid two admin-queues">
-      <article class="panel">
-        <div class="panel-head"><h1>Créer un compte</h1><span class="badge">Admin</span></div>
-        <form data-admin-create-user-form>
-          <label>Nom complet
-            <input name="fullName" type="text" required>
-          </label>
-          <label>Email
-            <input name="email" type="email" required>
-          </label>
-          <label>Mot de passe
-            <input name="password" type="password" minlength="10" required>
-          </label>
-          <label>Rôle
-            <select name="role">
-              <option value="user">Utilisateur</option>
-              <option value="admin">Admin</option>
-            </select>
-          </label>
-          <button class="btn primary full" type="submit">Créer le compte</button>
-        </form>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h1>Ajouter des fonds</h1><span class="badge">Crédit USDT</span></div>
-        <form data-admin-manual-deposit-form>
-          <label>Email utilisateur
-            <input name="email" type="email" required placeholder="client@email.com">
-          </label>
-          <label>Montant USDT
-            <input name="amount" type="number" min="1" step="0.01" required>
-          </label>
-          <label>Note interne
-            <input name="note" type="text" maxlength="300" placeholder="Correction, cash, support...">
-          </label>
-          <button class="btn primary full" type="submit">Créditer le compte</button>
-        </form>
-      </article>
-    </section>
-    <section class="grid two admin-queues">
-      <article class="panel">
-        <div class="panel-head"><h1>Déduire des fonds</h1><span class="badge">Débit USDT</span></div>
-        <form data-admin-fund-deduct-form>
-          <label>Email utilisateur
-            <input name="email" type="email" required placeholder="client@email.com">
-          </label>
-          <label>Montant USDT
-            <input name="amount" type="number" min="1" step="0.01" required>
-          </label>
-          <label>Note interne
-            <input name="note" type="text" maxlength="300" placeholder="Correction, retrait manuel...">
-          </label>
-          <button class="btn secondary full" type="submit">Déduire le montant</button>
-        </form>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h1>Activer un investissement</h1><span class="badge">Admin</span></div>
-        <form data-admin-plan-activate-form>
-          <label>Email utilisateur
-            <input name="email" type="email" required placeholder="client@email.com">
-          </label>
-          <label>Plan
-            <select name="plan" required>
-              <option value="starter">Starter Trading</option>
-              <option value="smart">Smart Trading</option>
-              <option value="premium">Premium Trading</option>
-              <option value="elite">Elite Trading</option>
-            </select>
-          </label>
-          <label>Montant USDT
-            <input name="amount" type="number" min="10" step="0.01" required>
-          </label>
-          <button class="btn primary full" type="submit">Activer l'investissement</button>
-        </form>
-      </article>
-    </section>
-    <section class="grid two admin-queues">
-      <article class="panel">
-        <div class="panel-head"><h1>Niveaux bonus</h1><span class="badge">Parrainage</span></div>
-        <form data-admin-bonus-levels-form>
-          <label>Email partenaire
-            <input name="email" type="email" required placeholder="partenaire@email.com">
-          </label>
-          <label>Niveaux activés
-            <select name="levels" required>
-              <option value="5">5 niveaux</option>
-              <option value="10">10 niveaux</option>
-              <option value="15">15 niveaux</option>
-              <option value="20">20 niveaux</option>
-            </select>
-          </label>
-          <button class="btn primary full" type="submit">Activer les niveaux</button>
-        </form>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h1>Réparer parrainage</h1><span class="badge">Urgence</span></div>
-        <form data-admin-referral-repair-form>
-          <label>Email filleul
-            <input name="email" type="email" required placeholder="filleul@email.com">
-          </label>
-          <label>Email parrain
-            <input name="referrerEmail" type="email" required placeholder="parrain@email.com">
-          </label>
-          <button class="btn primary full" type="submit">Rattacher le parrain</button>
-        </form>
-      </article>
-    </section>
   </main>
-  <script src="../app.js?v=20260624-3"></script>
+  <script src="../app.js?v=20260626-3"></script>
 </body>
 </html>

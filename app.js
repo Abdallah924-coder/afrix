@@ -999,7 +999,7 @@ function renderAdmin(user) {
   const platformControls = user.platformControls || {};
 
   const depositTotal = adminTransactions
-    .filter((item) => item.type === "Depot")
+    .filter((item) => item.type === "Depot" && item.status === "Completed")
     .reduce((total, item) => total + Math.abs(Number(item.rawAmount || String(item.amount).replace(/[^\d.-]/g, ""))), 0);
   const withdrawalTotal = adminTransactions
     .filter((item) => item.type === "Retrait")
@@ -1050,6 +1050,7 @@ function renderAdmin(user) {
   }).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
   renderAdminUsers(filteredAdminUsers);
   renderAdminUserActivity(user.adminUsers || [], userQuery);
+  bindAdminSections();
   bindAdminUsersPanel();
 
   document.querySelectorAll("[data-admin-control]").forEach((control) => {
@@ -1063,6 +1064,36 @@ function renderAdmin(user) {
   });
 }
 
+function bindAdminSections() {
+  const triggers = document.querySelectorAll("[data-admin-section-trigger]");
+  const panels = document.querySelectorAll("[data-admin-section]");
+  if (!triggers.length || !panels.length) return;
+
+  const showSection = (section) => {
+    triggers.forEach((trigger) => trigger.classList.toggle("is-active", trigger.dataset.adminSectionTrigger === section));
+    panels.forEach((panel) => {
+      panel.hidden = panel.dataset.adminSection !== section;
+    });
+    if (section === "accounts") {
+      const usersSection = document.querySelector("[data-admin-users-section]");
+      if (usersSection) usersSection.hidden = false;
+    }
+  };
+
+  if (!document.body.dataset.adminSectionReady) {
+    document.body.dataset.adminSectionReady = "true";
+    triggers.forEach((trigger) => {
+      trigger.addEventListener("click", () => {
+        const section = trigger.dataset.adminSectionTrigger || "overview";
+        showSection(section);
+      });
+    });
+  }
+
+  const active = document.querySelector("[data-admin-section-trigger].is-active")?.dataset.adminSectionTrigger || "overview";
+  showSection(active);
+}
+
 function bindAdminUsersPanel() {
   const section = document.querySelector("[data-admin-users-section]");
   const toggle = document.querySelector("[data-admin-users-toggle]");
@@ -1072,12 +1103,18 @@ function bindAdminUsersPanel() {
   const setOpen = (open) => {
     section.hidden = !open;
     toggle.textContent = open ? "Fermer comptes" : "Comptes";
+    if (open) {
+      document.querySelector("[data-admin-section-trigger='accounts']")?.click();
+    }
     if (open) section.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   if (!toggle.dataset.boundAdminUsersToggle) {
     toggle.dataset.boundAdminUsersToggle = "true";
-    toggle.addEventListener("click", () => setOpen(section.hidden));
+    toggle.addEventListener("click", () => {
+      const activeSection = document.querySelector("[data-admin-section-trigger].is-active")?.dataset.adminSectionTrigger || "";
+      setOpen(section.hidden || activeSection !== "accounts");
+    });
   }
 
   if (close && !close.dataset.boundAdminUsersClose) {
