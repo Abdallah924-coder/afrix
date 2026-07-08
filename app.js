@@ -1,4 +1,5 @@
 const API_BASE = window.AFRIX_API_BASE || "/api";
+const APP_VERSION = "20260706-1";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
 const API_TIMEOUT_MS = 120_000;
 const MAX_PROOF_FILE_BYTES = 5 * 1024 * 1024;
@@ -7,6 +8,8 @@ const pageTitles = {
   dashboard: "Tableau de bord",
   wallet: "Wallet USDT",
   "afrix-money": "AFRIX Money",
+  swap: "AFRIX Swap",
+  staking: "AFRIX Staking",
   exchange: "Exchange",
   merchant: "Merchant",
   plans: "AFRIX Trading Program",
@@ -24,6 +27,8 @@ const navItems = [
   ["dashboard", "Dashboard", "/dashboard"],
   ["wallet", "Wallet USDT", "/wallet"],
   ["afrix-money", "AFRIX Money", "/afrix-money"],
+  ["swap", "AFRIX Swap", "/swap"],
+  ["staking", "AFRIX Staking", "/staking"],
   ["exchange", "Exchange", "/exchange"],
   ["merchant", "Merchant", "/merchant"],
   ["plans", "AFRIX Trading Program", "/plans"],
@@ -48,9 +53,16 @@ let deferredInstallPrompt = null;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 const plans = [
   { id: "starter", tier: "Bronze", name: "Starter Trading", minAmount: 10, amount: "10 USDT et plus", daily: "0,50%", duration: "90 jours", cycle: "capital bloque 90 jours + gains journaliers retirable", note: "Premier niveau obligatoire pour ouvrir la progression AFRIX." },
-  { id: "smart", tier: "Silver", name: "Smart Trading", minAmount: 50, amount: "50 USDT et plus", daily: "0,60%", duration: "180 jours", cycle: "capital bloque 180 jours + gains journaliers retirable", note: "Ouvert apres 500 USDT d'activite dans Starter Trading.", requiredPlan: "starter", requiredAmount: 500, featured: true },
-  { id: "premium", tier: "Gold", name: "Premium Trading", minAmount: 300, amount: "300 USDT et plus", daily: "0,70%", duration: "270 jours", cycle: "capital bloque 270 jours + gains journaliers retirable", note: "Ouvert apres 2500 USDT d'activite dans Smart Trading.", requiredPlan: "smart", requiredAmount: 2500 },
-  { id: "elite", tier: "Elite", name: "Elite Trading", minAmount: 500, amount: "500 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "capital bloque 365 jours + gains journaliers retirable", note: "Ouvert apres 5000 USDT d'activite dans Premium Trading.", requiredPlan: "premium", requiredAmount: 5000 }
+  { id: "smart", tier: "Silver", name: "Smart Trading", minAmount: 50, amount: "50 USDT et plus", daily: "0,60%", duration: "180 jours", cycle: "capital bloque 180 jours + gains journaliers retirable", note: "Ouvert avec une participation Smart Staking de 5 000 GRSC.", requiredStakePlan: "smart", requiredStakeAmount: 5000, requiredStakeName: "Smart Staking", featured: true },
+  { id: "premium", tier: "Gold", name: "Premium Trading", minAmount: 300, amount: "300 USDT et plus", daily: "0,70%", duration: "270 jours", cycle: "capital bloque 270 jours + gains journaliers retirable", note: "Ouvert avec une participation Premium Staking de 25 000 GRSC.", requiredStakePlan: "premium", requiredStakeAmount: 25000, requiredStakeName: "Premium Staking" },
+  { id: "elite", tier: "Elite", name: "Elite Trading", minAmount: 500, amount: "500 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "capital bloque 365 jours + gains journaliers retirable", note: "Ouvert avec une participation Elite Staking de 50 000 GRSC.", requiredStakePlan: "elite", requiredStakeAmount: 50000, requiredStakeName: "Elite Staking" }
+];
+
+const stakingPlans = [
+  { id: "starter", tier: "Starter", name: "Starter Staking", minAmount: 100, amount: "100 GRSC et plus", rewardRate: 0.035, objective: "3,5%", exitValue: "103,5%", durationDays: 90, duration: "90 jours" },
+  { id: "smart", tier: "Smart", name: "Smart Staking", minAmount: 500, amount: "500 GRSC et plus", rewardRate: 0.10, objective: "10%", exitValue: "110%", durationDays: 180, duration: "180 jours", featured: true },
+  { id: "premium", tier: "Premium", name: "Premium Staking", minAmount: 2500, amount: "2 500 GRSC et plus", rewardRate: 0.17, objective: "17%", exitValue: "117%", durationDays: 270, duration: "270 jours" },
+  { id: "elite", tier: "Elite", name: "Elite Staking", minAmount: 5000, amount: "5 000 GRSC et plus", rewardRate: 0.25, objective: "25%", exitValue: "125%", durationDays: 365, duration: "365 jours" }
 ];
 
 function tradingPlanName(nameOrId = "") {
@@ -66,6 +78,7 @@ const emptyUser = {
   fullName: "",
   email: "",
   balance: 0,
+  grsBalance: 0,
   activity: 0,
   team: 0,
   bonus: 0,
@@ -92,13 +105,32 @@ const emptyUser = {
   merchantApplications: [],
   disputes: [],
   activePlans: [],
+  activeStakes: [],
   bonusLevelsOverride: 0,
   platformControls: {},
+    swap: {
+      grsCoinPriceUsdt: 0.0725,
+      grsCoinPerUsdt: 13.79310345,
+      contractAddress: "",
+      grsDepositAddress: "",
+      usdtBep20DepositAddress: "",
+      swapFeeRate: 0.05,
+      bonusRate: 0.10,
+      bonusLevelsCount: 5,
+      direction: "USDT_GRSC",
+      market: { totalSupply: 4200000, issuedSupply: 0, remainingSupply: 4200000, issuedPercent: 0 }
+    },
   role: "user"
 };
 
 const formatUsdt = (value) => `${Number(value || 0).toFixed(2)} USDT`;
+const formatGrsc = (value) => `${Number(value || 0).toFixed(2)} GRSC`;
+const formatTokenPrice = (value) => `${Number(value || 0).toFixed(4)} USDT`;
 const formatXaf = (value) => `${Math.round(Number(value || 0)).toLocaleString("fr-FR")} XAF`;
+
+function canUseBackoffice(user = {}) {
+  return user.role === "admin" || user.role === "developer";
+}
 
 function normalizeCountry(value) {
   return String(value || "")
@@ -246,9 +278,11 @@ function normalizeUser(user) {
     paymentTargets: user?.paymentTargets || {},
     transactions: Array.isArray(user?.transactions) ? user.transactions : [],
     adminTransactions: Array.isArray(user?.adminTransactions) ? user.adminTransactions : [],
+    adminUsers: Array.isArray(user?.adminUsers) ? user.adminUsers : [],
     directPartners: Array.isArray(user?.directPartners) ? user.directPartners : [],
     merchants: Array.isArray(user?.merchants) ? user.merchants : [],
     merchantWallet: { ...emptyUser.merchantWallet, ...(user?.merchantWallet || {}) },
+    swap: { ...emptyUser.swap, ...(user?.swap || {}) },
     cicoRequests: Array.isArray(user?.cicoRequests) ? user.cicoRequests : [],
     exchangeAds: Array.isArray(user?.exchangeAds) ? user.exchangeAds : [],
     exchangeOrders: Array.isArray(user?.exchangeOrders) ? user.exchangeOrders : [],
@@ -256,7 +290,10 @@ function normalizeUser(user) {
     merchantApplications: Array.isArray(user?.merchantApplications) ? user.merchantApplications : [],
     disputes: Array.isArray(user?.disputes) ? user.disputes : [],
     activePlans: Array.isArray(user?.activePlans) ? user.activePlans : [],
+    activeStakes: Array.isArray(user?.activeStakes) ? user.activeStakes : [],
+    ledgerEntries: Array.isArray(user?.ledgerEntries) ? user.ledgerEntries : [],
     platformControls: user?.platformControls || {},
+    platformAccount: user?.platformAccount || {},
     country: user?.country || ""
   };
 }
@@ -337,7 +374,7 @@ function showLoadError(message) {
 function renderSidebar(page, user = emptyUser) {
   const sidebar = document.querySelector("[data-sidebar]");
   if (!sidebar) return;
-  const visibleNavItems = navItems.filter(([key]) => key !== "admin" || user.role === "admin");
+  const visibleNavItems = navItems.filter(([key]) => key !== "admin" || canUseBackoffice(user));
 
   sidebar.innerHTML = `
     <a class="brand" href="/">
@@ -439,12 +476,13 @@ function showPwaInstallCard({ force = false, instructionsOnly = false } = {}) {
 }
 
 function setupPwa() {
-  if (!document.querySelector("link[rel='manifest']")) {
-    const manifest = document.createElement("link");
+  let manifest = document.querySelector("link[rel='manifest']");
+  if (!manifest) {
+    manifest = document.createElement("link");
     manifest.rel = "manifest";
-    manifest.href = "/manifest.webmanifest";
     document.head.appendChild(manifest);
   }
+  manifest.href = `/manifest.webmanifest?v=${APP_VERSION}`;
   if (!document.querySelector("meta[name='theme-color']")) {
     const theme = document.createElement("meta");
     theme.name = "theme-color";
@@ -453,7 +491,14 @@ function setupPwa() {
   }
   if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+      navigator.serviceWorker.register(`/service-worker.js?v=${APP_VERSION}`)
+        .then((registration) => registration.update())
+        .catch(() => {});
+    });
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (sessionStorage.getItem("afrix_sw_reloaded") === APP_VERSION) return;
+      sessionStorage.setItem("afrix_sw_reloaded", APP_VERSION);
+      window.location.reload();
     });
   }
   window.addEventListener("beforeinstallprompt", (event) => {
@@ -479,6 +524,7 @@ function renderContact() {
 
 function renderDashboard(user) {
   const balance = document.querySelector("[data-balance]");
+  const grsBalance = document.querySelector("[data-grs-balance]");
   const activity = document.querySelector("[data-activity]");
   const levelNote = document.querySelector("[data-level-note]");
   const team = document.querySelector("[data-team]");
@@ -494,6 +540,7 @@ function renderDashboard(user) {
   );
 
   if (balance) balance.textContent = formatUsdt(user.balance);
+  if (grsBalance) grsBalance.textContent = formatGrsc(user.grsBalance);
   if (activity) activity.textContent = `${Number(user.activity || 0).toFixed(0)} USDT`;
   if (levelNote) levelNote.textContent = `${activeLevels} niveau${activeLevels > 1 ? "x" : ""} actif${activeLevels > 1 ? "s" : ""}`;
   if (team) team.textContent = Number(user.team || 0);
@@ -629,21 +676,100 @@ function renderWallet(user) {
   updateWithdrawFields();
 }
 
+function renderSwap(user) {
+  const usdtBalances = document.querySelectorAll("[data-swap-usdt-balance]");
+  const grsBalances = document.querySelectorAll("[data-swap-grs-balance]");
+  const rates = document.querySelectorAll("[data-swap-rate]");
+  const estimatedValues = document.querySelectorAll("[data-grs-estimated-value]");
+  const marketTotalSupply = document.querySelector("[data-market-total-supply]");
+  const marketIssuedSupply = document.querySelector("[data-market-issued-supply]");
+  const marketRemainingSupply = document.querySelector("[data-market-remaining-supply]");
+  const marketSupplyProgress = document.querySelector("[data-market-supply-progress]");
+  const contractAddress = document.querySelector("[data-grs-contract-address]");
+  const grsDepositAddress = document.querySelector("[data-grs-deposit-address]");
+  const usdtBep20Address = document.querySelector("[data-grs-usdt-bep20-address]");
+  const amountInput = document.querySelector("[data-swap-amount]");
+  const preview = document.querySelector("[data-swap-preview]");
+  const depositAmountInput = document.querySelector("[data-grs-deposit-amount]");
+  const depositPreview = document.querySelector("[data-grs-deposit-preview]");
+  const usdtDepositAmountInput = document.querySelector("[data-grs-usdt-deposit-amount]");
+  const usdtDepositPreview = document.querySelector("[data-grs-usdt-deposit-preview]");
+  if (!usdtBalances.length && !grsBalances.length && !rates.length && !amountInput && !depositAmountInput) return;
+
+  const grsCoinPriceUsdt = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
+  const bonusRate = Number.isFinite(Number(user.swap?.bonusRate))
+    ? Number(user.swap.bonusRate)
+    : Array.isArray(user.swap?.bonusRates)
+    ? user.swap.bonusRates.reduce((total, rate) => total + Number(rate || 0), 0)
+    : 0.10;
+  const totalFeeRate = Number(user.swap?.swapFeeRate || 0);
+  const market = { ...emptyUser.swap.market, ...(user.swap?.market || {}) };
+  const issuedPercent = Math.max(0, Math.min(100, Number(market.issuedPercent || 0)));
+  usdtBalances.forEach((element) => { element.textContent = formatUsdt(user.balance); });
+  grsBalances.forEach((element) => { element.textContent = formatGrsc(user.grsBalance); });
+  rates.forEach((element) => { element.textContent = grsCoinPriceUsdt ? `1 GRSC = ${formatTokenPrice(grsCoinPriceUsdt)}` : "Prix indisponible"; });
+  estimatedValues.forEach((element) => { element.textContent = formatUsdt(Number(user.grsBalance || 0) * grsCoinPriceUsdt); });
+  if (marketTotalSupply) marketTotalSupply.textContent = formatGrsc(market.totalSupply);
+  if (marketIssuedSupply) marketIssuedSupply.textContent = formatGrsc(market.issuedSupply);
+  if (marketRemainingSupply) marketRemainingSupply.textContent = formatGrsc(market.remainingSupply);
+  if (marketSupplyProgress) {
+    marketSupplyProgress.style.width = `${issuedPercent}%`;
+    marketSupplyProgress.setAttribute("aria-label", `${issuedPercent.toFixed(2)}% de l'offre GRSCOIN emise`);
+  }
+  if (contractAddress) contractAddress.textContent = user.swap?.contractAddress || "Adresse non configuree";
+  if (grsDepositAddress) grsDepositAddress.textContent = user.swap?.grsDepositAddress || "Adresse non configuree";
+  if (usdtBep20Address) usdtBep20Address.textContent = user.swap?.usdtBep20DepositAddress || "Adresse non configuree";
+
+  const updatePreview = () => {
+    const amount = Number(amountInput?.value || 0);
+    const netAmount = amount > 0 ? amount * (1 - totalFeeRate) : 0;
+    const grsAmount = netAmount > 0 && grsCoinPriceUsdt ? netAmount / grsCoinPriceUsdt : 0;
+    if (preview) preview.textContent = grsAmount ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres 5% de frais de swap` : "Saisissez un montant USDT.";
+  };
+  const updateDepositPreview = () => {
+    const amount = Number(depositAmountInput?.value || 0);
+    if (depositPreview) depositPreview.textContent = amount > 0 ? `${formatGrsc(amount)} a crediter.` : "Saisissez le montant GRSCOIN a crediter.";
+  };
+  const updateUsdtDepositPreview = () => {
+    const amount = Number(usdtDepositAmountInput?.value || 0);
+    const grsAmount = amount > 0 && grsCoinPriceUsdt ? amount / grsCoinPriceUsdt : 0;
+    if (usdtDepositPreview) usdtDepositPreview.textContent = amount > 0 ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres validation admin. Commissions et bonus separes.` : "Saisissez le montant USDT a convertir.";
+  };
+
+  if (amountInput && !amountInput.dataset.boundSwapPreview) {
+    amountInput.dataset.boundSwapPreview = "true";
+    amountInput.addEventListener("input", updatePreview);
+  }
+  if (depositAmountInput && !depositAmountInput.dataset.boundGrsDepositPreview) {
+    depositAmountInput.dataset.boundGrsDepositPreview = "true";
+    depositAmountInput.addEventListener("input", updateDepositPreview);
+  }
+  if (usdtDepositAmountInput && !usdtDepositAmountInput.dataset.boundGrsUsdtDepositPreview) {
+    usdtDepositAmountInput.dataset.boundGrsUsdtDepositPreview = "true";
+    usdtDepositAmountInput.addEventListener("input", updateUsdtDepositPreview);
+  }
+  updatePreview();
+  updateDepositPreview();
+  updateUsdtDepositPreview();
+}
+
 function renderPlans(user) {
   const list = document.querySelector("[data-plans-list]");
   if (!list) return;
   renderActivePlans(user);
 
-  const activityByPlan = (planId) => (user.activePlans || [])
-    .filter((activePlan) => activePlan.planId === planId)
-    .reduce((total, activePlan) => total + Number(activePlan.amount || 0), 0);
+  const stakingActivityByPlan = (planId) => (user.activeStakes || [])
+    .filter((stake) => stake.planId === planId)
+    .reduce((total, stake) => total + Number(stake.amount || 0), 0);
+  const totalStakingActivity = (user.activeStakes || [])
+    .reduce((total, stake) => total + Number(stake.amount || 0), 0);
 
   list.innerHTML = plans.map((plan) => {
-    const currentActivity = plan.requiredPlan ? activityByPlan(plan.requiredPlan) : 0;
-    const isUnlocked = !plan.requiredPlan || currentActivity >= Number(plan.requiredAmount || 0);
-    const requirement = plan.requiredPlan
-      ? `Condition: ${Number(plan.requiredAmount || 0).toLocaleString("fr-FR")} USDT investis dans ${plans.find((item) => item.id === plan.requiredPlan)?.name || "le plan precedent"} - Actuel: ${formatUsdt(currentActivity)}`
-      : "Condition: ouverture initiale avec 10 USDT.";
+    const currentActivity = plan.requiredStakePlan ? stakingActivityByPlan(plan.requiredStakePlan) : 0;
+    const isUnlocked = !plan.requiredStakePlan || currentActivity >= Number(plan.requiredStakeAmount || 0);
+    const requirement = plan.requiredStakePlan
+      ? `Condition: ${Number(plan.requiredStakeAmount || 0).toLocaleString("fr-FR")} GRSC dans ${plan.requiredStakeName} - Actuel: ${formatGrsc(currentActivity)}`
+      : "Condition: ouverture initiale sans staking requis.";
 
     return `
     <article class="${plan.featured ? "featured" : ""} ${isUnlocked ? "" : "locked"}">
@@ -657,12 +783,12 @@ function renderPlans(user) {
       </div>
       <p>${plan.note}</p>
       <small>${requirement}</small>
-      <small>Solde disponible: ${formatUsdt(user.balance)} - Activite totale: ${Number(user.activity || 0).toFixed(0)} USDT</small>
+      <small>Solde disponible: ${formatUsdt(user.balance)} - Staking cumule: ${formatGrsc(totalStakingActivity)} / 80 000.00 GRSC</small>
       <label class="plan-investment-input">
         Montant a investir
         <input type="number" min="10" step="0.01" value="${plan.minAmount}" data-plan-amount>
       </label>
-      <button class="btn primary" type="button" data-plan="${escapeHtml(plan.name)}" data-plan-min="${plan.minAmount}">${isUnlocked ? "Activer" : "Verrouille"}</button>
+      <button class="btn primary" type="button" data-plan="${escapeHtml(plan.name)}" data-plan-min="${plan.minAmount}" ${isUnlocked ? "" : "disabled"}>${isUnlocked ? "Activer" : "Verrouille"}</button>
     </article>
   `;
   }).join("");
@@ -708,6 +834,92 @@ function renderActivePlans(user) {
       </article>
     `;
   }).join("") : `<p class="muted">Aucun investissement actif pour le moment.</p>`;
+}
+
+function renderStaking(user) {
+  const plansList = document.querySelector("[data-staking-plans-list]");
+  const activeList = document.querySelector("[data-active-stakes-list]");
+  const activeCount = document.querySelector("[data-active-stakes-count]");
+  const grsBalance = document.querySelector("[data-staking-grs-balance]");
+  const lockedBalance = document.querySelector("[data-staking-locked-balance]");
+  const projectedRewards = document.querySelector("[data-staking-projected-rewards]");
+  if (!plansList && !activeList && !grsBalance) return;
+
+  const activeStakes = (user.activeStakes || [])
+    .slice()
+    .sort((a, b) => String(b.activatedAt || "").localeCompare(String(a.activatedAt || "")));
+  const lockedTotal = activeStakes
+    .filter((stake) => stake.status === "active")
+    .reduce((total, stake) => total + Number(stake.amount || 0), 0);
+  const rewardsTotal = activeStakes
+    .filter((stake) => stake.status === "active")
+    .reduce((total, stake) => total + Number(stake.rewardAmount || 0), 0);
+
+  if (grsBalance) grsBalance.textContent = formatGrsc(user.grsBalance);
+  if (lockedBalance) lockedBalance.textContent = formatGrsc(lockedTotal);
+  if (projectedRewards) projectedRewards.textContent = formatGrsc(rewardsTotal);
+  if (activeCount) activeCount.textContent = activeStakes.filter((stake) => stake.status === "active").length;
+
+  if (plansList) {
+    plansList.innerHTML = stakingPlans.map((plan) => {
+      const canActivate = Number(user.grsBalance || 0) >= plan.minAmount;
+      return `
+        <article class="${plan.featured ? "featured" : ""}">
+          <span class="plan-tier">${escapeHtml(plan.tier)}</span>
+          <h2>${escapeHtml(plan.name)}</h2>
+          <strong>${escapeHtml(plan.amount)}</strong>
+          <div class="plan-metrics">
+            <small><span>Cycle</span>${escapeHtml(plan.duration)}</small>
+            <small><span>Objectif</span>${escapeHtml(plan.objective)}</small>
+            <small><span>Sortie visee</span>${escapeHtml(plan.exitValue)}</small>
+          </div>
+          <p>Verrouillage temporaire de GRSCOIN avec restitution du capital et du resultat vise a l'issue du cycle.</p>
+          <small>Solde disponible: ${formatGrsc(user.grsBalance)}</small>
+          <label class="plan-investment-input">
+            Montant a staker
+            <input type="number" min="${plan.minAmount}" step="0.01" value="${plan.minAmount}" data-staking-amount>
+          </label>
+          <button class="btn primary" type="button" data-staking-plan="${escapeHtml(plan.id)}">${canActivate ? "Staker" : "Solde insuffisant"}</button>
+        </article>
+      `;
+    }).join("");
+  }
+
+  if (activeList) {
+    activeList.innerHTML = activeStakes.length ? activeStakes.map((stake) => {
+      const start = Date.parse(stake.activatedAt || "");
+      const end = Date.parse(stake.endsAt || "");
+      const now = Date.now();
+      const totalMs = Number.isFinite(start) && Number.isFinite(end) ? Math.max(1, end - start) : 1;
+      const elapsedMs = Number.isFinite(start) ? Math.max(0, now - start) : 0;
+      const percent = stake.status === "completed" ? 100 : Math.max(0, Math.min(100, Math.round((elapsedMs / totalMs) * 100)));
+      const remainingDays = Number.isFinite(end) ? Math.max(0, Math.ceil((end - now) / 86_400_000)) : Number(stake.durationDays || 0);
+      const canClaim = stake.status === "active" && Number.isFinite(end) && now >= end;
+      const status = stake.status === "completed" ? "Reclame" : canClaim ? "Disponible" : "Actif";
+      return `
+        <article class="active-plan-card">
+          <div class="active-plan-head">
+            <span>
+              <strong>${escapeHtml(stake.name || "Staking GRSC")}</strong>
+              <small>${escapeHtml(status)} depuis ${escapeHtml(String(stake.activatedAt || "").slice(0, 10) || "-")}</small>
+            </span>
+            <b>${percent}%</b>
+          </div>
+          <div class="progress active-plan-progress" aria-label="Progression staking ${percent}%">
+            <span style="width:${percent}%"></span>
+          </div>
+          <div class="active-plan-stats">
+            <small><span>Capital bloque</span>${formatGrsc(stake.amount || 0)}</small>
+            <small><span>Objectif</span>${Number((Number(stake.rewardRate || 0) * 100).toFixed(2)).toLocaleString("fr-FR")}%</small>
+            <small><span>Resultat vise</span>${formatGrsc(stake.rewardAmount || 0)}</small>
+            <small><span>Sortie visee</span>${formatGrsc(stake.maturityAmount || 0)}</small>
+            <small><span>Jours restants</span>${remainingDays}</small>
+          </div>
+          ${stake.status === "active" ? `<button class="btn secondary" type="button" data-staking-claim="${escapeHtml(stake.id)}" ${canClaim ? "" : "disabled"}>Reclamer</button>` : ""}
+        </article>
+      `;
+    }).join("") : `<p class="muted">Aucun staking actif pour le moment.</p>`;
+  }
 }
 
 function renderNetwork(user) {
@@ -984,7 +1196,7 @@ function updateP2pFeePreview() {
 }
 
 function renderAdmin(user) {
-  if (user.role !== "admin") return;
+  if (!canUseBackoffice(user)) return;
   const adminTransactions = Array.isArray(user.adminTransactions) ? user.adminTransactions : [];
   const userQuery = String(document.querySelector("[data-admin-user-search]")?.value || "").trim().toLowerCase();
   const txQuery = String(document.querySelector("[data-admin-tx-search]")?.value || "").trim().toLowerCase();
@@ -1009,23 +1221,23 @@ function renderAdmin(user) {
   const adminWithdrawals = document.querySelector("[data-admin-withdrawals]");
   const adminTx = document.querySelector("[data-admin-tx]");
   const adminTeam = document.querySelector("[data-admin-team]");
-  const pendingDepositsCount = document.querySelector("[data-pending-deposits-count]");
-  const pendingWithdrawalsCount = document.querySelector("[data-pending-withdrawals-count]");
+  const pendingDepositsCounts = document.querySelectorAll("[data-pending-deposits-count]");
+  const pendingWithdrawalsCounts = document.querySelectorAll("[data-pending-withdrawals-count]");
   const cicoRequestsCount = document.querySelector("[data-cico-requests-count]");
   const merchantApplicationsCount = document.querySelector("[data-merchant-applications-count]");
   const disputesCount = document.querySelector("[data-disputes-count]");
-  const adminUsersCount = document.querySelector("[data-admin-users-count]");
+  const adminUsersCounts = document.querySelectorAll("[data-admin-users-count]");
 
   if (adminDeposits) adminDeposits.textContent = formatUsdt(depositTotal);
   if (adminWithdrawals) adminWithdrawals.textContent = formatUsdt(withdrawalTotal);
   if (adminTx) adminTx.textContent = adminTransactions.length;
   if (adminTeam) adminTeam.textContent = Number(user.team || 0);
-  if (pendingDepositsCount) pendingDepositsCount.textContent = pendingDeposits.length;
-  if (pendingWithdrawalsCount) pendingWithdrawalsCount.textContent = pendingWithdrawals.length;
+  pendingDepositsCounts.forEach((item) => { item.textContent = pendingDeposits.length; });
+  pendingWithdrawalsCounts.forEach((item) => { item.textContent = pendingWithdrawals.length; });
   if (cicoRequestsCount) cicoRequestsCount.textContent = user.cicoRequests.length;
   if (merchantApplicationsCount) merchantApplicationsCount.textContent = user.merchantApplications.length;
   if (disputesCount) disputesCount.textContent = user.disputes.length;
-  if (adminUsersCount) adminUsersCount.textContent = Array.isArray(user.adminUsers) ? user.adminUsers.length : 0;
+  adminUsersCounts.forEach((item) => { item.textContent = Array.isArray(user.adminUsers) ? user.adminUsers.length : 0; });
   const adminStats = user.adminStats || {};
   document.querySelectorAll("[data-admin-stat]").forEach((item) => {
     item.textContent = Number(adminStats[item.dataset.adminStat] || 0).toLocaleString("fr-FR");
@@ -1183,12 +1395,15 @@ function renderQueue(selector, rows, options = {}) {
       item.date || "",
       `Ref. ${item.reference || item.id || ""}`,
       item.metadata?.method ? `Methode ${item.metadata.method.toUpperCase()}` : "",
+      item.metadata?.asset === "GRSC_PURCHASE" ? "Achat GRSCOIN" : "",
+      item.metadata?.grsAmount ? `GRS ${formatGrsc(item.metadata.grsAmount)}` : "",
+      item.metadata?.priceUsdt ? `Prix ${formatUsdt(item.metadata.priceUsdt)}` : "",
       item.metadata?.txRef ? `TX ${item.metadata.txRef}` : "",
       item.metadata?.address ? `Adresse ${item.metadata.address}` : "",
       item.metadata?.phone ? `Tel ${item.metadata.phone}` : "",
       item.metadata?.beneficiary ? `Nom ${item.metadata.beneficiary}` : "",
-      item.metadata?.fee ? `Frais ${formatUsdt(item.metadata.fee)}` : "",
-      item.metadata?.netAmount ? `Net ${formatUsdt(item.metadata.netAmount)}` : ""
+      item.metadata?.fee ? `Frais ${item.metadata?.asset === "GRSC_WITHDRAWAL" ? formatGrsc(item.metadata.fee) : formatUsdt(item.metadata.fee)}` : "",
+      item.metadata?.netAmount ? `Net ${item.metadata?.asset === "GRSC_WITHDRAWAL" ? formatGrsc(item.metadata.netAmount) : formatUsdt(item.metadata.netAmount)}` : ""
     ].filter(Boolean).join(" - ");
 
     return `
@@ -1196,6 +1411,7 @@ function renderQueue(selector, rows, options = {}) {
       <span>${escapeHtml(item.description)}<small>${escapeHtml(details)}</small></span>
       <strong>${escapeHtml(item.amount)}</strong>
       ${options.proof && item.hasProof ? `<button class="btn secondary" type="button" data-admin-proof="${escapeHtml(item.id || item.reference || "")}">Capture</button>` : ""}
+      ${item.metadata?.address ? `<button class="btn secondary" type="button" data-copy-admin-address="${escapeHtml(item.metadata.address)}">Copier adresse</button>` : ""}
       <button class="btn primary" type="button" data-admin-action="approve" data-admin-id="${escapeHtml(item.id || item.reference || "")}" data-admin-approve="${escapeHtml(item.id || item.reference || "")}">Valider</button>
       <button class="btn secondary" type="button" data-admin-action="reject" data-admin-id="${escapeHtml(item.id || item.reference || "")}" data-admin-reject="${escapeHtml(item.id || item.reference || "")}">Rejeter</button>
     </div>
@@ -1427,6 +1643,28 @@ function setupActions(user) {
     showToast("Coordonnees de depot copiees.");
   });
 
+  [
+    ["[data-copy-grs-contract]", user.swap?.contractAddress],
+    ["[data-copy-grs-deposit]", user.swap?.grsDepositAddress],
+    ["[data-copy-grs-usdt-bep20]", user.swap?.usdtBep20DepositAddress]
+  ].forEach(([selector, value]) => {
+    const button = document.querySelector(selector);
+    if (!button || button.dataset.boundCopySwapAddress) return;
+    button.dataset.boundCopySwapAddress = "true";
+    button.addEventListener("click", async () => {
+      if (!value) {
+        showToast("Adresse non configuree.", "error");
+        return;
+      }
+      try {
+        await navigator.clipboard?.writeText(value);
+        showToast("Adresse copiee.");
+      } catch {
+        showToast("Copie impossible sur ce navigateur.", "error");
+      }
+    });
+  });
+
   document.querySelector("[data-export]")?.addEventListener("click", async () => {
     try {
       const csv = await apiRequest("/transactions/export");
@@ -1507,6 +1745,161 @@ function setupActions(user) {
   });
   }
 
+  const swapForm = document.querySelector("[data-swap-form]");
+  if (swapForm && !swapForm.dataset.boundSwap) {
+    swapForm.dataset.boundSwap = "true";
+    swapForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const amount = Number(form.querySelector("[name='amount']")?.value || 0);
+      if (!Number.isFinite(amount) || amount < 1) {
+        showToast("Montant minimum swap: 1 USDT.", "error");
+        return;
+      }
+      if (amount > Number(user.balance || 0)) {
+        showToast(`Solde USDT insuffisant. Disponible: ${formatUsdt(user.balance)}.`, "error");
+        return;
+      }
+      const submitButton = form.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, "Conversion...");
+      try {
+        const response = await apiJson("/swap/usdt-to-grsc", { amount }, { timeoutMs: 20_000 });
+        showToast(`Swap effectue: ${formatGrsc(response.grsAmount)} credites.`);
+        form.reset();
+        const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((payload) => normalizeUser(payload.user || payload));
+        renderProtectedShell(document.body.dataset.page, freshUser);
+      } catch (error) {
+        showToast(error.message, "error");
+      } finally {
+        restoreButton();
+      }
+    });
+  }
+
+  const grsDepositForm = document.querySelector("[data-grs-deposit-form]");
+  if (grsDepositForm && !grsDepositForm.dataset.boundGrsDeposit) {
+    grsDepositForm.dataset.boundGrsDeposit = "true";
+    grsDepositForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const formError = firstFormError(form);
+      if (formError) {
+        showToast(formError, "error");
+        return;
+      }
+      const amount = Number(form.querySelector("[name='amount']")?.value || 0);
+      if (!Number.isFinite(amount) || amount < 1) {
+        showToast("Montant minimum depot GRSCOIN: 1 GRSC.", "error");
+        return;
+      }
+      const submitButton = form.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, "Envoi...");
+      try {
+        const response = await apiRequest("/swap/grscoin-deposits", {
+          method: "POST",
+          headers: authHeaders(),
+          body: new FormData(form),
+          timeoutMs: 30_000
+        });
+        showToast(`Demande de depot envoyee: ${formatGrsc(response.grsAmount)} (${formatUsdt(response.usdtAmount)}).`);
+        form.reset();
+        const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((payload) => normalizeUser(payload.user || payload));
+        renderProtectedShell(document.body.dataset.page, freshUser);
+      } catch (error) {
+        showToast(error.message, "error");
+      } finally {
+        restoreButton();
+      }
+    });
+  }
+
+  const grsUsdtDepositForm = document.querySelector("[data-grs-usdt-deposit-form]");
+  if (grsUsdtDepositForm && !grsUsdtDepositForm.dataset.boundGrsUsdtDeposit) {
+    grsUsdtDepositForm.dataset.boundGrsUsdtDeposit = "true";
+    grsUsdtDepositForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const formError = firstFormError(form);
+      if (formError) {
+        showToast(formError, "error");
+        return;
+      }
+      const amount = Number(form.querySelector("[name='amount']")?.value || 0);
+      if (!Number.isFinite(amount) || amount < 1) {
+        showToast("Montant minimum depot USDT BEP20: 1 USDT.", "error");
+        return;
+      }
+      const submitButton = form.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, "Envoi...");
+      try {
+        const response = await apiRequest("/swap/grscoin-deposits", {
+          method: "POST",
+          headers: authHeaders(),
+          body: new FormData(form),
+          timeoutMs: 30_000
+        });
+        showToast(`Depot USDT envoye: ${formatUsdt(response.usdtAmount)} -> ${formatGrsc(response.grsAmount)}.`);
+        form.reset();
+        const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((payload) => normalizeUser(payload.user || payload));
+        renderProtectedShell(document.body.dataset.page, freshUser);
+      } catch (error) {
+        showToast(error.message, "error");
+      } finally {
+        restoreButton();
+      }
+    });
+  }
+
+  const grsWithdrawForm = document.querySelector("[data-grs-withdraw-form]");
+  if (grsWithdrawForm && !grsWithdrawForm.dataset.boundGrsWithdraw) {
+    grsWithdrawForm.dataset.boundGrsWithdraw = "true";
+    const grsWithdrawAmount = grsWithdrawForm.querySelector("[data-grs-withdraw-amount]");
+    const grsWithdrawPreview = grsWithdrawForm.querySelector("[data-grs-withdraw-preview]");
+    const updateGrsWithdrawPreview = () => {
+      const amount = Number(grsWithdrawAmount?.value || 0);
+      const fee = amount > 0 ? amount * 0.10 : 0;
+      const net = Math.max(0, amount - fee);
+      if (grsWithdrawPreview) {
+        grsWithdrawPreview.textContent = amount > 0
+          ? `Frais 10%: ${formatGrsc(fee)}. Net a recevoir: ${formatGrsc(net)}.`
+          : "Frais retrait: 10%. Saisissez un montant GRSCOIN.";
+      }
+    };
+    grsWithdrawAmount?.addEventListener("input", updateGrsWithdrawPreview);
+    updateGrsWithdrawPreview();
+    grsWithdrawForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const formError = firstFormError(form);
+      if (formError) {
+        showToast(formError, "error");
+        return;
+      }
+      const amount = Number(form.querySelector("[name='amount']")?.value || 0);
+      if (!Number.isFinite(amount) || amount < 1) {
+        showToast("Montant minimum retrait GRSCOIN: 1 GRSC.", "error");
+        return;
+      }
+      if (amount > Number(user.grsBalance || 0)) {
+        showToast(`Solde GRSCOIN insuffisant. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
+        return;
+      }
+      const submitButton = form.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, "Envoi...");
+      try {
+        await apiJson("/swap/grscoin-withdrawals", formToObject(form), { timeoutMs: 20_000 });
+        showToast("Demande de retrait GRSCOIN soumise.");
+        form.reset();
+        const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((payload) => normalizeUser(payload.user || payload));
+        renderProtectedShell(document.body.dataset.page, freshUser);
+      } catch (error) {
+        showToast(error.message, "error");
+      } finally {
+        restoreButton();
+      }
+    });
+  }
+
   bindClickOnce("[data-plans-list]", async (event) => {
     const button = event.target.closest("[data-plan]");
     if (!button) return;
@@ -1536,6 +1929,50 @@ function setupActions(user) {
       return;
     }
     restoreButton();
+  });
+
+  bindClickOnce("[data-staking-plans-list]", async (event) => {
+    const button = event.target.closest("[data-staking-plan]");
+    if (!button) return;
+    const article = button.closest("article");
+    const amount = Number(article?.querySelector("[data-staking-amount]")?.value || 0);
+    const plan = stakingPlans.find((item) => item.id === button.dataset.stakingPlan);
+    const minAmount = Number(plan?.minAmount || 100);
+    if (!Number.isFinite(amount) || amount < minAmount) {
+      showToast(`Montant minimum ${plan?.name || "staking"}: ${formatGrsc(minAmount)}.`, "error");
+      return;
+    }
+    if (amount > Number(user.grsBalance || 0)) {
+      showToast(`Solde GRSCOIN insuffisant. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
+      return;
+    }
+    const restoreButton = setButtonLoading(button, "Activation...");
+    try {
+      const response = await apiJson("/staking/activate", { amount, plan: button.dataset.stakingPlan }, { timeoutMs: 25_000 });
+      showToast(`Staking active: ${formatGrsc(response.activeStake?.amount || amount)}.`);
+      const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
+      renderProtectedShell(document.body.dataset.page, freshUser);
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
+
+  bindClickOnce("[data-active-stakes-list]", async (event) => {
+    const button = event.target.closest("[data-staking-claim]");
+    if (!button) return;
+    const restoreButton = setButtonLoading(button, "Reclamation...");
+    try {
+      const response = await apiJson(`/staking/${encodeURIComponent(button.dataset.stakingClaim)}/claim`, {}, { timeoutMs: 25_000 });
+      showToast(`Staking reclame: ${formatGrsc(response.claimedAmount)} credites.`);
+      const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
+      renderProtectedShell(document.body.dataset.page, freshUser);
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
   });
 
   const p2pForm = document.querySelector("[data-p2p-form]");
@@ -2023,6 +2460,18 @@ function showCicoReference(reference, operation, amount, fee, netAmount = null) 
 }
 
 async function handleAdminClick(event) {
+  const copyAddressButton = event.target.closest("[data-copy-admin-address]");
+  if (copyAddressButton) {
+    const address = copyAddressButton.dataset.copyAdminAddress || "";
+    try {
+      await navigator.clipboard?.writeText(address);
+      showToast("Adresse copiee.");
+    } catch {
+      showToast("Copie impossible sur ce navigateur.", "error");
+    }
+    return;
+  }
+
   const proofButton = event.target.closest("[data-admin-proof]");
   if (proofButton) {
     const restoreProof = setButtonLoading(proofButton, "Ouverture...");
@@ -2133,7 +2582,9 @@ function renderProtectedShell(page, user) {
   renderDashboard(user);
   renderTransactions(user);
   renderWallet(user);
+  renderSwap(user);
   renderPlans(user);
+  renderStaking(user);
   renderNetwork(user);
   renderProfile(user);
   renderContact();
@@ -2163,7 +2614,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   try {
     const user = await loadCurrentUser();
-    if (page === "admin" && user.role !== "admin") {
+    if (page === "admin" && !canUseBackoffice(user)) {
       window.location.href = "/dashboard";
       return;
     }

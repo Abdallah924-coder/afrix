@@ -23,6 +23,10 @@ export const PLATFORM_NAME = process.env.PLATFORM_NAME || "Compte plateforme AFR
 export const COMMISSION_DEVELOPER_EMAIL = String(process.env.COMMISSION_DEVELOPER_EMAIL || "").trim().toLowerCase();
 export const COMMISSION_DEVELOPER_PASSWORD = String(process.env.COMMISSION_DEVELOPER_PASSWORD || "").trim();
 export const COMMISSION_DEVELOPER_NAME = process.env.COMMISSION_DEVELOPER_NAME || "Compte developpeur AFRIX";
+export const GRSCOIN_PRICE_USDT = Math.max(0, Number(process.env.GRSCOIN_PRICE_USDT || 0.0725));
+export const GRSCOIN_CONTRACT_ADDRESS = String(process.env.GRSCOIN_CONTRACT_ADDRESS || "").trim();
+export const GRSCOIN_DEPOSIT_ADDRESS = String(process.env.GRSCOIN_DEPOSIT_ADDRESS || "").trim();
+export const GRSCOIN_USDT_BEP20_DEPOSIT_ADDRESS = String(process.env.GRSCOIN_USDT_BEP20_DEPOSIT_ADDRESS || process.env.BEP20_DEPOSIT_ADDRESS || "").trim();
 export const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
 export const BREVO_API_KEY = String(process.env.BREVO_API_KEY || "");
 export const BREVO_SENDER_EMAIL = String(process.env.BREVO_SENDER_EMAIL || "");
@@ -49,6 +53,8 @@ export const pageRoutes = {
   "/profile": "pages/profile.html",
   "/contact": "pages/contact.html",
   "/afrix-money": "pages/afrix-money.html",
+  "/swap": "pages/swap.html",
+  "/staking": "pages/staking.html",
   "/exchange": "pages/exchange.html",
   "/merchant": "pages/merchant.html",
   "/elite": "pages/elite.html",
@@ -80,6 +86,13 @@ export const plans = [
   { id: "smart", name: "Smart Trading", minAmount: 50, dailyRate: 0.006, durationDays: 180 },
   { id: "premium", name: "Premium Trading", minAmount: 300, dailyRate: 0.007, durationDays: 270 },
   { id: "elite", name: "Elite Trading", minAmount: 500, dailyRate: 0.008, durationDays: 365 }
+];
+
+export const stakingPlans = [
+  { id: "starter", name: "Starter Staking", minAmount: 100, rewardRate: 0.035, durationDays: 90 },
+  { id: "smart", name: "Smart Staking", minAmount: 500, rewardRate: 0.10, durationDays: 180 },
+  { id: "premium", name: "Premium Staking", minAmount: 2500, rewardRate: 0.17, durationDays: 270 },
+  { id: "elite", name: "Elite Staking", minAmount: 5000, rewardRate: 0.25, durationDays: 365 }
 ];
 
 export const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];

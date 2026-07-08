@@ -1,10 +1,11 @@
-const CACHE_NAME = "afrix-v21";
+const APP_VERSION = "20260706-1";
+const CACHE_NAME = `afrix-v${APP_VERSION}`;
 const APP_SHELL = [
   "/",
   "/offline.html",
-  "/styles.css",
-  "/app.js",
-  "/manifest.webmanifest",
+  `/styles.css?v=${APP_VERSION}`,
+  `/app.js?v=${APP_VERSION}`,
+  `/manifest.webmanifest?v=${APP_VERSION}`,
   "/assets/pwa-icon.svg",
   "/IMG-20260609-WA0003.jpg"
 ];
@@ -32,7 +33,7 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: "no-store" })
         .then((response) => {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
@@ -43,9 +44,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (["style", "script", "manifest"].includes(request.destination)) {
+    event.respondWith(
+      fetch(request, { cache: "no-store" })
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (response.ok && ["style", "script", "image"].includes(request.destination)) {
+      if (response.ok && request.destination === "image") {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
       }

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f5d43">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/assets/pwa-icon.svg">
+  <link rel="shortcut icon" href="/assets/pwa-icon.svg">
+  <link rel="apple-touch-icon" href="/assets/pwa-icon.svg">
+  <meta property="og:image" content="/assets/pwa-icon.svg">
+  <meta name="twitter:image" content="/assets/pwa-icon.svg">
+  <title>AFRIX Swap - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css?v=20260706-1">
+</head>
+<body data-protected data-page="swap">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+
+    <section class="hero-card swap-hero">
+      <span class="pill">AFRIX Swap</span>
+      <h1>Dashboard Blockchain & Digital Assets</h1>
+      <p>Swap, achat et suivi GRSCOIN intégrés à l’écosystème AFRIX CAPITAL INVESTMENT.</p>
+      <div class="wallet-address swap-address">
+        <span>Contrat GRSCOIN</span>
+        <strong data-grs-contract-address>Adresse non configuree</strong>
+        <button class="btn secondary" type="button" data-copy-grs-contract>Copier</button>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <article class="panel swap-card" id="swap-grs">
+        <div class="panel-head"><h1>Portfolio Overview</h1><span class="badge">GRSCOIN</span></div>
+        <div class="swap-balances">
+          <div><span>Solde USDT</span><strong data-swap-usdt-balance>0.00 USDT</strong></div>
+          <div><span>Solde GRSCOIN</span><strong data-swap-grs-balance>0.00 GRSC</strong></div>
+          <div><span>Prix actuel</span><strong data-swap-rate>1 GRSC = 0.0725 USDT</strong></div>
+          <div><span>Valeur estimee</span><strong data-grs-estimated-value>0.00 USDT</strong></div>
+        </div>
+      </article>
+
+      <article class="panel swap-card" id="buy-grs">
+        <div class="panel-head"><h1>Market Overview</h1><span class="badge">A suivre</span></div>
+        <div class="info-grid">
+          <div><strong>Offre Prevente</strong><span data-market-presale>Disponible</span></div>
+          <div><strong>Offre Totale</strong><span data-market-total-supply>4 200 000.00 GRSC</span></div>
+          <div><strong>Offre Emise</strong><span data-market-issued-supply>0.00 GRSC</span></div>
+          <div><strong>Offre Restante</strong><span data-market-remaining-supply>4 200 000.00 GRSC</span></div>
+          <div><strong>Total Echanges</strong><span data-market-trades>0</span></div>
+          <div><strong>Transactions du Jour</strong><span data-market-today>0</span></div>
+          <div><strong>Niveau Partenaire</strong><span data-market-partner>Selon niveaux debloques</span></div>
+        </div>
+        <div class="supply-meter">
+          <div><span>Progression emission GRSCOIN</span><strong data-market-remaining-supply>4 200 000.00 GRSC</strong></div>
+          <div class="progress"><span data-market-supply-progress style="width:0%"></span></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid two">
+      <article class="panel swap-card">
+        <div class="panel-head"><h1>Swap GRSCOIN</h1><span class="badge">USDT vers GRSC</span></div>
+        <p class="muted">Convertissez votre solde USDT disponible en GRSCOIN. Les frais de swap sont de 5%; les bonus reseau sont payes separement et ne reduisent pas le GRSCOIN recu.</p>
+        <form data-swap-form>
+          <label>Montant USDT à convertir
+            <input name="amount" type="number" min="1" step="0.01" required data-swap-amount>
+          </label>
+          <div class="swap-preview" data-swap-preview>Saisissez un montant USDT.</div>
+          <button class="btn primary full" type="submit">Convertir en GRSCOIN</button>
+        </form>
+      </article>
+
+      <article class="panel swap-card" id="deposit-grs">
+        <div class="panel-head"><h1>Depot GRSCOIN</h1><span class="badge">GRSC</span></div>
+        <p class="muted">Envoyez vos GRSCOIN vers l'adresse de depot, puis soumettez le montant en GRSC et la preuve. La reference est 1 GRSC = 0.0725 USDT.</p>
+        <div class="wallet-address swap-address">
+          <span>Adresse depot GRSCOIN</span>
+          <strong data-grs-deposit-address>Adresse non configuree</strong>
+          <button class="btn secondary" type="button" data-copy-grs-deposit>Copier</button>
+        </div>
+        <form data-grs-deposit-form enctype="multipart/form-data">
+          <label>Montant GRSCOIN a deposer
+            <input name="amount" type="number" min="1" step="0.01" required data-grs-deposit-amount>
+          </label>
+          <input name="method" type="hidden" value="grscoin">
+          <label>Reference transaction
+            <input name="txRef" type="text" placeholder="Hash, reference ou numero" required>
+          </label>
+          <label>Preuve de paiement
+            <input name="proof" type="file" accept="image/*,.pdf" required>
+          </label>
+          <div class="swap-preview" data-grs-deposit-preview>Saisissez le montant GRSCOIN a crediter.</div>
+          <button class="btn primary full" type="submit">Soumettre le depot GRSCOIN</button>
+        </form>
+      </article>
+    </section>
+
+    <section class="grid two">
+      <article class="panel swap-card" id="deposit-usdt-grs">
+        <div class="panel-head"><h1>Depot USDT BEP20</h1><span class="badge">Conversion GRSC</span></div>
+        <p class="muted">Envoyez vos USDT BEP20 vers l'adresse indiquee. La conversion applique 5% de frais; les commissions et bonus reseau sont payes separement sans reduire le GRSCOIN credite.</p>
+        <div class="wallet-address swap-address">
+          <span>Adresse depot USDT BEP20</span>
+          <strong data-grs-usdt-bep20-address>Adresse non configuree</strong>
+          <button class="btn secondary" type="button" data-copy-grs-usdt-bep20>Copier</button>
+        </div>
+        <form data-grs-usdt-deposit-form enctype="multipart/form-data">
+          <label>Montant USDT BEP20 envoye
+            <input name="amount" type="number" min="1" step="0.01" required data-grs-usdt-deposit-amount>
+          </label>
+          <input name="method" type="hidden" value="usdt_bep20">
+          <label>Reference transaction
+            <input name="txRef" type="text" placeholder="Hash transaction BEP20" required>
+          </label>
+          <label>Preuve de paiement
+            <input name="proof" type="file" accept="image/*,.pdf" required>
+          </label>
+          <div class="swap-preview" data-grs-usdt-deposit-preview>Saisissez le montant USDT a convertir.</div>
+          <button class="btn primary full" type="submit">Soumettre le depot USDT BEP20</button>
+        </form>
+      </article>
+
+      <article class="panel swap-card" id="withdraw-grs">
+        <div class="panel-head"><h1>Retirer GRSCOIN</h1><span class="badge">GRSC</span></div>
+        <p class="muted">Soumettez une demande de retrait GRSCOIN. Frais de retrait: 10%.</p>
+        <form data-grs-withdraw-form>
+          <label>Montant GRSCOIN
+            <input name="amount" type="number" min="1" step="0.01" required data-grs-withdraw-amount>
+          </label>
+          <input name="network" type="hidden" value="grs_core">
+          <label>Adresse de reception GRSCOIN
+            <input name="address" type="text" required>
+          </label>
+          <div class="swap-preview" data-grs-withdraw-preview>Frais retrait: 10%. Net a recevoir: 0.00 GRSC.</div>
+          <button class="btn primary full" type="submit">Soumettre le retrait GRSCOIN</button>
+        </form>
+      </article>
+    </section>
+
+    <section class="grid two">
+      <article class="panel swap-info">
+        <div class="panel-head"><h1>GRSCOIN Center</h1><span class="badge">Informations</span></div>
+        <div class="info-grid">
+          <div><strong>Solde GRSCOIN</strong><span data-swap-grs-balance>0.00 GRSC</span></div>
+          <div><strong>Prix Actuel</strong><span data-swap-rate>1 GRSC = 0.0725 USDT</span></div>
+          <div><strong>Offre en Circulation</strong><span>En preparation</span></div>
+          <div><strong>Capitalisation</strong><span>En preparation</span></div>
+          <div><strong>Volume 24H</strong><span>En preparation</span></div>
+        </div>
+      </article>
+
+      <article class="panel swap-info">
+        <div class="panel-head"><h1>Actions Rapides</h1><span class="badge">AFRIX Swap</span></div>
+        <div class="quick-actions">
+          <a class="btn secondary" href="#deposit-grs">Depot GRSCOIN</a>
+          <a class="btn secondary" href="#deposit-usdt-grs">Depot USDT BEP20</a>
+          <a class="btn secondary" href="#swap-grs">Swap GRSCOIN</a>
+          <a class="btn secondary" href="#withdraw-grs">Retirer GRSCOIN</a>
+          <a class="btn secondary" href="/staking">Staker GRSCOIN</a>
+        </div>
+        <p class="muted">Le sens actif est USDT vers GRSCOIN. Les GRSCOIN obtenus peuvent ensuite etre retires ou places en staking.</p>
+      </article>
+    </section>
+
+    <section class="grid two">
+      <article class="panel swap-info">
+        <h1>Programme Partenaire</h1>
+        <div class="list">
+          <div><span>Frais de conversion : 5%</span></div>
+          <div><span>Bonus reseau : 10% distribues separement sur 5 niveaux</span></div>
+          <div><span>Montant net converti : 95% du montant USDT</span></div>
+          <div><span>Le swap n'applique pas de frais cache</span></div>
+        </div>
+      </article>
+      <article class="panel swap-info">
+        <h1>Bonus & Rewards</h1>
+        <div class="list">
+          <div><span>Bonus d'achat GRSCOIN repartis sur 5 niveaux</span></div>
+          <div><span>Bonus Leader : top promoteurs GRSCOIN de la semaine</span></div>
+          <div><span>Recompenses speciales : meilleurs acheteurs GRSCOIN</span></div>
+          <div><span>Campagnes promotionnelles a definir</span></div>
+        </div>
+        <p class="muted">Les bonus reseau ne diminuent pas le montant GRSCOIN credite au client.</p>
+      </article>
+    </section>
+
+    <section class="panel swap-info">
+      <div class="panel-head"><h1>Historique des Activites</h1><span class="badge">Transactions</span></div>
+      <div class="swap-flow">
+        <div><span>1</span><strong>Depots</strong></div>
+        <div><span>2</span><strong>Retraits</strong></div>
+        <div><span>3</span><strong>Swaps</strong></div>
+        <div><span>4</span><strong>Recompenses</strong></div>
+        <div><span>5</span><strong>Commissions</strong></div>
+        <div><span>6</span><strong>Revenus</strong></div>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <article class="panel swap-info">
+        <h1>Objectifs</h1>
+        <div class="list">
+          <div><span>Faciliter l’acquisition du GRSCOIN</span></div>
+          <div><span>Renforcer l’utilité du token</span></div>
+          <div><span>Simplifier l’accès aux fonctionnalités Web3</span></div>
+          <div><span>Favoriser la participation communautaire</span></div>
+          <div><span>Connecter les utilisateurs aux services GRS CORE</span></div>
+        </div>
+      </article>
+      <article class="panel swap-info">
+        <h1>Regles de Swap</h1>
+        <div class="list">
+          <div><span>Frais de conversion : 5%</span></div>
+          <div><span>Bonus reseau : 10% distribues sur 5 niveaux debloques</span></div>
+          <div><span>Montant net converti : 95% du montant USDT</span></div>
+        </div>
+        <p class="muted">AFRIX Swap • Swap • Trade • Stake • Earn</p>
+      </article>
+    </section>
+  </main>
+  <script src="../app.js?v=20260706-1"></script>
+</body>
+</html>

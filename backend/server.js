@@ -19,6 +19,10 @@ import {
   COMMISSION_DEVELOPER_EMAIL,
   COMMISSION_DEVELOPER_NAME,
   COMMISSION_DEVELOPER_PASSWORD,
+  GRSCOIN_CONTRACT_ADDRESS,
+  GRSCOIN_DEPOSIT_ADDRESS,
+  GRSCOIN_PRICE_USDT,
+  GRSCOIN_USDT_BEP20_DEPOSIT_ADDRESS,
   MONGODB_URI,
   PLATFORM_EMAIL,
   PLATFORM_NAME,
@@ -34,6 +38,7 @@ import {
   logger,
   pageRoutes,
   plans,
+  stakingPlans,
   publicFiles,
   rootDir
 } from "./config.js";
@@ -72,10 +77,30 @@ import {
 } from "./models.js";
 
 let mongoReadyPromise = null;
+let storageReadyPromise = null;
 let dailyEarningsPromise = null;
 const transactionListProjection = { "metadata.proof.dataBase64": 0 };
 const PLAN_EARNINGS_INTERVAL_MS = 60 * 1000;
 const PLAN_PAYOUT_INTERVAL_MS = 86_400_000;
+const GRSCOIN_SWAP_FEE_RATE = 0.05;
+const GRSCOIN_WITHDRAWAL_FEE_RATE = 0.10;
+const GRSCOIN_SWAP_ADMIN_RATE = 0.02;
+const GRSCOIN_SWAP_DEVELOPER_RATE = 0.02;
+const GRSCOIN_SWAP_PLATFORM_RATE = 0.01;
+const GRSCOIN_SWAP_BONUS_RATES = [0.05, 0.02, 0.01, 0.01, 0.01];
+const GRSCOIN_REFERRAL_RATES = [0.05, 0.02, 0.01, 0.01, 0.01];
+const STAKING_ADMIN_COMMISSION_RATE = 0.03;
+const STAKING_DEVELOPER_COMMISSION_RATE = 0.03;
+const STAKING_PLATFORM_COMMISSION_RATE = 0.04;
+const GRSCOIN_TOTAL_SUPPLY = 4_200_000;
+const ADMIN_RECENT_TRANSACTIONS_LIMIT = 500;
+const ADMIN_RECENT_LEDGER_LIMIT = 500;
+const safeUserProjection = {
+  passwordHash: 0,
+  password: 0,
+  resetPasswordToken: 0,
+  resetPasswordExpires: 0
+};
 
 function normalizeDb(db = {}) {
   return {
@@ -101,6 +126,7 @@ function normalizeUserRecord(user = {}) {
   return {
     ...user,
     balance: money(user.balance),
+    grsBalance: money(user.grsBalance),
     reservedBalance: money(user.reservedBalance),
     activity: money(user.activity),
     bonus: money(user.bonus),
@@ -109,7 +135,8 @@ function normalizeUserRecord(user = {}) {
       pending: money(user.merchantWallet?.pending),
       bonus: money(user.merchantWallet?.bonus)
     },
-    activePlans: Array.isArray(user.activePlans) ? user.activePlans : []
+    activePlans: Array.isArray(user.activePlans) ? user.activePlans : [],
+    activeStakes: Array.isArray(user.activeStakes) ? user.activeStakes : []
   };
 }
 
@@ -119,22 +146,28 @@ async function ensureStorage() {
   }
 
   try {
-    if (!mongoReadyPromise) {
-      mongoose.set("strictQuery", true);
-      mongoReadyPromise = mongoose.connect(MONGODB_URI, {
-        serverSelectionTimeoutMS: 10000
-      }).then(() => logger.info("MongoDB Atlas connected"));
+    if (!storageReadyPromise) {
+      storageReadyPromise = (async () => {
+        if (!mongoReadyPromise) {
+          mongoose.set("strictQuery", true);
+          mongoReadyPromise = mongoose.connect(MONGODB_URI, {
+            serverSelectionTimeoutMS: 10000
+          }).then(() => logger.info("MongoDB Atlas connected"));
+        }
+        await mongoReadyPromise;
+        await Promise.all([
+          SettingModel.updateOne({ key: "platformControls" }, { $setOnInsert: { value: defaultDb.platformControls } }, { upsert: true }),
+          SettingModel.updateOne({ key: "paymentTargets" }, { $setOnInsert: { value: defaultDb.paymentTargets } }, { upsert: true }),
+          SettingModel.updateOne({ key: "passwordResetTokens" }, { $setOnInsert: { value: defaultDb.passwordResetTokens } }, { upsert: true }),
+          SettingModel.updateOne({ key: "dailyPlanEarningsLock" }, { $setOnInsert: { value: null } }, { upsert: true }),
+          PlatformAccountModel.updateOne({ id: "platform" }, { $setOnInsert: { ...defaultDb.platformAccount, createdAt: nowIso() } }, { upsert: true })
+        ]);
+      })();
     }
-    await mongoReadyPromise;
-    await Promise.all([
-      SettingModel.updateOne({ key: "platformControls" }, { $setOnInsert: { value: defaultDb.platformControls } }, { upsert: true }),
-      SettingModel.updateOne({ key: "paymentTargets" }, { $setOnInsert: { value: defaultDb.paymentTargets } }, { upsert: true }),
-      SettingModel.updateOne({ key: "passwordResetTokens" }, { $setOnInsert: { value: defaultDb.passwordResetTokens } }, { upsert: true }),
-      SettingModel.updateOne({ key: "dailyPlanEarningsLock" }, { $setOnInsert: { value: null } }, { upsert: true }),
-      PlatformAccountModel.updateOne({ id: "platform" }, { $setOnInsert: { ...defaultDb.platformAccount, createdAt: nowIso() } }, { upsert: true })
-    ]);
+    await storageReadyPromise;
   } catch (error) {
     mongoReadyPromise = null;
+    storageReadyPromise = null;
     logger.error({ err: error }, "Mongo unavailable");
     throw error;
   }
@@ -189,6 +222,109 @@ async function readDb(session = null) {
     disputes,
     ledgerEntries,
     passwordResetTokens: settingMap.passwordResetTokens,
+    platformAccount,
+    platformControls: settingMap.platformControls,
+    paymentTargets: settingMap.paymentTargets
+  });
+}
+
+async function readUserViewDb(user) {
+  if (canUseBackoffice(user)) return readAdminViewDb();
+  await ensureStorage();
+
+  const directPartnerQuery = {
+    $or: [
+      { referrerId: user.id },
+      { referrerEmail: normalizeEmail(user.email) },
+      { referrerCode: normalizeInvitationCode(user.refCode) }
+    ].filter((clause) => Object.values(clause)[0])
+  };
+  const issuedGrsQuery = {
+    $or: [
+      { type: "Swap", status: { $in: ["Completed", "Active"] } },
+      { "metadata.asset": "GRSC_PURCHASE", status: { $in: ["Completed", "Active"] } }
+    ]
+  };
+
+  const [
+    directPartners,
+    userTransactions,
+    issuedGrsTotals
+  ] = await Promise.all([
+    directPartnerQuery.$or.length ? UserModel.find(directPartnerQuery).lean() : [],
+    TransactionModel.find({ userId: user.id }, transactionListProjection).sort({ createdAt: -1 }).limit(300).lean(),
+    TransactionModel.aggregate([
+      { $match: issuedGrsQuery },
+      { $group: { _id: null, issuedSupply: { $sum: { $toDouble: { $ifNull: ["$metadata.grsAmount", 0] } } } } }
+    ])
+  ]);
+
+  const userMap = new Map();
+  [user, ...directPartners].forEach((candidate) => {
+    if (candidate?.id) userMap.set(candidate.id, candidate);
+  });
+  const transactionMap = new Map();
+  userTransactions.forEach((tx) => {
+    if (tx?.id) transactionMap.set(tx.id, tx);
+  });
+
+  return normalizeDb({
+    users: Array.from(userMap.values()),
+    transactions: Array.from(transactionMap.values()),
+    marketStats: {
+      issuedGrsSupply: money(issuedGrsTotals[0]?.issuedSupply || 0)
+    },
+    cicoRequests: [],
+    exchangeAds: [],
+    exchangeOrders: [],
+    merchantApplications: [],
+    disputes: [],
+    ledgerEntries: [],
+    passwordResetTokens: defaultDb.passwordResetTokens,
+    platformAccount: defaultDb.platformAccount,
+    platformControls: defaultDb.platformControls,
+    paymentTargets: defaultDb.paymentTargets
+  });
+}
+
+async function readAdminViewDb() {
+  await ensureStorage();
+
+  const [
+    users,
+    transactions,
+    cicoRequests,
+    exchangeAds,
+    exchangeOrders,
+    merchantApplications,
+    disputes,
+    ledgerEntries,
+    settings,
+    platformAccount
+  ] = await Promise.all([
+    UserModel.find({}, safeUserProjection).lean(),
+    TransactionModel.find({}, transactionListProjection).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
+    CicoRequestModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
+    ExchangeAdModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
+    ExchangeOrderModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
+    MerchantApplicationModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
+    DisputeModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
+    LedgerEntryModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_LEDGER_LIMIT).lean(),
+    SettingModel.find({}).lean(),
+    PlatformAccountModel.findOne({ id: "platform" }).lean()
+  ]);
+  const settingMap = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
+
+  return normalizeDb({
+    users,
+    transactions,
+    cicoRequests,
+    exchangeAds,
+    exchangeOrders,
+    merchantApplications,
+    disputes,
+    ledgerEntries,
+    passwordResetTokens: defaultDb.passwordResetTokens,
     platformAccount,
     platformControls: settingMap.platformControls,
     paymentTargets: settingMap.paymentTargets
@@ -507,6 +643,15 @@ function parsePlan(planName) {
   return plans.find((plan) => plan.id === normalized) || null;
 }
 
+function parseStakingPlan(planName) {
+  const normalized = String(planName || "").toLowerCase();
+  if (normalized.includes("starter")) return stakingPlans[0];
+  if (normalized.includes("smart")) return stakingPlans[1];
+  if (normalized.includes("premium")) return stakingPlans[2];
+  if (normalized.includes("elite")) return stakingPlans[3];
+  return stakingPlans.find((plan) => plan.id === normalized) || null;
+}
+
 function planForAmount(amount) {
   amount = money(amount);
   return plans
@@ -516,31 +661,42 @@ function planForAmount(amount) {
 }
 
 const planUnlockRules = {
-  smart: { requiredPlanId: "starter", requiredAmount: 500 },
-  premium: { requiredPlanId: "smart", requiredAmount: 2500 },
-  elite: { requiredPlanId: "premium", requiredAmount: 5000 }
+  smart: { requiredStakePlanId: "smart", requiredAmount: 5000, requiredName: "Smart Staking" },
+  premium: { requiredStakePlanId: "premium", requiredAmount: 25000, requiredName: "Premium Staking" },
+  elite: { requiredStakePlanId: "elite", requiredAmount: 50000, requiredName: "Elite Staking" }
 };
 
-function planActivity(user, planId) {
-  return (Array.isArray(user.activePlans) ? user.activePlans : [])
-    .filter((activePlan) => activePlan.planId === planId)
-    .reduce((total, activePlan) => money(total + Number(activePlan.amount || 0)), 0);
+function stakingActivity(user, stakePlanId = "") {
+  return (Array.isArray(user.activeStakes) ? user.activeStakes : [])
+    .filter((stake) => !stakePlanId || stake.planId === stakePlanId)
+    .reduce((total, stake) => money(total + Number(stake.amount || 0)), 0);
 }
 
 function planUnlockError(user, plan) {
   const rule = planUnlockRules[plan.id];
   if (!rule) return "";
-  const currentActivity = planActivity(user, rule.requiredPlanId);
+  const currentActivity = stakingActivity(user, rule.requiredStakePlanId);
   if (currentActivity >= rule.requiredAmount) return "";
-  const requiredPlan = plans.find((item) => item.id === rule.requiredPlanId);
-  return `${plan.name} verrouille. Il faut ${formatAmount(rule.requiredAmount)} d'activite dans ${requiredPlan?.name || "le plan precedent"}. Activite actuelle: ${formatAmount(currentActivity)}.`;
+  return `${plan.name} verrouille. Il faut ${rule.requiredAmount.toLocaleString("fr-FR")} GRSC de participation dans ${rule.requiredName}. Participation actuelle: ${currentActivity.toFixed(2)} GRSC.`;
 }
 
 function unlockedReferralLevels(user) {
-  return Math.max(
+  return Math.max(0, Math.min(20, Math.max(
     Math.floor(Number(user?.activity || 0) / 100),
     Number(user?.bonusLevelsOverride || 0)
-  );
+  )));
+}
+
+function grsIssuedSupply(db = {}) {
+  if (Number.isFinite(Number(db.marketStats?.issuedGrsSupply))) {
+    return money(db.marketStats.issuedGrsSupply);
+  }
+  return money((db.transactions || []).reduce((total, tx) => {
+    const isCompleted = tx.status === "Completed" || tx.status === "Active";
+    const isIssued = tx.type === "Swap" || tx.metadata?.asset === "GRSC_PURCHASE";
+    if (!isCompleted || !isIssued) return total;
+    return total + Number(tx.metadata?.grsAmount || 0);
+  }, 0));
 }
 
 function validateExchangeRate(type, rate) {
@@ -649,6 +805,11 @@ function positiveFiniteNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : 0;
 }
 
+function grsFromUsdt(usdtAmount) {
+  if (!GRSCOIN_PRICE_USDT) return 0;
+  return money(Number(usdtAmount || 0) / GRSCOIN_PRICE_USDT);
+}
+
 function composeUser(db, user) {
   const directPartners = db.users
     .filter((candidate) => referralMatches(candidate, user))
@@ -664,20 +825,23 @@ function composeUser(db, user) {
   const approvedMerchants = db.users
     .filter((candidate) => candidate.merchantProfile?.status === "approved")
     .map((candidate) => candidate.merchantProfile);
+  const issuedGrsSupply = grsIssuedSupply(db);
+  const remainingGrsSupply = Math.max(0, money(GRSCOIN_TOTAL_SUPPLY - issuedGrsSupply));
 
-  const ownCicoRequests = user.role === "admin"
+  const ownCicoRequests = canUseBackoffice(user)
     ? db.cicoRequests
     : db.cicoRequests.filter((request) => request.userId === user.id || request.merchantId === user.id);
-  const ownExchangeOrders = user.role === "admin"
+  const ownExchangeOrders = canUseBackoffice(user)
     ? db.exchangeOrders
     : db.exchangeOrders.filter((order) => order.userId === user.id || order.merchantId === user.id || order.customerEmail === user.email);
   const ownExchangeAds = db.exchangeAds
-    .filter((ad) => user.role === "admin" || ad.merchantId === user.id)
+    .filter((ad) => canUseBackoffice(user) || ad.merchantId === user.id)
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 
   return {
     ...sanitizeUser(user),
     balance: money(user.balance),
+    grsBalance: money(user.grsBalance),
     reservedBalance: money(user.reservedBalance),
     activity: money(user.activity),
     team: directPartners.length,
@@ -687,6 +851,23 @@ function composeUser(db, user) {
     progressText: "Progression calculee selon votre activite validee.",
     bonusLevelsOverride: Number(user.bonusLevelsOverride || 0),
     paymentTargets: db.paymentTargets,
+    swap: {
+      grsCoinPriceUsdt: GRSCOIN_PRICE_USDT,
+      grsCoinPerUsdt: grsFromUsdt(1),
+      direction: "USDT_GRSC",
+      contractAddress: GRSCOIN_CONTRACT_ADDRESS,
+      grsDepositAddress: GRSCOIN_DEPOSIT_ADDRESS,
+      usdtBep20DepositAddress: GRSCOIN_USDT_BEP20_DEPOSIT_ADDRESS,
+      swapFeeRate: GRSCOIN_SWAP_FEE_RATE,
+      bonusRate: money(GRSCOIN_SWAP_BONUS_RATES.reduce((total, rate) => total + rate, 0)),
+      bonusLevelsCount: GRSCOIN_SWAP_BONUS_RATES.length,
+      market: {
+        totalSupply: GRSCOIN_TOTAL_SUPPLY,
+        issuedSupply: issuedGrsSupply,
+        remainingSupply: remainingGrsSupply,
+        issuedPercent: GRSCOIN_TOTAL_SUPPLY ? Math.min(100, Math.max(0, (issuedGrsSupply / GRSCOIN_TOTAL_SUPPLY) * 100)) : 0
+      }
+    },
     refLink: `${process.env.APP_URL || "http://localhost:" + PORT}/register?ref=${user.refCode}`,
     transactions: db.transactions
       .filter((tx) => tx.userId === user.id)
@@ -699,7 +880,7 @@ function composeUser(db, user) {
         amount: tx.displayAmount,
         status: tx.status
       })),
-    adminTransactions: user.role === "admin"
+    adminTransactions: canUseBackoffice(user)
       ? db.transactions
         .filter((tx) => canViewTransaction(user, tx))
         .slice()
@@ -730,7 +911,10 @@ function composeUser(db, user) {
               reference: tx.metadata?.reference || "",
               localAmount: money(tx.metadata?.localAmount),
               rate: money(tx.metadata?.rate),
-              paymentMethod: tx.metadata?.paymentMethod || ""
+              paymentMethod: tx.metadata?.paymentMethod || "",
+              asset: tx.metadata?.asset || "",
+              grsAmount: money(tx.metadata?.grsAmount),
+              priceUsdt: money(tx.metadata?.priceUsdt)
             }
           };
         })
@@ -747,16 +931,16 @@ function composeUser(db, user) {
     cicoRequests: ownCicoRequests.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     exchangeAds: ownExchangeAds.map((ad) => publicExchangeAd(ad, db.users.find((candidate) => candidate.id === ad.merchantId))),
     exchangeOrders: ownExchangeOrders.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
-    adminExchangeOrders: user.role === "admin"
+    adminExchangeOrders: canUseBackoffice(user)
       ? db.exchangeOrders
         .slice()
         .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       : [],
-    merchantApplications: user.role === "admin" ? db.merchantApplications : db.merchantApplications.filter((item) => item.userId === user.id),
-    disputes: user.role === "admin" ? db.disputes : db.disputes.filter((item) => item.userId === user.id),
-    platformControls: user.role === "admin" ? db.platformControls : {}
+    merchantApplications: canUseBackoffice(user) ? db.merchantApplications : db.merchantApplications.filter((item) => item.userId === user.id),
+    disputes: canUseBackoffice(user) ? db.disputes : db.disputes.filter((item) => item.userId === user.id),
+    platformControls: canUseBackoffice(user) ? db.platformControls : {}
     ,
-    adminUsers: user.role === "admin"
+    adminUsers: canUseBackoffice(user)
       ? db.users
         .slice()
         .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
@@ -778,11 +962,11 @@ function composeUser(db, user) {
           createdAt: candidate.createdAt
         }))
       : [],
-    ledgerEntries: user.role === "admin"
+    ledgerEntries: canUseBackoffice(user)
       ? db.ledgerEntries.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 500)
       : db.ledgerEntries.filter((entry) => entry.accountId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 200),
-    platformAccount: user.role === "admin" ? ensurePlatform(db) : {},
-    adminStats: user.role === "admin" ? buildAdminStats(db) : {}
+    platformAccount: canUseBackoffice(user) ? ensurePlatform(db) : {},
+    adminStats: canUseBackoffice(user) ? buildAdminStats(db) : {}
   };
 }
 
@@ -793,19 +977,31 @@ async function authenticate(req, res, next) {
 
   try {
     const payload = jwt.verify(token, jwtSecret);
-    const db = await readDb();
-    const user = db.users.find((candidate) => candidate.id === payload.sub);
+    await ensureStorage();
+    const user = normalizeUserRecord(await UserModel.findOne({ id: payload.sub }).lean());
     if (!user || user.status === "blocked") return res.status(401).json({ message: "Session invalide." });
     req.user = user;
-    req.db = db;
     next();
   } catch {
     res.status(401).json({ message: "Session expiree." });
   }
 }
 
+async function attachDb(req, res, next) {
+  try {
+    req.db = await readDb();
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+function canUseBackoffice(user) {
+  return user?.role === "admin" || user?.role === "developer";
+}
+
 function requireAdmin(req, res, next) {
-  if (req.user?.role !== "admin") return res.status(403).json({ message: "Acces admin requis." });
+  if (!canUseBackoffice(req.user)) return res.status(403).json({ message: "Acces backoffice requis." });
   next();
 }
 
@@ -825,15 +1021,21 @@ function isBusinessRuleError(error) {
 }
 
 function requirePlatformAccess({ cico = false } = {}) {
-  return (req, res, next) => {
-    const controls = req.db?.platformControls || {};
-    if (controls.maintenanceMode && req.user?.role !== "admin") {
-      return res.status(503).json({ message: "AFRIX est temporairement en maintenance." });
+  return async (req, res, next) => {
+    try {
+      await ensureStorage();
+      const setting = await SettingModel.findOne({ key: "platformControls" }).lean();
+      const controls = { ...defaultDb.platformControls, ...(setting?.value || {}) };
+      if (controls.maintenanceMode && req.user?.role !== "admin") {
+        return res.status(503).json({ message: "AFRIX est temporairement en maintenance." });
+      }
+      if (cico && controls.cicoMerchants === false && req.user?.role !== "admin") {
+        return res.status(403).json({ message: "Les operations CICO merchant sont temporairement indisponibles." });
+      }
+      next();
+    } catch (error) {
+      next(error);
     }
-    if (cico && controls.cicoMerchants === false && req.user?.role !== "admin") {
-      return res.status(403).json({ message: "Les operations CICO merchant sont temporairement indisponibles." });
-    }
-    next();
   };
 }
 
@@ -987,7 +1189,10 @@ async function processDailyPlanEarnings(options = {}) {
   const users = await UserModel.find(
     {
       ...(onlyUserId ? { id: onlyUserId } : {}),
-      activePlans: { $elemMatch: { status: "active" } }
+      $or: [
+        { activePlans: { $elemMatch: { status: "active" } } },
+        { activeStakes: { $elemMatch: { status: "active" } } }
+      ]
     }
   ).lean();
 
@@ -1168,6 +1373,139 @@ async function processDailyPlanEarnings(options = {}) {
         await session.endSession();
       }
     }
+
+    const activeStakes = Array.isArray(userSnapshot.activeStakes) ? userSnapshot.activeStakes : [];
+    for (const stakeSnapshot of activeStakes) {
+      if (stakeSnapshot.status !== "active") continue;
+
+      const rewardAmount = positiveFiniteNumber(stakeSnapshot.rewardAmount);
+      const durationDays = positiveFiniteNumber(stakeSnapshot.durationDays);
+      if (!rewardAmount || !durationDays) {
+        result.skippedInvalidPlans += 1;
+        logger.error({ userId: userSnapshot.id, stakeId: stakeSnapshot.id, rewardAmount: stakeSnapshot.rewardAmount, durationDays: stakeSnapshot.durationDays }, "Invalid active stake skipped during daily earnings");
+        continue;
+      }
+
+      const session = await mongoose.startSession();
+      try {
+        await withMongoRetry(() => session.withTransaction(async () => {
+          const user = normalizeUserRecord(await UserModel.findOne({ id: userSnapshot.id }, null, { session }).lean());
+          if (!user) return;
+          const stakesList = Array.isArray(user.activeStakes) ? user.activeStakes : [];
+          const stake = stakesList.find((item) => item.id === stakeSnapshot.id);
+          if (!stake || stake.status !== "active") return;
+
+          const currentDaysPaid = Math.max(0, Number.isFinite(Number(stake.daysPaid)) ? Number(stake.daysPaid) : 0);
+          const currentRewardAmount = positiveFiniteNumber(stake.rewardAmount);
+          const currentDurationDays = positiveFiniteNumber(stake.durationDays);
+          if (!currentRewardAmount || !currentDurationDays || currentDaysPaid >= currentDurationDays) return;
+
+          const nextPayoutAt = planNextPayoutTimestamp(stake);
+          const dueDays = Math.min(duePayoutSlots(nextPayoutAt), currentDurationDays - currentDaysPaid);
+          if (dueDays <= 0) return;
+
+          const payout = money((currentRewardAmount / currentDurationDays) * dueDays);
+          if (payout <= 0) return;
+
+          const lastPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays - 1);
+          const paidDayFrom = currentDaysPaid + 1;
+          const paidDayTo = currentDaysPaid + dueDays;
+          const paidDayLabel = paidDayFrom === paidDayTo ? `Jour ${paidDayTo}` : `Jours ${paidDayFrom}-${paidDayTo}`;
+          stake.daysPaid = currentDaysPaid + dueDays;
+          stake.earnedAmount = money(Number(stake.earnedAmount || 0) + payout);
+          stake.lastPayoutAt = lastPayoutAt;
+          stake.lastPayoutDate = String(lastPayoutAt).slice(0, 10);
+          stake.nextPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays);
+
+          await UserModel.updateOne(
+            { id: user.id },
+            { $set: { activeStakes: stakesList } },
+            { session }
+          );
+
+          const ledgerEntries = buildLedgerEntries([{
+            accountType: "staking_grs",
+            accountId: user.id,
+            direction: "credit",
+            amount: payout,
+            balanceAfter: money(Number(stake.amount || 0) + Number(stake.earnedAmount || 0)),
+            description: `Gain staking bloque ${stake.name || "Staking GRSCOIN"}`
+          }], {
+            source: "staking_daily_earning",
+            referenceId: stake.id,
+            extra: { userId: user.id, stakeId: stake.id, planId: stake.planId, days: dueDays, payoutDate }
+          });
+          if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+
+          await TransactionModel.create([{
+            id: nanoid(),
+            userId: user.id,
+            type: "Gain",
+            description: `Gain staking bloque ${stake.name || "Staking GRSCOIN"} (${paidDayLabel})`,
+            amount: payout,
+            displayAmount: `+${payout.toFixed(2)} GRSC bloque`,
+            status: "Active",
+            createdAt: nowIso(),
+            metadata: { stakeId: stake.id, planId: stake.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
+          }], { session });
+
+          let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
+          for (let level = 0; level < bonusRates.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
+            const referrerQuery = [];
+            if (currentReferrer.id) referrerQuery.push({ id: currentReferrer.id });
+            if (currentReferrer.email) referrerQuery.push({ email: normalizeEmail(currentReferrer.email) });
+            if (currentReferrer.code) referrerQuery.push({ refCode: normalizeInvitationCode(currentReferrer.code) });
+            const referrer = referrerQuery.length ? normalizeUserRecord(await UserModel.findOne({ $or: referrerQuery }, null, { session }).lean()) : null;
+            if (!referrer) break;
+
+            if (unlockedReferralLevels(referrer) > level) {
+              const bonus = money((payout * bonusRates[level]) / 100);
+              if (bonus > 0) {
+                const referrerGrsBalance = money(Number(referrer.grsBalance || 0) + bonus);
+                await UserModel.updateOne(
+                  { id: referrer.id },
+                  { $set: { grsBalance: referrerGrsBalance } },
+                  { session }
+                );
+                const bonusLedger = buildLedgerEntries([{
+                  accountType: "user_grs",
+                  accountId: referrer.id,
+                  direction: "credit",
+                  amount: bonus,
+                  balanceAfter: referrerGrsBalance,
+                  description: `Bonus staking journalier niveau ${level + 1}`
+                }], {
+                  source: "staking_daily_referral_bonus",
+                  referenceId: stake.id,
+                  extra: { sourceUserId: user.id, level: level + 1, stakeId: stake.id, planId: stake.planId, days: dueDays, payoutDate }
+                });
+                if (bonusLedger.length) await LedgerEntryModel.insertMany(bonusLedger, { session });
+                await TransactionModel.create([{
+                  id: nanoid(),
+                  userId: referrer.id,
+                  type: "Bonus",
+                  description: `Bonus staking journalier niveau ${level + 1} (${paidDayLabel})`,
+                  amount: bonus,
+                  displayAmount: `+${bonus.toFixed(2)} GRSC`,
+                  status: "Completed",
+                  createdAt: nowIso(),
+                  metadata: { sourceUserId: user.id, level: level + 1, stakeId: stake.id, planId: stake.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
+                }], { session });
+                result.creditedNetworkBonuses += 1;
+                result.creditedNetworkAmount = money(result.creditedNetworkAmount + bonus);
+              }
+            }
+
+            currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
+          }
+
+          result.creditedUsers += 1;
+          result.creditedAmount = money(result.creditedAmount + payout);
+        }));
+      } finally {
+        await session.endSession();
+      }
+    }
   }
 
   return result;
@@ -1250,6 +1588,7 @@ async function ensureAdminUser() {
         id: adminId,
         passwordHash,
         balance: 0,
+        grsBalance: 0,
         reservedBalance: 0,
         activity: 0,
         bonus: 0,
@@ -1258,6 +1597,7 @@ async function ensureAdminUser() {
         referrerId: null,
         merchantWallet: { available: 0, pending: 0, bonus: 0 },
         activePlans: [],
+        activeStakes: [],
         createdAt: nowIso()
       }
     },
@@ -1287,6 +1627,7 @@ async function ensureCommissionAccount({ email, password, fullName, role }) {
         id: accountId,
         passwordHash,
         balance: 0,
+        grsBalance: 0,
         reservedBalance: 0,
         activity: 0,
         bonus: 0,
@@ -1295,6 +1636,7 @@ async function ensureCommissionAccount({ email, password, fullName, role }) {
         referrerId: null,
         merchantWallet: { available: 0, pending: 0, bonus: 0 },
         activePlans: [],
+        activeStakes: [],
         createdAt: nowIso()
       }
     },
@@ -1310,7 +1652,7 @@ async function ensureCommissionAccounts() {
     email: COMMISSION_DEVELOPER_EMAIL,
     password: COMMISSION_DEVELOPER_PASSWORD,
     fullName: COMMISSION_DEVELOPER_NAME,
-    role: "user"
+    role: "developer"
   });
 }
 
@@ -1435,6 +1777,7 @@ app.post("/api/auth/register", validate(z.object({
     role: "user",
     status: "active",
     balance: 0,
+    grsBalance: 0,
     reservedBalance: 0,
     activity: 0,
     bonus: 0,
@@ -1445,6 +1788,7 @@ app.post("/api/auth/register", validate(z.object({
     referrerCode: normalizeInvitationCode(referrer?.refCode),
     merchantWallet: { available: 0, pending: 0, bonus: 0 },
     activePlans: [],
+    activeStakes: [],
     createdAt: nowIso()
   });
 
@@ -1608,7 +1952,7 @@ app.post("/api/auth/reset-password", validate(z.object({
 
 app.get("/api/me", authenticate, async (req, res, next) => {
   try {
-    const db = await readDb();
+    const db = await readUserViewDb(req.user);
     const user = db.users.find((candidate) => candidate.id === req.user.id);
     if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
     void ensureDailyPlanEarnings()
@@ -1623,7 +1967,7 @@ app.get("/api/me", authenticate, async (req, res, next) => {
   }
 });
 
-app.get("/api/merchants", authenticate, (req, res) => {
+app.get("/api/merchants", authenticate, attachDb, (req, res) => {
   const query = String(req.query.query || "").trim().toLowerCase();
   const merchants = req.db.users
     .filter((user) => user.merchantProfile?.status === "approved")
@@ -1703,6 +2047,126 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
     { label: "Montant", value: formatAmount(amount) }
     ])
   ]).catch((error) => logger.error({ err: error }, "Deposit notification failed"));
+});
+
+app.post("/api/swap/grscoin-deposits", authenticate, requirePlatformAccess(), upload.single("proof"), async (req, res) => {
+  const rawAmount = money(req.body.amount || 0);
+  const method = String(req.body.method || "grscoin");
+  const txRef = String(req.body.txRef || "").trim();
+  if (rawAmount < 1) return res.status(400).json({ message: "Montant minimum depot: 1." });
+  if (!GRSCOIN_PRICE_USDT) return res.status(503).json({ message: "Prix GRSCOIN indisponible." });
+  if (!["grscoin", "usdt_bep20"].includes(method)) return res.status(400).json({ message: "Methode de depot invalide." });
+  if (!txRef) return res.status(400).json({ message: "Reference transaction requise." });
+  if (!req.file?.buffer?.length) return res.status(400).json({ message: "Preuve de paiement requise." });
+
+  const grsAmount = method === "usdt_bep20" ? grsFromUsdt(rawAmount) : rawAmount;
+  const usdtAmount = method === "usdt_bep20" ? rawAmount : money(grsAmount * GRSCOIN_PRICE_USDT);
+  const proof = {
+    originalName: req.file.originalname || "preuve-paiement",
+    mimeType: req.file.mimetype || "application/octet-stream",
+    size: req.file.size || req.file.buffer.length,
+    dataBase64: req.file.buffer.toString("base64")
+  };
+  const tx = {
+    id: nanoid(),
+    userId: req.user.id,
+    type: "Depot",
+    description: method === "usdt_bep20" ? "Depot USDT BEP20 converti en GRSCOIN" : "Depot GRSCOIN",
+    amount: grsAmount,
+    displayAmount: `+${grsAmount.toFixed(2)} GRSC`,
+    status: "Pending",
+    createdAt: nowIso(),
+    metadata: {
+      asset: "GRSC_PURCHASE",
+      method,
+      ...(txRef ? { txRef } : {}),
+      originalAmount: rawAmount,
+      usdtAmount,
+      grsAmount,
+      priceUsdt: GRSCOIN_PRICE_USDT,
+      proof
+    }
+  };
+  await TransactionModel.create(tx);
+  res.status(201).json({ reference: tx.id, amount: grsAmount, grsAmount, usdtAmount, status: tx.status });
+
+  notifyAdmin("AFRIX - Depot GRSCOIN a valider", "Depot GRSCOIN a valider", "Une demande de depot GRSCOIN est en attente.", [
+    { label: "Client", value: req.user.email },
+    { label: "GRSCOIN", value: `${grsAmount.toFixed(2)} GRSC` },
+    { label: "Valeur", value: formatAmount(usdtAmount) }
+  ]).catch((error) => logger.error({ err: error }, "GRSCOIN purchase notification failed"));
+});
+
+app.post("/api/swap/grscoin-withdrawals", authenticate, requirePlatformAccess(), validate(z.object({
+  amount: z.coerce.number().positive(),
+  network: z.enum(["grs_core"]),
+  address: z.string().min(5)
+})), async (req, res) => {
+  const amount = money(req.body.amount);
+  const network = String(req.body.network || "grs_core");
+  const address = String(req.body.address || "").trim();
+  if (amount < 1) return res.status(400).json({ message: "Montant minimum retrait GRSCOIN: 1 GRSC." });
+  const fee = money(amount * GRSCOIN_WITHDRAWAL_FEE_RATE);
+  const netAmount = money(amount - fee);
+  if (netAmount <= 0) return res.status(400).json({ message: "Le montant apres frais doit rester positif." });
+
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      const updatedUser = await UserModel.findOneAndUpdate(
+        {
+          id: req.user.id,
+          $expr: { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, amount] }
+        },
+        [{
+          $set: {
+            grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, amount] }, 2] }
+          }
+        }],
+        { new: true, session, lean: true }
+      );
+      if (!updatedUser) {
+        result = { error: "Solde GRSCOIN insuffisant." };
+        return;
+      }
+      const tx = {
+        id: nanoid(),
+        userId: req.user.id,
+        type: "Retrait",
+        description: "Retrait GRSCOIN",
+        amount,
+        displayAmount: `-${amount.toFixed(2)} GRSC`,
+        status: "Pending",
+        createdAt: nowIso(),
+        metadata: { asset: "GRSC_WITHDRAWAL", grsAmount: amount, fee, netAmount, network, address }
+      };
+      await TransactionModel.create([tx], { session });
+      const entries = buildLedgerEntries([{
+        accountType: "user_grs",
+        accountId: req.user.id,
+        direction: "debit",
+        amount,
+        balanceAfter: updatedUser.grsBalance,
+        description: "Retrait GRSCOIN demande"
+      }], { source: "grscoin_withdrawal_request", referenceId: tx.id, extra: { network, address } });
+      if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+      result = { transaction: tx, user: normalizeUserRecord(updatedUser) };
+    });
+
+    if (result?.error) return res.status(400).json({ message: result.error });
+    res.status(201).json({ reference: result.transaction.id, amount, fee, netAmount, status: result.transaction.status });
+  } finally {
+    await session.endSession();
+  }
+
+  notifyAdmin("AFRIX - Retrait GRSCOIN a traiter", "Retrait GRSCOIN a traiter", "Une demande de retrait GRSCOIN est en attente.", [
+    { label: "Client", value: req.user.email },
+    { label: "Montant", value: `${amount.toFixed(2)} GRSC` },
+    { label: "Frais", value: `${fee.toFixed(2)} GRSC` },
+    { label: "Net a envoyer", value: `${netAmount.toFixed(2)} GRSC` },
+    { label: "Reseau", value: network.toUpperCase() }
+  ]).catch((error) => logger.error({ err: error }, "GRSCOIN withdrawal notification failed"));
 });
 
 app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.object({
@@ -1852,6 +2316,293 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
   ]).catch((error) => logger.error({ err: error }, "Withdrawal notification failed"));
 });
 
+app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), validate(z.object({
+  amount: z.coerce.number().positive()
+})), async (req, res) => {
+  const usdtAmount = money(req.body.amount);
+  if (usdtAmount < 1) return res.status(400).json({ message: "Montant minimum swap: 1 USDT." });
+  if (!GRSCOIN_PRICE_USDT) return res.status(503).json({ message: "Prix AFRIX Swap indisponible." });
+
+  const adminCommission = money(usdtAmount * GRSCOIN_SWAP_ADMIN_RATE);
+  const developerCommission = money(usdtAmount * GRSCOIN_SWAP_DEVELOPER_RATE);
+  const platformCommission = money(usdtAmount * GRSCOIN_SWAP_PLATFORM_RATE);
+  const platformFee = money(adminCommission + developerCommission + platformCommission);
+  const bonusPool = money(GRSCOIN_SWAP_BONUS_RATES.reduce((total, rate) => total + usdtAmount * rate, 0));
+  const netUsdt = money(usdtAmount - platformFee);
+  if (netUsdt <= 0) return res.status(400).json({ message: "Montant swap trop faible apres frais." });
+
+  const grsAmount = grsFromUsdt(netUsdt);
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await withMongoRetry(() => session.withTransaction(async () => {
+      const user = normalizeUserRecord(await UserModel.findOne({ id: req.user.id }, null, { session }).lean());
+      if (!user) {
+        result = { error: "Utilisateur introuvable." };
+        return;
+      }
+      if (money(user.balance) < usdtAmount) {
+        result = { error: "Solde USDT insuffisant." };
+        return;
+      }
+
+      const updatedUser = await UserModel.findOneAndUpdate(
+        {
+          id: user.id,
+          $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, usdtAmount] }
+        },
+        [{
+          $set: {
+            balance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$balance", 0] } }, usdtAmount] }, 2] },
+            grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, grsAmount] }, 2] }
+          }
+        }],
+        { new: true, session, lean: true }
+      );
+      if (!updatedUser) {
+        result = { error: "Solde USDT insuffisant." };
+        return;
+      }
+
+      const platform = await PlatformAccountModel.findOneAndUpdate(
+        { id: "platform" },
+        { $inc: { balance: usdtAmount, fees: platformFee }, $setOnInsert: { createdAt: nowIso() } },
+        { upsert: true, new: true, session, lean: true }
+      );
+      const referenceId = nanoid();
+      const adminAccount = ADMIN_EMAIL && adminCommission > 0 ? await UserModel.findOneAndUpdate(
+        { email: ADMIN_EMAIL },
+        [{
+          $set: {
+            balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, adminCommission] }, 2] },
+            bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, adminCommission] }, 2] }
+          }
+        }],
+        { new: true, session, lean: true }
+      ) : null;
+      const developerAccount = COMMISSION_DEVELOPER_EMAIL && developerCommission > 0 ? await UserModel.findOneAndUpdate(
+        { email: COMMISSION_DEVELOPER_EMAIL },
+        [{
+          $set: {
+            balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, developerCommission] }, 2] },
+            bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, developerCommission] }, 2] }
+          }
+        }],
+        { new: true, session, lean: true }
+      ) : null;
+      const platformUserAccount = PLATFORM_EMAIL && platformCommission > 0 ? await UserModel.findOneAndUpdate(
+        { email: PLATFORM_EMAIL },
+        [{
+          $set: {
+            balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, platformCommission] }, 2] },
+            bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, platformCommission] }, 2] }
+          }
+        }],
+        { new: true, session, lean: true }
+      ) : null;
+      let platformBalanceAfterDebits = money(platform.balance);
+      const commissionRows = [];
+      const commissionTransactions = [];
+      if (adminAccount && adminCommission > 0) {
+        platformBalanceAfterDebits = money(platformBalanceAfterDebits - adminCommission);
+        commissionRows.push({
+          accountType: "platform",
+          accountId: "platform",
+          direction: "debit",
+          amount: adminCommission,
+          balanceAfter: platformBalanceAfterDebits,
+          description: "Commission admin AFRIX Swap"
+        }, {
+          accountType: "admin",
+          accountId: adminAccount.id,
+          direction: "credit",
+          amount: adminCommission,
+          balanceAfter: adminAccount.balance,
+          description: "Commission admin AFRIX Swap"
+        });
+        commissionTransactions.push({
+          id: nanoid(),
+          userId: adminAccount.id,
+          type: "Commission",
+          description: "Commission AFRIX Swap",
+          amount: adminCommission,
+          displayAmount: formatAmount(adminCommission, "+"),
+          status: "Completed",
+          createdAt: nowIso(),
+          metadata: { source: "afrix_swap_commission", swapId: referenceId, rate: GRSCOIN_SWAP_ADMIN_RATE }
+        });
+      }
+      if (developerAccount && developerCommission > 0) {
+        platformBalanceAfterDebits = money(platformBalanceAfterDebits - developerCommission);
+        commissionRows.push({
+          accountType: "platform",
+          accountId: "platform",
+          direction: "debit",
+          amount: developerCommission,
+          balanceAfter: platformBalanceAfterDebits,
+          description: "Commission developpeur AFRIX Swap"
+        }, {
+          accountType: "developer",
+          accountId: developerAccount.id,
+          direction: "credit",
+          amount: developerCommission,
+          balanceAfter: developerAccount.balance,
+          description: "Commission developpeur AFRIX Swap"
+        });
+        commissionTransactions.push({
+          id: nanoid(),
+          userId: developerAccount.id,
+          type: "Commission",
+          description: "Commission AFRIX Swap",
+          amount: developerCommission,
+          displayAmount: formatAmount(developerCommission, "+"),
+          status: "Completed",
+          createdAt: nowIso(),
+          metadata: { source: "afrix_swap_commission", swapId: referenceId, rate: GRSCOIN_SWAP_DEVELOPER_RATE }
+        });
+      }
+      if (platformUserAccount && platformCommission > 0) {
+        platformBalanceAfterDebits = money(platformBalanceAfterDebits - platformCommission);
+        commissionRows.push({
+          accountType: "platform",
+          accountId: "platform",
+          direction: "debit",
+          amount: platformCommission,
+          balanceAfter: platformBalanceAfterDebits,
+          description: "Commission plateforme AFRIX Swap"
+        }, {
+          accountType: "platform_user",
+          accountId: platformUserAccount.id,
+          direction: "credit",
+          amount: platformCommission,
+          balanceAfter: platformUserAccount.balance,
+          description: "Commission plateforme AFRIX Swap"
+        });
+        commissionTransactions.push({
+          id: nanoid(),
+          userId: platformUserAccount.id,
+          type: "Commission",
+          description: "Commission AFRIX Swap",
+          amount: platformCommission,
+          displayAmount: formatAmount(platformCommission, "+"),
+          status: "Completed",
+          createdAt: nowIso(),
+          metadata: { source: "afrix_swap_commission", swapId: referenceId, rate: GRSCOIN_SWAP_PLATFORM_RATE }
+        });
+      }
+
+      const referralRows = [];
+      const referralTransactions = [];
+      let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
+      for (let level = 0; level < GRSCOIN_SWAP_BONUS_RATES.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
+        const referrerQuery = [];
+        if (currentReferrer.id) referrerQuery.push({ id: currentReferrer.id });
+        if (currentReferrer.email) referrerQuery.push({ email: normalizeEmail(currentReferrer.email) });
+        if (currentReferrer.code) referrerQuery.push({ refCode: normalizeInvitationCode(currentReferrer.code) });
+        const referrer = referrerQuery.length ? normalizeUserRecord(await UserModel.findOne({ $or: referrerQuery }, null, { session }).lean()) : null;
+        if (!referrer) break;
+        if (unlockedReferralLevels(referrer) <= level) {
+          currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
+          continue;
+        }
+        const bonus = money(usdtAmount * GRSCOIN_SWAP_BONUS_RATES[level]);
+        if (bonus > 0) {
+          const updatedReferrer = await UserModel.findOneAndUpdate(
+            { id: referrer.id },
+            [{
+              $set: {
+                balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, bonus] }, 2] },
+                bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, bonus] }, 2] }
+              }
+            }],
+            { new: true, session, lean: true }
+          );
+          platformBalanceAfterDebits = money(platformBalanceAfterDebits - bonus);
+          referralRows.push({
+            accountType: "platform",
+            accountId: "platform",
+            direction: "debit",
+            amount: bonus,
+            balanceAfter: platformBalanceAfterDebits,
+            description: `Bonus swap niveau ${level + 1}`
+          }, {
+            accountType: "user",
+            accountId: referrer.id,
+            direction: "credit",
+            amount: bonus,
+            balanceAfter: updatedReferrer?.balance || money(referrer.balance + bonus),
+            description: `Bonus swap niveau ${level + 1}`
+          });
+          referralTransactions.push({
+            id: nanoid(),
+            userId: referrer.id,
+            type: "Bonus",
+            description: `Bonus swap niveau ${level + 1}`,
+            amount: bonus,
+            displayAmount: formatAmount(bonus, "+"),
+            status: "Completed",
+            createdAt: nowIso(),
+            metadata: { sourceUserId: user.id, source: "afrix_swap_referral", level: level + 1, rate: GRSCOIN_SWAP_BONUS_RATES[level], swapId: referenceId }
+          });
+        }
+        currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
+      }
+      if (platformBalanceAfterDebits !== money(platform.balance)) {
+        await PlatformAccountModel.updateOne({ id: "platform" }, { $set: { balance: platformBalanceAfterDebits } }, { session });
+      }
+
+      const ledgerEntries = buildLedgerEntries([{
+        accountType: "user",
+        accountId: user.id,
+        direction: "debit",
+        amount: usdtAmount,
+        balanceAfter: updatedUser.balance,
+        description: "AFRIX Swap USDT vers GRSCOIN"
+      }, {
+        accountType: "platform",
+        accountId: "platform",
+        direction: "credit",
+        amount: usdtAmount,
+        balanceAfter: platform.balance,
+        description: "AFRIX Swap USDT recu"
+      }, {
+        accountType: "user_grs",
+        accountId: user.id,
+        direction: "credit",
+        amount: grsAmount,
+        balanceAfter: updatedUser.grsBalance,
+        description: "AFRIX Swap GRSCOIN credite"
+      }, ...commissionRows, ...referralRows], {
+        source: "afrix_swap",
+        referenceId,
+        extra: { priceUsdt: GRSCOIN_PRICE_USDT, usdtAmount, netUsdt, platformFee, adminCommission, developerCommission, platformCommission, bonusPool, grsAmount }
+      });
+      if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+      if (commissionTransactions.length) await TransactionModel.insertMany(commissionTransactions, { session });
+      if (referralTransactions.length) await TransactionModel.insertMany(referralTransactions, { session });
+
+      const tx = {
+        id: referenceId,
+        userId: user.id,
+        type: "Swap",
+        description: "AFRIX Swap USDT vers GRSCOIN",
+        amount: usdtAmount,
+        displayAmount: `-${usdtAmount.toFixed(2)} USDT -> +${grsAmount.toFixed(2)} GRSC`,
+        status: "Completed",
+        createdAt: nowIso(),
+        metadata: { priceUsdt: GRSCOIN_PRICE_USDT, usdtAmount, netUsdt, platformFee, adminCommission, developerCommission, platformCommission, bonusPool, grsAmount, direction: "USDT_GRSC" }
+      };
+      await TransactionModel.create([tx], { session });
+      result = { transaction: tx, user: normalizeUserRecord(updatedUser), usdtAmount, netUsdt, grsAmount, platformFee, adminCommission, developerCommission, platformCommission, bonusPool, priceUsdt: GRSCOIN_PRICE_USDT };
+    }));
+
+    if (result?.error) return res.status(400).json({ message: result.error });
+    return res.status(201).json(result);
+  } finally {
+    await session.endSession();
+  }
+});
+
 app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(z.object({
   amount: z.coerce.number().optional(),
   plan: z.string().optional()
@@ -1871,6 +2622,261 @@ app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(
   notifyPlanActivation(result.user, result.activePlan, investmentAmount);
 });
 
+app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validate(z.object({
+  amount: z.coerce.number().positive(),
+  plan: z.string().min(2)
+})), async (req, res) => {
+  const plan = parseStakingPlan(req.body.plan);
+  if (!plan) return res.status(400).json({ message: "Plan staking inconnu." });
+  const stakeAmount = money(req.body.amount);
+  if (stakeAmount < money(plan.minAmount)) {
+    return res.status(400).json({ message: `Montant minimum ${plan.name}: ${plan.minAmount.toFixed(2)} GRSC.` });
+  }
+
+  const rewardAmount = money(stakeAmount * plan.rewardRate);
+  const maturityAmount = money(stakeAmount + rewardAmount);
+  const activatedAt = nowIso();
+  const activeStake = {
+    id: nanoid(),
+    planId: plan.id,
+    name: plan.name,
+    amount: stakeAmount,
+    rewardRate: plan.rewardRate,
+    rewardAmount,
+    maturityAmount,
+    durationDays: plan.durationDays,
+    activatedAt,
+    lastPayoutAt: null,
+    lastPayoutDate: today(),
+    nextPayoutAt: addDaysToTimestamp(activatedAt, 1),
+    daysPaid: 0,
+    earnedAmount: 0,
+    endsAt: addDaysToTimestamp(activatedAt, plan.durationDays),
+    status: "active"
+  };
+
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      const updatedUser = await UserModel.findOneAndUpdate(
+        {
+          id: req.user.id,
+          status: "active",
+          $expr: { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, stakeAmount] }
+        },
+        [{
+          $set: {
+            grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, stakeAmount] }, 2] },
+            activeStakes: { $concatArrays: [{ $ifNull: ["$activeStakes", []] }, [activeStake]] }
+          }
+        }],
+        { new: true, session, lean: true }
+      );
+      if (!updatedUser) {
+        result = { error: "Solde GRSCOIN insuffisant pour activer ce staking." };
+        return;
+      }
+
+      const entries = buildLedgerEntries([{
+        accountType: "user_grs",
+        accountId: req.user.id,
+        direction: "debit",
+        amount: stakeAmount,
+        balanceAfter: updatedUser.grsBalance,
+        description: `Activation ${plan.name}`
+      }, {
+        accountType: "staking_grs",
+        accountId: req.user.id,
+        direction: "credit",
+        amount: stakeAmount,
+        balanceAfter: stakeAmount,
+        description: `GRSCOIN verrouille ${plan.name}`
+      }], { source: "staking_activation", referenceId: activeStake.id, extra: { planId: plan.id } });
+      if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+
+      const benefitRows = [];
+      const benefitTransactions = [];
+      const creditGrsBenefit = async ({ account, amount, label, source, extra = {}, accountType = "user_grs" }) => {
+        const benefit = money(amount);
+        if (!account?.id || benefit <= 0) return null;
+        const updatedAccount = await UserModel.findOneAndUpdate(
+          { id: account.id },
+          [{
+            $set: {
+              grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, benefit] }, 2] }
+            }
+          }],
+          { new: true, session, lean: true }
+        );
+        if (!updatedAccount) return null;
+        benefitRows.push({
+          accountType,
+          accountId: account.id,
+          direction: "credit",
+          amount: benefit,
+          balanceAfter: updatedAccount.grsBalance,
+          description: label,
+          source,
+          extra
+        });
+        benefitTransactions.push({
+          id: nanoid(),
+          userId: account.id,
+          type: label.includes("Bonus") ? "Bonus" : "Commission",
+          description: label,
+          amount: benefit,
+          displayAmount: `+${benefit.toFixed(2)} GRSC`,
+          status: "Completed",
+          createdAt: nowIso(),
+          metadata: { source, activeStakeId: activeStake.id, planId: plan.id, ...extra }
+        });
+        return updatedAccount;
+      };
+
+      const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
+      const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
+      const platformAccount = PLATFORM_EMAIL ? await UserModel.findOne({ email: PLATFORM_EMAIL }, null, { session }).lean() : null;
+      await creditGrsBenefit({
+        account: adminAccount,
+        amount: rewardAmount * STAKING_ADMIN_COMMISSION_RATE,
+        label: "Commission admin staking",
+        source: "staking_admin_commission",
+        accountType: "admin_grs",
+        extra: { sourceUserId: req.user.id, rate: STAKING_ADMIN_COMMISSION_RATE, rewardAmount }
+      });
+      await creditGrsBenefit({
+        account: developerAccount,
+        amount: rewardAmount * STAKING_DEVELOPER_COMMISSION_RATE,
+        label: "Commission developpeur staking",
+        source: "staking_developer_commission",
+        accountType: "developer_grs",
+        extra: { sourceUserId: req.user.id, rate: STAKING_DEVELOPER_COMMISSION_RATE, rewardAmount }
+      });
+      await creditGrsBenefit({
+        account: platformAccount,
+        amount: rewardAmount * STAKING_PLATFORM_COMMISSION_RATE,
+        label: "Commission plateforme staking",
+        source: "staking_platform_commission",
+        accountType: "platform_user_grs",
+        extra: { sourceUserId: req.user.id, rate: STAKING_PLATFORM_COMMISSION_RATE, rewardAmount }
+      });
+
+      if (benefitRows.length) {
+        const benefitEntries = buildLedgerEntries(benefitRows.map((row) => ({
+          accountType: row.accountType,
+          accountId: row.accountId,
+          direction: row.direction,
+          amount: row.amount,
+          balanceAfter: row.balanceAfter,
+          description: row.description
+        })), {
+          source: "staking_activation_benefits",
+          referenceId: activeStake.id,
+          extra: { planId: plan.id, rewardAmount }
+        });
+        if (benefitEntries.length) await LedgerEntryModel.insertMany(benefitEntries, { session });
+      }
+      if (benefitTransactions.length) await TransactionModel.insertMany(benefitTransactions, { session });
+
+      await TransactionModel.create([{
+        id: nanoid(),
+        userId: req.user.id,
+        type: "Staking",
+        description: `Activation ${plan.name}`,
+        amount: stakeAmount,
+        displayAmount: `-${stakeAmount.toFixed(2)} GRSC`,
+        status: "Active",
+        createdAt: nowIso(),
+        metadata: { planId: plan.id, activeStakeId: activeStake.id, rewardAmount, maturityAmount, endsAt: activeStake.endsAt }
+      }], { session });
+      result = { user: normalizeUserRecord(updatedUser), activeStake };
+    });
+
+    if (result?.error) return res.status(400).json({ message: result.error });
+    res.status(201).json({ user: sanitizeUser(result.user), activeStake: result.activeStake });
+  } finally {
+    await session.endSession();
+  }
+});
+
+app.post("/api/staking/:id/claim", authenticate, requirePlatformAccess(), async (req, res) => {
+  const stakeId = String(req.params.id || "");
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      const user = normalizeUserRecord(await UserModel.findOne({ id: req.user.id }, null, { session }).lean());
+      const stakes = Array.isArray(user?.activeStakes) ? user.activeStakes : [];
+      const stakeIndex = stakes.findIndex((stake) => stake.id === stakeId);
+      const stake = stakeIndex >= 0 ? stakes[stakeIndex] : null;
+      if (!stake) {
+        result = { error: "Staking introuvable." };
+        return;
+      }
+      if (stake.status !== "active") {
+        result = { error: "Ce staking a deja ete reclame." };
+        return;
+      }
+      if (Date.parse(stake.endsAt || "") > Date.now()) {
+        result = { error: "Ce staking n'est pas encore arrive a maturite." };
+        return;
+      }
+
+      const claimedAmount = money(Number(stake.amount || 0) + Number(stake.rewardAmount || 0));
+      stakes[stakeIndex] = {
+        ...stake,
+        status: "completed",
+        claimedAt: nowIso()
+      };
+      const updatedUser = await UserModel.findOneAndUpdate(
+        { id: user.id },
+        [{
+          $set: {
+            grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, claimedAmount] }, 2] },
+            activeStakes: stakes
+          }
+        }],
+        { new: true, session, lean: true }
+      );
+
+      const entries = buildLedgerEntries([{
+        accountType: "staking_grs",
+        accountId: user.id,
+        direction: "debit",
+        amount: money(stake.amount || 0),
+        balanceAfter: 0,
+        description: `Sortie ${stake.name || "Staking GRSCOIN"}`
+      }, {
+        accountType: "user_grs",
+        accountId: user.id,
+        direction: "credit",
+        amount: claimedAmount,
+        balanceAfter: updatedUser.grsBalance,
+        description: `Reclamation ${stake.name || "Staking GRSCOIN"}`
+      }], { source: "staking_claim", referenceId: stake.id, extra: { rewardAmount: money(stake.rewardAmount || 0), earnedAmount: money(stake.earnedAmount || 0) } });
+      if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+      await TransactionModel.create([{
+        id: nanoid(),
+        userId: user.id,
+        type: "Staking",
+        description: `Reclamation ${stake.name || "Staking GRSCOIN"}`,
+        amount: claimedAmount,
+        displayAmount: `+${claimedAmount.toFixed(2)} GRSC`,
+        status: "Completed",
+        createdAt: nowIso(),
+        metadata: { activeStakeId: stake.id, rewardAmount: money(stake.rewardAmount || 0), earnedAmount: money(stake.earnedAmount || 0), claimedAmount }
+      }], { session });
+      result = { user: normalizeUserRecord(updatedUser), claimedAmount };
+    });
+
+    if (result?.error) return res.status(400).json({ message: result.error });
+    res.json({ user: sanitizeUser(result.user), claimedAmount: result.claimedAmount });
+  } finally {
+    await session.endSession();
+  }
+});
+
 function maskDisplayName(value = "") {
   const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "Utilisateur AFRIX";
@@ -1878,7 +2884,7 @@ function maskDisplayName(value = "") {
   return `${parts[0]} ${parts[1][0] || ""}.`;
 }
 
-app.get("/api/p2p-recipient/:email", authenticate, requirePlatformAccess(), (req, res) => {
+app.get("/api/p2p-recipient/:email", authenticate, requirePlatformAccess(), attachDb, (req, res) => {
   const email = String(req.params.email || "").trim().toLowerCase();
   const recipient = req.db.users.find((user) => String(user.email || "").toLowerCase() === email);
   if (!recipient) return res.status(404).json({ message: "Destinataire introuvable." });
@@ -2024,7 +3030,7 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
   ]).catch((error) => logger.error({ err: error }, "P2P transfer email failed"));
 });
 
-app.get("/api/exchange/ads", authenticate, requirePlatformAccess(), async (req, res) => {
+app.get("/api/exchange/ads", authenticate, requirePlatformAccess(), attachDb, async (req, res) => {
   const type = String(req.query.type || "").trim();
   const ads = req.db.exchangeAds
     .filter((ad) => ad.status === "active")
@@ -2155,7 +3161,7 @@ app.post("/api/exchange/orders", authenticate, requirePlatformAccess(), validate
   res.status(201).json({ order: result.order });
 });
 
-app.get("/api/exchange/orders/:reference", authenticate, requirePlatformAccess(), requireMerchant, (req, res) => {
+app.get("/api/exchange/orders/:reference", authenticate, requirePlatformAccess(), requireMerchant, attachDb, (req, res) => {
   const reference = String(req.params.reference || "").trim().toUpperCase();
   const order = req.db.exchangeOrders.find((item) => item.reference === reference && (item.merchantId === req.user.id || req.user.role === "admin"));
   if (!order) return res.status(404).json({ message: "Demande Exchange introuvable." });
@@ -2321,7 +3327,7 @@ app.post("/api/merchant/applications", authenticate, requirePlatformAccess(), va
   ]).catch((error) => logger.error({ err: error }, "Merchant application notification failed"));
 });
 
-app.get("/api/merchant/cico-requests/:reference", authenticate, requirePlatformAccess({ cico: true }), requireMerchant, (req, res) => {
+app.get("/api/merchant/cico-requests/:reference", authenticate, requirePlatformAccess({ cico: true }), requireMerchant, attachDb, (req, res) => {
   const request = req.db.cicoRequests.find((item) => item.reference === req.params.reference && item.status === "En attente merchant");
   if (!request) return res.status(404).json({ message: "Reference introuvable ou deja traitee." });
   res.json({ request });
@@ -2455,7 +3461,7 @@ app.post("/api/disputes", authenticate, validate(z.object({
   ]).catch((error) => logger.error({ err: error }, "Dispute notification failed"));
 });
 
-app.get("/api/transactions/export", authenticate, (req, res) => {
+app.get("/api/transactions/export", authenticate, attachDb, (req, res) => {
   const rows = req.db.transactions.filter((tx) => canViewTransaction(req.user, tx));
   const csv = [
     "date,type,description,amount,status,reference",
@@ -2832,12 +3838,16 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
       const nextStatus = action === "approve" ? "Completed" : "Rejected";
 
       if (tx.type === "Depot" && action === "approve") {
+        const isGrsPurchase = tx.metadata?.asset === "GRSC_PURCHASE";
+        const isUsdtConvertedGrsPurchase = isGrsPurchase && tx.metadata?.method === "usdt_bep20";
+        const grsAmount = money(tx.metadata?.grsAmount || tx.amount);
+        const grsValueUsdt = money(tx.metadata?.usdtAmount || (grsAmount * GRSCOIN_PRICE_USDT));
         const updatedUser = await UserModel.findOneAndUpdate(
           { id: tx.userId },
           [{
-            $set: {
-              balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, money(tx.amount)] }, 2] }
-            }
+            $set: isGrsPurchase
+              ? { grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, grsAmount] }, 2] } }
+              : { balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, money(tx.amount)] }, 2] } }
           }],
           { new: true, session, lean: true }
         );
@@ -2845,18 +3855,254 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
           result = { error: "Utilisateur introuvable." };
           return;
         }
-        const entries = buildLedgerEntries([{
-          accountType: "user",
+        const platform = isGrsPurchase ? await PlatformAccountModel.findOneAndUpdate(
+          { id: "platform" },
+          { $inc: { balance: grsValueUsdt }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
+          { upsert: true, new: true, session, lean: true }
+        ) : null;
+        const depositLedgerRows = [{
+          accountType: isGrsPurchase ? "user_grs" : "user",
           accountId: tx.userId,
           direction: "credit",
-          amount: tx.amount,
-          balanceAfter: updatedUser.balance,
+          amount: isGrsPurchase ? grsAmount : tx.amount,
+          balanceAfter: isGrsPurchase ? updatedUser.grsBalance : updatedUser.balance,
           description: tx.description || "Depot approuve"
-        }], { source: "admin_deposit_approval", referenceId: tx.id, extra: { reviewedBy: adminId } });
+        }];
+        if (isGrsPurchase) {
+          depositLedgerRows.push({
+            accountType: "platform",
+            accountId: "platform",
+            direction: "credit",
+            amount: grsValueUsdt,
+            balanceAfter: platform?.balance || grsValueUsdt,
+            description: "Depot GRSCOIN - valeur recue"
+          });
+        }
+        const commissionRows = [];
+        const commissionTransactions = [];
+        if (isUsdtConvertedGrsPurchase) {
+          const adminCommission = money(grsValueUsdt * GRSCOIN_SWAP_ADMIN_RATE);
+          const developerCommission = money(grsValueUsdt * GRSCOIN_SWAP_DEVELOPER_RATE);
+          const platformCommission = money(grsValueUsdt * GRSCOIN_SWAP_PLATFORM_RATE);
+          let platformBalanceAfterDebits = money(platform?.balance || 0);
+          const payoutTargets = [
+            {
+              rate: GRSCOIN_SWAP_ADMIN_RATE,
+              amount: adminCommission,
+              email: ADMIN_EMAIL,
+              accountType: "admin",
+              description: "Commission admin AFRIX Swap"
+            },
+            {
+              rate: GRSCOIN_SWAP_DEVELOPER_RATE,
+              amount: developerCommission,
+              email: COMMISSION_DEVELOPER_EMAIL,
+              accountType: "developer",
+              description: "Commission developpeur AFRIX Swap"
+            },
+            {
+              rate: GRSCOIN_SWAP_PLATFORM_RATE,
+              amount: platformCommission,
+              email: PLATFORM_EMAIL,
+              accountType: "platform_user",
+              description: "Commission plateforme AFRIX Swap"
+            }
+          ];
+          for (const target of payoutTargets) {
+            if (!target.amount || !target.email) continue;
+            platformBalanceAfterDebits = money(platformBalanceAfterDebits - target.amount);
+            const creditedUser = await UserModel.findOneAndUpdate(
+              { email: target.email },
+              [{
+                $set: {
+                  balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, target.amount] }, 2] },
+                  bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, target.amount] }, 2] }
+                }
+              }],
+              { new: true, session, lean: true }
+            );
+            if (!creditedUser) continue;
+            commissionRows.push({
+              accountType: "platform",
+              accountId: "platform",
+              direction: "debit",
+              amount: target.amount,
+              balanceAfter: platformBalanceAfterDebits,
+              description: target.description
+            }, {
+              accountType: target.accountType,
+              accountId: creditedUser.id,
+              direction: "credit",
+              amount: target.amount,
+              balanceAfter: creditedUser.balance,
+              description: target.description
+            });
+            commissionTransactions.push({
+              id: nanoid(),
+              userId: creditedUser.id,
+              type: "Commission",
+              description: "Commission AFRIX Swap",
+              amount: target.amount,
+              displayAmount: formatAmount(target.amount, "+"),
+              status: "Completed",
+              createdAt: nowIso(),
+              metadata: { source: "afrix_swap_commission", swapId: tx.id, rate: target.rate, sourceDeposit: true }
+            });
+          }
+          if (platformBalanceAfterDebits !== money(platform?.balance || 0)) {
+            await PlatformAccountModel.updateOne({ id: "platform" }, { $set: { balance: platformBalanceAfterDebits } }, { session });
+          }
+        }
+        const entries = buildLedgerEntries(depositLedgerRows, { source: "admin_deposit_approval", referenceId: tx.id, extra: { reviewedBy: adminId } });
         if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+        if (commissionRows.length) {
+          const commissionEntries = buildLedgerEntries(commissionRows, {
+            source: "grscoin_purchase_commissions",
+            referenceId: tx.id,
+            extra: { reviewedBy: adminId, valueUsdt: grsValueUsdt }
+          });
+          if (commissionEntries.length) await LedgerEntryModel.insertMany(commissionEntries, { session });
+        }
+        if (commissionTransactions.length) await TransactionModel.insertMany(commissionTransactions, { session });
+
+        if (isUsdtConvertedGrsPurchase) {
+          const buyer = normalizeUserRecord(updatedUser);
+          let currentReferrer = { id: buyer.referrerId, email: buyer.referrerEmail, code: buyer.referrerCode };
+          for (let level = 0; level < GRSCOIN_REFERRAL_RATES.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
+            const referrerQuery = [];
+            if (currentReferrer.id) referrerQuery.push({ id: currentReferrer.id });
+            if (currentReferrer.email) referrerQuery.push({ email: normalizeEmail(currentReferrer.email) });
+            if (currentReferrer.code) referrerQuery.push({ refCode: normalizeInvitationCode(currentReferrer.code) });
+            const referrer = referrerQuery.length ? normalizeUserRecord(await UserModel.findOne({ $or: referrerQuery }, null, { session }).lean()) : null;
+            if (!referrer) break;
+            if (unlockedReferralLevels(referrer) <= level) {
+              currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
+              continue;
+            }
+            const bonus = money(grsValueUsdt * GRSCOIN_REFERRAL_RATES[level]);
+            if (bonus > 0) {
+              const updatedReferrer = await UserModel.findOneAndUpdate(
+                { id: referrer.id },
+                [{
+                  $set: {
+                    balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, bonus] }, 2] },
+                    bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, bonus] }, 2] }
+                  }
+                }],
+                { new: true, session, lean: true }
+              );
+              const bonusPlatform = await PlatformAccountModel.findOneAndUpdate(
+                { id: "platform" },
+                { $inc: { balance: -bonus }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
+                { upsert: true, new: true, session, lean: true }
+              );
+              const bonusEntries = buildLedgerEntries([{
+                accountType: "platform",
+                accountId: "platform",
+                direction: "debit",
+                amount: bonus,
+                balanceAfter: bonusPlatform.balance,
+                description: `Bonus achat GRSCOIN niveau ${level + 1}`
+              }, {
+                accountType: "user",
+                accountId: referrer.id,
+                direction: "credit",
+                amount: bonus,
+                balanceAfter: updatedReferrer?.balance || money(referrer.balance + bonus),
+                description: `Bonus achat GRSCOIN niveau ${level + 1}`
+              }], { source: "grscoin_purchase_referral", referenceId: tx.id, extra: { buyerId: buyer.id, level: level + 1, rate: GRSCOIN_REFERRAL_RATES[level] } });
+              if (bonusEntries.length) await LedgerEntryModel.insertMany(bonusEntries, { session });
+              await TransactionModel.create([{
+                id: nanoid(),
+                userId: referrer.id,
+                type: "Bonus",
+                description: `Bonus achat GRSCOIN niveau ${level + 1}`,
+                amount: bonus,
+                displayAmount: formatAmount(bonus, "+"),
+                status: "Completed",
+                createdAt: nowIso(),
+                metadata: { sourceUserId: buyer.id, source: "grscoin_purchase_referral", level: level + 1, rate: GRSCOIN_REFERRAL_RATES[level], purchaseId: tx.id }
+              }], { session });
+            }
+            currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
+          }
+        }
       }
 
       if (tx.type === "Retrait") {
+        const isGrsWithdrawal = tx.metadata?.asset === "GRSC_WITHDRAWAL";
+        if (isGrsWithdrawal) {
+          const grsAmount = money(tx.metadata?.grsAmount || tx.amount);
+          const feeGrsAmount = money(tx.metadata?.fee || 0);
+          const netGrsAmount = money(tx.metadata?.netAmount || grsAmount);
+          if (action === "approve") {
+            const withdrawalRows = [{
+              accountType: "external_grs",
+              accountId: tx.metadata?.address || "external",
+              direction: "credit",
+              amount: netGrsAmount,
+              balanceAfter: 0,
+              description: "Retrait GRSCOIN approuve"
+            }];
+            if (PLATFORM_EMAIL && feeGrsAmount > 0) {
+              const platformUser = await UserModel.findOneAndUpdate(
+                { email: PLATFORM_EMAIL },
+                [{
+                  $set: {
+                    grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }, 2] }
+                  }
+                }],
+                { new: true, session, lean: true }
+              );
+              if (platformUser) {
+                withdrawalRows.push({
+                  accountType: "platform_user_grs",
+                  accountId: platformUser.id,
+                  direction: "credit",
+                  amount: feeGrsAmount,
+                  balanceAfter: platformUser.grsBalance,
+                  description: "Frais retrait GRSCOIN"
+                });
+                await TransactionModel.create([{
+                  id: nanoid(),
+                  userId: platformUser.id,
+                  type: "Frais",
+                  description: "Frais retrait GRSCOIN",
+                  amount: feeGrsAmount,
+                  displayAmount: `+${feeGrsAmount.toFixed(2)} GRSC`,
+                  status: "Completed",
+                  createdAt: nowIso(),
+                  metadata: { source: "grscoin_withdrawal_fee", withdrawalId: tx.id, sourceUserId: tx.userId }
+                }], { session });
+              }
+            }
+            const entries = buildLedgerEntries(withdrawalRows, { source: "admin_grs_withdrawal_approval", referenceId: tx.id, extra: { reviewedBy: adminId, userId: tx.userId } });
+            if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+          } else {
+            const updatedUser = await UserModel.findOneAndUpdate(
+              { id: tx.userId },
+              [{
+                $set: {
+                  grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, grsAmount] }, 2] }
+                }
+              }],
+              { new: true, session, lean: true }
+            );
+            if (!updatedUser) {
+              result = { error: "Utilisateur introuvable." };
+              return;
+            }
+            const entries = buildLedgerEntries([{
+              accountType: "user_grs",
+              accountId: tx.userId,
+              direction: "credit",
+              amount: grsAmount,
+              balanceAfter: updatedUser.grsBalance,
+              description: "Retrait GRSCOIN rejete"
+            }], { source: "admin_grs_withdrawal_rejection", referenceId: tx.id, extra: { reviewedBy: adminId } });
+            if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+          }
+        } else {
         const reservedAmount = money(tx.metadata?.reservedAmount || tx.amount);
         const feeAmount = money(tx.metadata?.fee || 0);
         if (action === "approve") {
@@ -2945,6 +4191,7 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
           }], { source: "admin_withdrawal_rejection", referenceId: tx.id, extra: { reviewedBy: adminId } });
           if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
         }
+        }
       }
 
       const txUpdate = await TransactionModel.updateOne(
@@ -3024,6 +4271,7 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
         role: req.body.role || "user",
         status: "active",
         balance: 0,
+        grsBalance: 0,
         reservedBalance: 0,
         activity: 0,
         bonus: 0,
@@ -3032,6 +4280,7 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
         referrerId: null,
         merchantWallet: { available: 0, pending: 0, bonus: 0 },
         activePlans: [],
+        activeStakes: [],
         createdAt: nowIso(),
         metadata: { createdByAdmin: req.user.id }
       };
@@ -3214,6 +4463,11 @@ app.use("/assets", express.static(path.join(rootDir, "assets"), {
 }));
 
 app.get([...publicFiles], (req, res) => {
+  if (req.path === "/service-worker.js") {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  } else if (req.path.endsWith(".html") || req.path === "/") {
+    res.set("Cache-Control", "no-cache, must-revalidate");
+  }
   res.sendFile(path.join(rootDir, req.path.slice(1)));
 });
 
@@ -3233,6 +4487,7 @@ app.use((req, res, next) => {
   if (req.method === "GET") {
     const cleanPath = req.path.replace(/\/+$/, "") || "/";
     if (pageRoutes[cleanPath]) {
+      res.set("Cache-Control", "no-cache, must-revalidate");
       res.sendFile(path.join(rootDir, pageRoutes[cleanPath]));
       return;
     }

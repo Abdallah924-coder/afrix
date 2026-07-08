@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f5d43">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/assets/pwa-icon.svg">
+  <link rel="shortcut icon" href="/assets/pwa-icon.svg">
+  <link rel="apple-touch-icon" href="/assets/pwa-icon.svg">
+  <meta property="og:image" content="/assets/pwa-icon.svg">
+  <meta name="twitter:image" content="/assets/pwa-icon.svg">
+  <title>AFRIX Staking Program</title>
+  <link rel="stylesheet" href="../styles.css?v=20260706-1">
+</head>
+<body data-protected data-page="staking">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+
+    <section class="hero-card plans-hero staking-hero">
+      <span class="pill">AFRIX Staking Program</span>
+      <h1>Valorisez votre GRSCOIN</h1>
+      <p>Verrouillez temporairement vos GRSCOIN au sein du programme AFRIX Staking et recuperez le capital avec la valeur de sortie visee a l'issue du cycle.</p>
+      <div class="principle-strip" aria-label="Principes staking">
+        <span>Minimum 100 GRSC</span>
+        <span>Cycles de 90 a 365 jours</span>
+        <span>Utilite GRSCOIN renforcee</span>
+        <span>Sortie a maturite</span>
+      </div>
+    </section>
+
+    <section class="grid three staking-summary">
+      <article class="panel">
+        <span class="muted">Solde disponible</span>
+        <h1 data-staking-grs-balance>0.00 GRSC</h1>
+      </article>
+      <article class="panel">
+        <span class="muted">GRSC verrouilles</span>
+        <h1 data-staking-locked-balance>0.00 GRSC</h1>
+      </article>
+      <article class="panel">
+        <span class="muted">Resultats vises</span>
+        <h1 data-staking-projected-rewards>0.00 GRSC</h1>
+      </article>
+    </section>
+
+    <section class="panel active-plans-panel">
+      <div class="panel-head"><h1>Stakings actifs</h1><span class="badge" data-active-stakes-count>0</span></div>
+      <div class="active-plans-grid" data-active-stakes-list></div>
+    </section>
+
+    <section class="plans staking-plans" data-staking-plans-list></section>
+
+    <section class="grid two plans-principles">
+      <article class="panel">
+        <span class="pill">Avantages</span>
+        <h1>Participation au developpement de l'ecosysteme.</h1>
+        <div class="principle-list">
+          <span>Participation a partir de 100 GRSC</span>
+          <span>Renforcement de l'utilite du GRSCOIN</span>
+          <span>Contribution au developpement du GRS CORE ECOSYSTEM</span>
+          <span>Capital et resultats accessibles a l'issue du cycle</span>
+        </div>
+      </article>
+      <article class="panel ecosystem-note">
+        <h1>GRSCOIN • Smart Contract • Staking • Ecosysteme</h1>
+        <p>Les montants stakes sont verrouilles pendant toute la duree du cycle. La reclamation est disponible uniquement a maturite.</p>
+      </article>
+    </section>
+  </main>
+  <script src="../app.js?v=20260706-1"></script>
+</body>
+</html>
