@@ -1264,6 +1264,7 @@ function renderAdmin(user) {
   renderAdminUserActivity(user.adminUsers || [], userQuery);
   bindAdminSections();
   bindAdminUsersPanel();
+  initDetailedAdmin();
 
   document.querySelectorAll("[data-admin-control]").forEach((control) => {
     control.checked = Boolean(platformControls[control.dataset.adminControl]);
@@ -1477,6 +1478,321 @@ function renderDisputes(disputes) {
       <button class="btn primary" type="button" data-dispute-close="${escapeHtml(item.id || item.reference || "")}">Cloturer</button>
     </div>
   `).join("") : `<p class="muted">Aucun litige ouvert.</p>`;
+}
+
+const adminDetailedState = {
+  initialized: false,
+  section: "overview",
+  pages: {
+    users: 1,
+    deposits: 1,
+    withdrawals: 1,
+    trading: 1,
+    staking: 1,
+    swap: 1,
+    money: 1
+  }
+};
+
+function nestedValue(source, path) {
+  return String(path || "").split(".").reduce((value, key) => value?.[key], source);
+}
+
+function adminStatusLabel(status = "") {
+  const labels = {
+    Pending: "En attente",
+    Completed: "Validé",
+    Rejected: "Rejeté",
+    Active: "Actif",
+    active: "Actif",
+    blocked: "Suspendu",
+    pending: "En attente",
+    completed: "Validé",
+    rejected: "Rejeté"
+  };
+  return labels[status] || status || "-";
+}
+
+function renderAdminPagination(kind, pagination = {}) {
+  if (!pagination.total || pagination.totalPages <= 1) return "";
+  return `
+    <div class="admin-pagination">
+      <button class="btn secondary" type="button" data-admin-page="${escapeHtml(kind)}" data-page="${Math.max(1, Number(pagination.page || 1) - 1)}" ${pagination.hasPrev ? "" : "disabled"}>Précédent</button>
+      <span>Page ${Number(pagination.page || 1).toLocaleString("fr-FR")} / ${Number(pagination.totalPages || 1).toLocaleString("fr-FR")} - ${Number(pagination.total || 0).toLocaleString("fr-FR")} éléments</span>
+      <button class="btn secondary" type="button" data-admin-page="${escapeHtml(kind)}" data-page="${Number(pagination.page || 1) + 1}" ${pagination.hasNext ? "" : "disabled"}>Suivant</button>
+    </div>
+  `;
+}
+
+function renderAdminDetailedTransactions(rows = [], kind = "") {
+  if (!rows.length) return `<p class="muted">Aucune donnée à afficher.</p>`;
+  return rows.map((item) => {
+    const meta = item.metadata || {};
+    const details = [
+      item.userEmail || "",
+      item.date || "",
+      `Ref. ${item.reference || item.id || ""}`,
+      item.program ? `Programme ${item.program}` : "",
+      meta.method ? `Methode ${String(meta.method).toUpperCase()}` : "",
+      meta.asset ? `Actif ${meta.asset}` : "",
+      meta.grsAmount ? `GRSC ${formatGrsc(meta.grsAmount)}` : "",
+      meta.priceUsdt ? `Prix ${formatTokenPrice(meta.priceUsdt)}` : "",
+      meta.txRef ? `TX ${meta.txRef}` : "",
+      meta.address ? `Adresse ${meta.address}` : "",
+      meta.phone ? `Tel ${meta.phone}` : "",
+      meta.beneficiary ? `Nom ${meta.beneficiary}` : "",
+      meta.fee ? `Frais ${meta.asset === "GRSC_WITHDRAWAL" ? formatGrsc(meta.fee) : formatUsdt(meta.fee)}` : "",
+      meta.netAmount ? `Net ${meta.asset === "GRSC_WITHDRAWAL" ? formatGrsc(meta.netAmount) : formatUsdt(meta.netAmount)}` : ""
+    ].filter(Boolean).join(" - ");
+    const canReview = item.status === "Pending" && (item.type === "Depot" || item.type === "Retrait");
+    return `
+      <div class="queue-row admin-detail-row">
+        <span>
+          ${escapeHtml(item.description || item.type || "Transaction")}
+          <small>${escapeHtml(details)}</small>
+        </span>
+        <strong>${escapeHtml(item.amount || formatUsdt(item.rawAmount))}<small>${escapeHtml(adminStatusLabel(item.status))}</small></strong>
+        ${item.hasProof ? `<button class="btn secondary" type="button" data-admin-proof="${escapeHtml(item.id || item.reference || "")}">Capture</button>` : ""}
+        ${meta.address ? `<button class="btn secondary" type="button" data-copy-admin-address="${escapeHtml(meta.address)}">Copier adresse</button>` : ""}
+        ${canReview ? `
+          <button class="btn primary" type="button" data-admin-action="approve" data-admin-id="${escapeHtml(item.id || item.reference || "")}">Valider</button>
+          <button class="btn secondary" type="button" data-admin-action="reject" data-admin-id="${escapeHtml(item.id || item.reference || "")}">Rejeter</button>
+        ` : ""}
+      </div>
+    `;
+  }).join("") + renderAdminPagination(kind, rows.pagination);
+}
+
+async function loadAdminDetailedSummary() {
+  const summary = await apiRequest("/admin/summary", { timeoutMs: 20_000 });
+  document.querySelectorAll("[data-admin-summary]").forEach((item) => {
+    item.textContent = Number(nestedValue(summary, item.dataset.adminSummary) || 0).toLocaleString("fr-FR");
+  });
+  document.querySelectorAll("[data-admin-summary-usdt]").forEach((item) => {
+    item.textContent = formatUsdt(nestedValue(summary, item.dataset.adminSummaryUsdt) || 0);
+  });
+  document.querySelectorAll("[data-admin-summary-grsc]").forEach((item) => {
+    item.textContent = formatGrsc(nestedValue(summary, item.dataset.adminSummaryGrsc) || 0);
+  });
+  document.querySelectorAll("[data-pending-deposits-count]").forEach((item) => { item.textContent = summary.deposits?.pending || 0; });
+  document.querySelectorAll("[data-pending-withdrawals-count]").forEach((item) => { item.textContent = summary.withdrawals?.pending || 0; });
+}
+
+async function loadAdminDetailedUsers(page = adminDetailedState.pages.users) {
+  adminDetailedState.pages.users = page;
+  const target = document.querySelector("[data-admin-list='users']");
+  if (!target) return;
+  target.innerHTML = `<p class="muted">Chargement des comptes...</p>`;
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: "20"
+  });
+  const search = document.querySelector("[data-admin-users-search-detailed]")?.value.trim();
+  const role = document.querySelector("[data-admin-users-role]")?.value;
+  const status = document.querySelector("[data-admin-users-status]")?.value;
+  if (search) params.set("search", search);
+  if (role) params.set("role", role);
+  if (status) params.set("status", status);
+  const data = await apiRequest(`/admin/users?${params.toString()}`, { timeoutMs: 20_000 });
+  target.innerHTML = data.items.length ? data.items.map((user) => `
+    <div class="queue-row admin-detail-row">
+      <span>
+        ${escapeHtml(user.fullName || user.email)}
+        <small>${escapeHtml(user.email)} - ${escapeHtml(user.country || "-")} - ${escapeHtml(user.role)} - ${escapeHtml(adminStatusLabel(user.status))}</small>
+        <small>Parrain: ${escapeHtml(user.referrerEmail || user.referrerCode || "-")} - Code: ${escapeHtml(user.refCode || "-")} - Transactions: ${Number(user.transactionsCount || 0).toLocaleString("fr-FR")}</small>
+      </span>
+      <strong>${formatUsdt(user.balance)}<small>${formatGrsc(user.grsBalance)} - Trading ${formatUsdt(user.activeInvestmentAmount)} - Staking ${formatGrsc(user.activeStakeAmount)}</small></strong>
+      <button class="btn primary" type="button" data-admin-open-activity="${escapeHtml(user.email)}">Tracer</button>
+      <button class="btn secondary" type="button" data-admin-user-role="${escapeHtml(user.id)}" data-role="${user.role === "admin" ? "user" : "admin"}">${user.role === "admin" ? "User" : "Admin"}</button>
+      ${user.status === "blocked"
+        ? `<button class="btn primary" type="button" data-admin-user-reactivate="${escapeHtml(user.id)}">Reactiver</button>`
+        : `<button class="btn secondary" type="button" data-admin-user-suspend="${escapeHtml(user.id)}">Suspendre</button>`}
+    </div>
+  `).join("") + renderAdminPagination("users", data.pagination) : `<p class="muted">Aucun utilisateur trouvé.</p>`;
+}
+
+async function loadAdminDetailedTransactions(kind, page = adminDetailedState.pages[kind] || 1) {
+  adminDetailedState.pages[kind] = page;
+  const target = document.querySelector(`[data-admin-list='${kind}']`);
+  if (!target) return;
+  target.innerHTML = `<p class="muted">Chargement...</p>`;
+  const status = document.querySelector(`[data-admin-list-status='${kind}']`)?.value || "";
+  const params = new URLSearchParams({ page: String(page), limit: "20" });
+  if (status) params.set("status", status);
+  const data = await apiRequest(`/admin/${kind}?${params.toString()}`, { timeoutMs: 20_000 });
+  const rows = data.items || [];
+  rows.pagination = data.pagination;
+  target.innerHTML = renderAdminDetailedTransactions(rows, kind);
+}
+
+function renderProgramSummary(program, payload = {}) {
+  const target = document.querySelector(`[data-admin-program-summary='${program}']`);
+  if (!target) return;
+  const stats = payload.stats || {};
+  if (program === "trading") {
+    target.innerHTML = `
+      <div class="admin-stat-grid compact">
+        <div><span>Plans actifs</span><strong>${Number(stats.activeCount || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>Total activations</span><strong>${Number(stats.totalCount || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>Capital actif</span><strong>${formatUsdt(stats.activeCapital)}</strong></div>
+        <div><span>Gains distribués</span><strong>${formatUsdt(stats.totalEarned)}</strong></div>
+      </div>
+    `;
+  } else if (program === "staking") {
+    target.innerHTML = `
+      <div class="admin-stat-grid compact">
+        <div><span>Stakings actifs</span><strong>${Number(stats.activeCount || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>Total participations</span><strong>${Number(stats.totalCount || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>GRSC verrouillés</span><strong>${formatGrsc(stats.activeLocked)}</strong></div>
+        <div><span>Gains staking</span><strong>${formatGrsc(stats.totalEarned)}</strong></div>
+      </div>
+    `;
+  } else if (program === "swap") {
+    target.innerHTML = `
+      <div class="admin-stat-grid compact">
+        <div><span>Prix GRSC</span><strong>${formatTokenPrice(stats.priceUsdt)}</strong></div>
+        <div><span>Supply totale</span><strong>${formatGrsc(stats.totalSupply)}</strong></div>
+        <div><span>GRSC émis</span><strong>${formatGrsc(stats.issuedSupply)}</strong></div>
+        <div><span>GRSC restant</span><strong>${formatGrsc(stats.remainingSupply)}</strong></div>
+      </div>
+    `;
+  } else {
+    target.innerHTML = `
+      <div class="admin-stat-grid compact">
+        <div><span>CICO</span><strong>${Number(payload.cicoRequests?.length || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>Exchange</span><strong>${Number(payload.exchangeOrders?.length || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>Transactions listées</span><strong>${Number(payload.items?.length || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>Total historique</span><strong>${Number(payload.pagination?.total || 0).toLocaleString("fr-FR")}</strong></div>
+      </div>
+    `;
+  }
+}
+
+async function loadAdminProgram(program, page = adminDetailedState.pages[program] || 1) {
+  adminDetailedState.pages[program] = page;
+  const target = document.querySelector(`[data-admin-program-list='${program}']`);
+  if (!target) return;
+  target.innerHTML = `<p class="muted">Chargement du programme...</p>`;
+  const payload = await apiRequest(`/admin/programs/${program}?page=${page}&limit=20`, { timeoutMs: 25_000 });
+  renderProgramSummary(program, payload);
+  if (program === "trading" || program === "staking") {
+    target.innerHTML = payload.items.length ? payload.items.map((item) => `
+      <div class="queue-row admin-detail-row">
+        <span>
+          ${escapeHtml(item.name || item.planId || "Participation")}
+          <small>${escapeHtml(item.userName || item.userEmail || "")} - ${escapeHtml(item.userEmail || "")} - ${escapeHtml(adminStatusLabel(item.status))}</small>
+          <small>Début: ${escapeHtml(item.startedAt || item.createdAt || "-")} - Prochain paiement: ${escapeHtml(item.nextPayoutAt || "-")} - Jours payés: ${Number(item.daysPaid || 0).toLocaleString("fr-FR")}/${Number(item.durationDays || 0).toLocaleString("fr-FR")}</small>
+        </span>
+        <strong>${program === "trading" ? formatUsdt(item.amount) : formatGrsc(item.amount)}<small>Gagné: ${program === "trading" ? formatUsdt(item.earnedAmount) : formatGrsc(item.earnedAmount)}</small></strong>
+        <button class="btn primary" type="button" data-admin-open-activity="${escapeHtml(item.userEmail || "")}">Tracer</button>
+      </div>
+    `).join("") + renderAdminPagination(program, payload.pagination) : `<p class="muted">Aucune participation.</p>`;
+    return;
+  }
+  const rows = payload.items || [];
+  rows.pagination = payload.pagination;
+  const moneyExtra = program === "money" ? `
+    <article class="admin-sublist">
+      <h2>Demandes CICO récentes</h2>
+      ${(payload.cicoRequests || []).slice(0, 20).map((item) => `<div><span>${escapeHtml(item.reference || item.id || "")}<small>${escapeHtml(item.userEmail || item.userId || "")} - ${escapeHtml(item.type || "")} - ${escapeHtml(item.status || "")}</small></span><strong>${formatUsdt(item.amount)}</strong></div>`).join("") || `<p class="muted">Aucune demande CICO.</p>`}
+    </article>
+    <article class="admin-sublist">
+      <h2>Exchange récent</h2>
+      ${(payload.exchangeOrders || []).slice(0, 20).map((item) => `<div><span>${escapeHtml(item.reference || item.id || "")}<small>${escapeHtml(item.customerEmail || item.userId || "")} - ${escapeHtml(item.type || "")} - ${escapeHtml(item.status || "")}</small></span><strong>${formatUsdt(item.amount)}</strong></div>`).join("") || `<p class="muted">Aucune demande Exchange.</p>`}
+    </article>
+  ` : "";
+  target.innerHTML = renderAdminDetailedTransactions(rows, program) + moneyExtra;
+}
+
+async function lookupAdminActivity(emailOverride = "") {
+  const email = String(emailOverride || document.querySelector("[data-admin-activity-email]")?.value || "").trim().toLowerCase();
+  const target = document.querySelector("[data-admin-activity-result]");
+  if (!target) return;
+  if (!email) {
+    showToast("Email utilisateur requis.", "error");
+    return;
+  }
+  target.innerHTML = `<p class="muted">Chargement de l'activité...</p>`;
+  const data = await apiRequest(`/admin/users/activity?email=${encodeURIComponent(email)}`, { timeoutMs: 25_000 });
+  const user = data.user || {};
+  const txRows = data.transactions || [];
+  target.innerHTML = `
+    <div class="admin-activity-card admin-activity-card-wide">
+      <span><strong>${escapeHtml(user.fullName || user.email)}</strong><small>${escapeHtml(user.email || "")}</small></span>
+      <div><span>Solde USDT</span><strong>${formatUsdt(user.balance)}</strong></div>
+      <div><span>Solde GRSC</span><strong>${formatGrsc(user.grsBalance)}</strong></div>
+      <div><span>Réservé</span><strong>${formatUsdt(user.reservedBalance)}</strong></div>
+      <div><span>Trading actif</span><strong>${formatUsdt(user.activeInvestmentAmount)}</strong></div>
+      <div><span>Staking actif</span><strong>${formatGrsc(user.activeStakeAmount)}</strong></div>
+      <div><span>Parrain</span><strong>${escapeHtml(user.referrerEmail || user.referrerCode || "-")}</strong></div>
+      <div><span>Statut</span><strong>${escapeHtml(adminStatusLabel(user.status))}</strong></div>
+    </div>
+    <article class="admin-sublist"><h2>AFRIX Trading Program</h2>${(data.activePlans || []).map((plan) => `<div><span>${escapeHtml(plan.name || plan.planId || "Plan")}<small>${escapeHtml(plan.status || "")} - ${escapeHtml(plan.startedAt || "-")} - Jours ${Number(plan.daysPaid || 0)}/${Number(plan.durationDays || 0)}</small></span><strong>${formatUsdt(plan.amount)}<small>${formatUsdt(plan.earnedAmount)} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun plan.</p>`}</article>
+    <article class="admin-sublist"><h2>AFRIX Staking Program</h2>${(data.activeStakes || []).map((stake) => `<div><span>${escapeHtml(stake.name || stake.planId || "Stake")}<small>${escapeHtml(stake.status || "")} - ${escapeHtml(stake.startedAt || "-")} - Jours ${Number(stake.daysPaid || 0)}/${Number(stake.durationDays || 0)}</small></span><strong>${formatGrsc(stake.amount)}<small>${formatGrsc(stake.earnedAmount)} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun staking.</p>`}</article>
+    <article class="admin-sublist"><h2>Transactions traçables</h2>${renderAdminDetailedTransactions(txRows)}</article>
+    <article class="admin-sublist"><h2>AFRIX Money / CICO</h2>${(data.cicoRequests || []).map((item) => `<div><span>${escapeHtml(item.reference || item.id || "")}<small>${escapeHtml(item.type || "")} - ${escapeHtml(item.method || "")} - ${escapeHtml(item.status || "")}</small></span><strong>${formatUsdt(item.amount)}</strong></div>`).join("") || `<p class="muted">Aucune opération CICO.</p>`}</article>
+    <article class="admin-sublist"><h2>Exchange</h2>${(data.exchangeOrders || []).map((item) => `<div><span>${escapeHtml(item.reference || item.id || "")}<small>${escapeHtml(item.type || "")} - ${escapeHtml(item.paymentMethod || "")} - ${escapeHtml(item.status || "")}</small></span><strong>${formatUsdt(item.amount)}</strong></div>`).join("") || `<p class="muted">Aucune opération Exchange.</p>`}</article>
+    <article class="admin-sublist"><h2>Partenaires directs</h2>${(data.directPartners || []).map((item) => `<div><span>${escapeHtml(item.fullName || item.email)}<small>${escapeHtml(item.email || "")} - ${escapeHtml(adminStatusLabel(item.status))}</small></span><strong>${formatUsdt(item.activity)}</strong></div>`).join("") || `<p class="muted">Aucun partenaire direct.</p>`}</article>
+  `;
+}
+
+async function loadActiveDetailedAdminSection(section = adminDetailedState.section) {
+  try {
+    await loadAdminDetailedSummary();
+    if (section === "accounts") await loadAdminDetailedUsers();
+    if (section === "deposits") await loadAdminDetailedTransactions("deposits");
+    if (section === "withdrawals") await loadAdminDetailedTransactions("withdrawals");
+    if (["trading", "staking", "swap", "money"].includes(section)) await loadAdminProgram(section);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function initDetailedAdmin() {
+  if (adminDetailedState.initialized || document.body.dataset.page !== "admin") return;
+  adminDetailedState.initialized = true;
+
+  document.querySelectorAll("[data-admin-section-trigger]").forEach((button) => {
+    button.addEventListener("click", () => {
+      adminDetailedState.section = button.dataset.adminSectionTrigger || "overview";
+      loadActiveDetailedAdminSection(adminDetailedState.section);
+    });
+  });
+  document.querySelectorAll("[data-admin-refresh-list]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const kind = button.dataset.adminRefreshList;
+      adminDetailedState.pages[kind] = 1;
+      if (kind === "users") loadAdminDetailedUsers(1).catch((error) => showToast(error.message, "error"));
+      if (kind === "deposits" || kind === "withdrawals") loadAdminDetailedTransactions(kind, 1).catch((error) => showToast(error.message, "error"));
+    });
+  });
+  document.querySelectorAll("[data-admin-list-status]").forEach((field) => {
+    field.addEventListener("change", () => loadAdminDetailedTransactions(field.dataset.adminListStatus, 1).catch((error) => showToast(error.message, "error")));
+  });
+  document.querySelector("[data-admin-activity-search]")?.addEventListener("click", () => lookupAdminActivity().catch((error) => showToast(error.message, "error")));
+  document.querySelector("[data-admin-activity-email]")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") lookupAdminActivity().catch((error) => showToast(error.message, "error"));
+  });
+  document.addEventListener("click", (event) => {
+    const pager = event.target.closest("[data-admin-page]");
+    if (pager) {
+      const kind = pager.dataset.adminPage;
+      const page = Number(pager.dataset.page || 1);
+      if (kind === "users") loadAdminDetailedUsers(page).catch((error) => showToast(error.message, "error"));
+      if (kind === "deposits" || kind === "withdrawals") loadAdminDetailedTransactions(kind, page).catch((error) => showToast(error.message, "error"));
+      if (["trading", "staking", "swap", "money"].includes(kind)) loadAdminProgram(kind, page).catch((error) => showToast(error.message, "error"));
+    }
+    const openActivity = event.target.closest("[data-admin-open-activity]");
+    if (openActivity) {
+      const email = openActivity.dataset.adminOpenActivity || "";
+      const input = document.querySelector("[data-admin-activity-email]");
+      if (input) input.value = email;
+      document.querySelector("[data-admin-section-trigger='activity']")?.click();
+      lookupAdminActivity(email).catch((error) => showToast(error.message, "error"));
+    }
+  });
+
+  loadActiveDetailedAdminSection("overview").catch((error) => showToast(error.message, "error"));
 }
 
 function setupAuthForms() {

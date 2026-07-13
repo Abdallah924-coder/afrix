@@ -29,9 +29,14 @@
 
     <section class="admin-section-nav" aria-label="Sections admin">
       <button class="admin-section-tab is-active" type="button" data-admin-section-trigger="overview">Vue d'ensemble</button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="accounts">Comptes <span class="admin-tab-badge" data-admin-users-count>0</span></button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="activity">Tracer utilisateur</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="deposits">Dépôts <span class="admin-tab-badge" data-pending-deposits-count>0</span></button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="withdrawals">Retraits <span class="admin-tab-badge" data-pending-withdrawals-count>0</span></button>
-      <button class="admin-section-tab" type="button" data-admin-section-trigger="accounts">Comptes <span class="admin-tab-badge" data-admin-users-count>0</span></button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="trading">Trading</button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="staking">Staking</button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="swap">Swap GRSC</button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="money">AFRIX Money</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="operations">Opérations</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="tools">Outils</button>
     </section>
@@ -53,9 +58,14 @@
           <div class="panel-head"><h1>Navigation rapide</h1><span class="badge">Admin</span></div>
           <p class="muted">Ouvrez uniquement la section nécessaire pour éviter une page saturée et traiter plus vite les opérations.</p>
           <div class="admin-overview-actions">
+            <button class="btn secondary" type="button" data-admin-section-trigger="activity">Tracer un utilisateur</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="accounts">Voir les comptes</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="deposits">Traiter les dépôts</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="withdrawals">Traiter les retraits</button>
-            <button class="btn secondary" type="button" data-admin-section-trigger="accounts">Gérer les comptes</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="trading">Trading Program</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="staking">Staking Program</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="swap">Swap GRSC</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="money">AFRIX Money</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="tools">Outils admin</button>
           </div>
         </article>
@@ -93,21 +103,56 @@
           <div><span>Merchants agréés</span><strong data-admin-stat="approvedMerchants">0</strong></div>
           <div><span>Pays actifs</span><strong data-admin-stat="activeCountries">0</strong></div>
           <div><span>Membres équipe</span><strong data-admin-team>0</strong></div>
+          <div><span>Trading actifs</span><strong data-admin-summary="programStats.trading.activeCount">0</strong></div>
+          <div><span>Capital trading actif</span><strong data-admin-summary-usdt="programStats.trading.activeCapital">0 USDT</strong></div>
+          <div><span>Stakings actifs</span><strong data-admin-summary="programStats.staking.activeCount">0</strong></div>
+          <div><span>GRSC verrouillés</span><strong data-admin-summary-grsc="programStats.staking.activeLocked">0 GRSC</strong></div>
+          <div><span>GRSC émis</span><strong data-admin-summary-grsc="swap.issuedSupply">0 GRSC</strong></div>
+          <div><span>Volume AFRIX Money</span><strong data-admin-summary-usdt="money.volume">0 USDT</strong></div>
         </div>
       </article>
     </section>
 
     <section class="admin-section-panel admin-queues" data-admin-section="deposits" hidden>
       <article class="panel">
-        <div class="panel-head"><h1>Dépôts USDT à valider</h1><span class="badge" data-pending-deposits-count>0</span></div>
-        <div class="list" data-admin-pending-deposits></div>
+        <div class="panel-head"><h1>Dépôts</h1><span class="badge" data-pending-deposits-count>0</span></div>
+        <div class="admin-filter-row">
+          <select data-admin-list-status="deposits">
+            <option value="">Tous les dépôts</option>
+            <option value="Pending">En attente</option>
+            <option value="Completed">Validés</option>
+            <option value="Rejected">Rejetés</option>
+          </select>
+          <button class="btn secondary" type="button" data-admin-refresh-list="deposits">Actualiser</button>
+        </div>
+        <div class="admin-detail-list" data-admin-list="deposits"></div>
       </article>
     </section>
 
     <section class="admin-section-panel admin-queues" data-admin-section="withdrawals" hidden>
       <article class="panel">
-        <div class="panel-head"><h1>Retraits à traiter</h1><span class="badge" data-pending-withdrawals-count>0</span></div>
-        <div class="list" data-admin-pending-withdrawals></div>
+        <div class="panel-head"><h1>Retraits</h1><span class="badge" data-pending-withdrawals-count>0</span></div>
+        <div class="admin-filter-row">
+          <select data-admin-list-status="withdrawals">
+            <option value="">Tous les retraits</option>
+            <option value="Pending">En attente</option>
+            <option value="Completed">Validés</option>
+            <option value="Rejected">Rejetés</option>
+          </select>
+          <button class="btn secondary" type="button" data-admin-refresh-list="withdrawals">Actualiser</button>
+        </div>
+        <div class="admin-detail-list" data-admin-list="withdrawals"></div>
+      </article>
+    </section>
+
+    <section class="admin-section-panel" data-admin-section="activity" hidden>
+      <article class="panel">
+        <div class="panel-head"><h1>Tracer un utilisateur</h1><span class="badge">Activité complète</span></div>
+        <div class="admin-filter-row">
+          <input type="email" data-admin-activity-email placeholder="client@email.com">
+          <button class="btn primary" type="button" data-admin-activity-search>Voir tous les détails</button>
+        </div>
+        <div class="admin-detail-list" data-admin-activity-result></div>
       </article>
     </section>
 
@@ -120,7 +165,22 @@
             <button class="btn secondary" type="button" data-admin-users-close>Fermer</button>
           </div>
         </div>
-        <div class="list" data-admin-users></div>
+        <div class="admin-filter-row">
+          <input type="search" data-admin-users-search-detailed placeholder="Nom, email, wallet ou code">
+          <select data-admin-users-role>
+            <option value="">Tous les rôles</option>
+            <option value="user">Utilisateur</option>
+            <option value="admin">Admin</option>
+            <option value="developer">Développeur</option>
+          </select>
+          <select data-admin-users-status>
+            <option value="">Tous les statuts</option>
+            <option value="active">Actifs</option>
+            <option value="blocked">Suspendus</option>
+          </select>
+          <button class="btn secondary" type="button" data-admin-refresh-list="users">Filtrer</button>
+        </div>
+        <div class="admin-detail-list" data-admin-list="users"></div>
       </section>
 
       <section class="grid two admin-queues">
@@ -158,6 +218,38 @@
           </form>
         </article>
       </section>
+    </section>
+
+    <section class="admin-section-panel" data-admin-section="trading" hidden>
+      <article class="panel">
+        <div class="panel-head"><h1>AFRIX Trading Program</h1><span class="badge">Plans et gains</span></div>
+        <div class="admin-program-summary" data-admin-program-summary="trading"></div>
+        <div class="admin-detail-list" data-admin-program-list="trading"></div>
+      </article>
+    </section>
+
+    <section class="admin-section-panel" data-admin-section="staking" hidden>
+      <article class="panel">
+        <div class="panel-head"><h1>AFRIX Staking Program</h1><span class="badge">GRSC verrouillé</span></div>
+        <div class="admin-program-summary" data-admin-program-summary="staking"></div>
+        <div class="admin-detail-list" data-admin-program-list="staking"></div>
+      </article>
+    </section>
+
+    <section class="admin-section-panel" data-admin-section="swap" hidden>
+      <article class="panel">
+        <div class="panel-head"><h1>AFRIX Swap GRSC</h1><span class="badge">Transactions GRSC</span></div>
+        <div class="admin-program-summary" data-admin-program-summary="swap"></div>
+        <div class="admin-detail-list" data-admin-program-list="swap"></div>
+      </article>
+    </section>
+
+    <section class="admin-section-panel" data-admin-section="money" hidden>
+      <article class="panel">
+        <div class="panel-head"><h1>AFRIX Money</h1><span class="badge">P2P, CICO, Exchange</span></div>
+        <div class="admin-program-summary" data-admin-program-summary="money"></div>
+        <div class="admin-detail-list" data-admin-program-list="money"></div>
+      </article>
     </section>
 
     <section class="admin-section-panel" data-admin-section="operations" hidden>

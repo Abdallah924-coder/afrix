@@ -1130,6 +1130,100 @@ body[data-page="wallet"] select {
 .admin-activity-card strong {
   overflow-wrap: anywhere;
 }
+.admin-activity-card-wide {
+  grid-template-columns: minmax(180px, 1.4fr) repeat(4, minmax(120px, 1fr));
+  margin-bottom: 14px;
+}
+.admin-filter-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, .35fr) minmax(150px, .35fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin: 12px 0 16px;
+}
+.admin-filter-row > .btn {
+  min-height: 46px;
+}
+.admin-detail-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.admin-detail-row {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, auto) repeat(4, auto) !important;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+}
+.admin-detail-row > span,
+.admin-detail-row > strong {
+  min-width: 0;
+}
+.admin-detail-row small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.admin-program-summary {
+  margin: 12px 0 16px;
+}
+.admin-stat-grid.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.admin-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+.admin-sublist {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(20, 43, 38, .55);
+}
+.admin-sublist h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.admin-sublist > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(6, 17, 15, .55);
+}
+.admin-sublist span,
+.admin-sublist small,
+.admin-sublist strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-sublist small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .admin-queues { margin-top: 14px; }
 .queue-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center !important; }
 .admin-inline-input { width: 120px; min-height: 42px; }
@@ -1670,6 +1764,9 @@ th { color: var(--muted); font-size: 12px; }
   .admin-header-panel { align-items: flex-start; flex-direction: column; }
   .swap-balances, .swap-flow { grid-template-columns: 1fr; }
   .admin-activity-card { grid-template-columns: 1fr 1fr; }
+  .admin-filter-row { grid-template-columns: 1fr 1fr; }
+  .admin-detail-row { grid-template-columns: 1fr !important; }
+  .admin-stat-grid.compact { grid-template-columns: 1fr 1fr; }
   .queue-row { grid-template-columns: 1fr !important; }
   .merchant-card { grid-template-columns: 1fr !important; }
   .sidebar {
@@ -1916,6 +2013,11 @@ th { color: var(--muted); font-size: 12px; }
   .admin-section-nav { position: static; }
   .admin-section-tab { width: 100%; justify-content: space-between; }
   .admin-activity-card { grid-template-columns: 1fr; }
+  .admin-filter-row,
+  .admin-stat-grid.compact,
+  .admin-sublist > div { grid-template-columns: 1fr; }
+  .admin-pagination { justify-content: stretch; }
+  .admin-pagination .btn { width: 100%; }
   body[data-page="wallet"] .panel {
     padding: 16px;
   }

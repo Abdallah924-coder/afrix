@@ -498,6 +498,127 @@ function buildAdminStats(db) {
   };
 }
 
+function parseAdminPagination(query = {}, defaultLimit = 20, maxLimit = 100) {
+  const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
+  const limit = Math.min(maxLimit, Math.max(1, Number.parseInt(query.limit, 10) || defaultLimit));
+  return { page, limit, skip: (page - 1) * limit };
+}
+
+function buildAdminPaginatedResponse(items, total, page, limit) {
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  return {
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasPrev: page > 1,
+      hasNext: page < totalPages
+    }
+  };
+}
+
+function adminRegex(value = "") {
+  const trimmed = String(value || "").trim();
+  return trimmed ? new RegExp(escapeRegExp(trimmed), "i") : null;
+}
+
+function transactionProgram(tx = {}) {
+  const asset = tx.metadata?.asset || "";
+  const source = tx.metadata?.source || "";
+  const type = tx.type || "";
+  const description = tx.description || "";
+  if (type === "Swap" || asset.includes("GRSC") || source.includes("grscoin") || source.includes("afrix_swap")) return "swap";
+  if (source.includes("staking") || tx.metadata?.stakeId || description.toLowerCase().includes("staking")) return "staking";
+  if (type === "Plan" || type === "Gain" || tx.metadata?.activePlanId || tx.metadata?.planId) return "trading";
+  if (type === "P2P" || type === "CICO" || type === "Merchant" || source.includes("cico") || source.includes("p2p")) return "money";
+  if (type === "Depot") return "deposit";
+  if (type === "Retrait") return "withdrawal";
+  return "general";
+}
+
+function compactAdminUser(user = {}) {
+  const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
+  const activeStakes = Array.isArray(user.activeStakes) ? user.activeStakes : [];
+  return {
+    id: user.id,
+    fullName: user.fullName || user.email,
+    email: user.email,
+    country: user.country || "",
+    wallet: user.wallet || "",
+    role: user.role || "user",
+    status: user.status || "active",
+    balance: money(user.balance),
+    grsBalance: money(user.grsBalance),
+    reservedBalance: money(user.reservedBalance),
+    activity: money(user.activity),
+    bonus: money(user.bonus),
+    refCode: user.refCode || "",
+    referrerId: user.referrerId || "",
+    referrerEmail: user.referrerEmail || "",
+    referrerCode: user.referrerCode || "",
+    bonusLevelsOverride: Number(user.bonusLevelsOverride || 0),
+    activePlansCount: activePlans.filter((plan) => plan.status === "active").length,
+    activeStakesCount: activeStakes.filter((stake) => stake.status === "active").length,
+    activeInvestmentAmount: money(activePlans.filter((plan) => plan.status === "active").reduce((total, plan) => total + Number(plan.amount || 0), 0)),
+    activeStakeAmount: money(activeStakes.filter((stake) => stake.status === "active").reduce((total, stake) => total + Number(stake.amount || 0), 0)),
+    merchantStatus: user.merchantProfile?.status || "Aucun profil",
+    createdAt: user.createdAt || ""
+  };
+}
+
+function enrichAdminTransaction(tx = {}, owner = null) {
+  return {
+    id: tx.id,
+    reference: tx.id,
+    userId: tx.userId,
+    userEmail: owner?.email || "",
+    userName: owner?.fullName || owner?.email || "",
+    date: formatTransactionDateTime(tx.createdAt),
+    createdAt: tx.createdAt || "",
+    type: tx.type || "",
+    program: transactionProgram(tx),
+    description: tx.description || "",
+    amount: tx.displayAmount || formatAmount(tx.amount || 0),
+    rawAmount: money(tx.amount),
+    status: tx.status || "",
+    hasProof: Boolean(tx.metadata?.proof?.dataBase64 || tx.metadata?.proof?.mimeType),
+    metadata: {
+      ...(tx.metadata || {}),
+      proof: undefined
+    }
+  };
+}
+
+function adminProgramStatsFromUsers(users = []) {
+  const activeTrading = users.flatMap((user) => (user.activePlans || [])
+    .filter((plan) => plan.status === "active")
+    .map((plan) => ({ ...plan, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
+  const allTrading = users.flatMap((user) => (user.activePlans || [])
+    .map((plan) => ({ ...plan, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
+  const activeStaking = users.flatMap((user) => (user.activeStakes || [])
+    .filter((stake) => stake.status === "active")
+    .map((stake) => ({ ...stake, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
+  const allStaking = users.flatMap((user) => (user.activeStakes || [])
+    .map((stake) => ({ ...stake, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
+
+  return {
+    trading: {
+      activeCount: activeTrading.length,
+      totalCount: allTrading.length,
+      activeCapital: money(activeTrading.reduce((total, plan) => total + Number(plan.amount || 0), 0)),
+      totalEarned: money(allTrading.reduce((total, plan) => total + Number(plan.earnedAmount || 0), 0))
+    },
+    staking: {
+      activeCount: activeStaking.length,
+      totalCount: allStaking.length,
+      activeLocked: money(activeStaking.reduce((total, stake) => total + Number(stake.amount || 0), 0)),
+      totalEarned: money(allStaking.reduce((total, stake) => total + Number(stake.earnedAmount || 0), 0))
+    }
+  };
+}
+
 function notifyTransactionDecision(tx) {
   if (!tx || tx.status !== "Completed") return;
   UserModel.findOne({ id: tx.userId }).lean()
@@ -3475,6 +3596,346 @@ app.get("/api/transactions/export", authenticate, attachDb, (req, res) => {
     .type("text/csv")
     .set("Content-Disposition", `attachment; filename="afrix-transactions-${today()}.csv"`)
     .send(csv);
+});
+
+app.get("/api/admin/summary", authenticate, requireAdmin, async (_req, res, next) => {
+  try {
+    await ensureStorage();
+    const [
+      users,
+      transactions,
+      cicoCount,
+      exchangeOrderCount,
+      merchantApplicationsCount,
+      disputesCount,
+      platformAccount
+    ] = await Promise.all([
+      UserModel.find({}, safeUserProjection).lean(),
+      TransactionModel.find({}, transactionListProjection).lean(),
+      CicoRequestModel.countDocuments(),
+      ExchangeOrderModel.countDocuments(),
+      MerchantApplicationModel.countDocuments(),
+      DisputeModel.countDocuments(),
+      PlatformAccountModel.findOne({ id: "platform" }).lean()
+    ]);
+
+    const db = normalizeDb({
+      users,
+      transactions,
+      platformAccount,
+      cicoRequests: [],
+      exchangeOrders: [],
+      merchantApplications: [],
+      disputes: [],
+      ledgerEntries: []
+    });
+    const stats = buildAdminStats(db);
+    const programStats = adminProgramStatsFromUsers(users);
+    const completedDeposits = transactions.filter((tx) => tx.type === "Depot" && tx.status === "Completed");
+    const rejectedDeposits = transactions.filter((tx) => tx.type === "Depot" && tx.status === "Rejected");
+    const pendingDeposits = transactions.filter((tx) => tx.type === "Depot" && tx.status === "Pending");
+    const completedWithdrawals = transactions.filter((tx) => tx.type === "Retrait" && tx.status === "Completed");
+    const rejectedWithdrawals = transactions.filter((tx) => tx.type === "Retrait" && tx.status === "Rejected");
+    const pendingWithdrawals = transactions.filter((tx) => tx.type === "Retrait" && tx.status === "Pending");
+    const swapTransactions = transactions.filter((tx) => transactionProgram(tx) === "swap");
+    const moneyTransactions = transactions.filter((tx) => transactionProgram(tx) === "money");
+
+    res.json({
+      ...stats,
+      platformAccount: ensurePlatform(db),
+      programStats,
+      operations: {
+        cicoCount,
+        exchangeOrderCount,
+        merchantApplicationsCount,
+        disputesCount
+      },
+      deposits: {
+        pending: pendingDeposits.length,
+        completed: completedDeposits.length,
+        rejected: rejectedDeposits.length,
+        completedAmount: money(completedDeposits.reduce((total, tx) => total + Number(tx.amount || 0), 0))
+      },
+      withdrawals: {
+        pending: pendingWithdrawals.length,
+        completed: completedWithdrawals.length,
+        rejected: rejectedWithdrawals.length,
+        completedAmount: money(completedWithdrawals.reduce((total, tx) => total + Number(tx.amount || 0), 0))
+      },
+      swap: {
+        transactions: swapTransactions.length,
+        issuedSupply: grsIssuedSupply({ transactions }),
+        remainingSupply: Math.max(0, money(GRSCOIN_TOTAL_SUPPLY - grsIssuedSupply({ transactions }))),
+        totalSupply: GRSCOIN_TOTAL_SUPPLY
+      },
+      money: {
+        transactions: moneyTransactions.length,
+        volume: money(moneyTransactions.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/users", authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    await ensureStorage();
+    const { page, limit, skip } = parseAdminPagination(req.query, 20, 100);
+    const search = adminRegex(req.query.search);
+    const role = String(req.query.role || "").trim();
+    const status = String(req.query.status || "").trim();
+    const query = {
+      ...(role ? { role } : {}),
+      ...(status ? { status } : {}),
+      ...(search ? { $or: [{ email: search }, { fullName: search }, { wallet: search }, { refCode: search }] } : {})
+    };
+    const [total, users] = await Promise.all([
+      UserModel.countDocuments(query),
+      UserModel.find(query, safeUserProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+    ]);
+    const userIds = users.map((user) => user.id);
+    const txStats = userIds.length ? await TransactionModel.aggregate([
+      { $match: { userId: { $in: userIds } } },
+      { $addFields: { numericAmount: { $toDouble: { $ifNull: ["$amount", 0] } } } },
+      { $addFields: { absoluteAmount: { $cond: [{ $lt: ["$numericAmount", 0] }, { $multiply: ["$numericAmount", -1] }, "$numericAmount"] } } },
+      { $group: { _id: "$userId", transactionsCount: { $sum: 1 }, volume: { $sum: "$absoluteAmount" } } }
+    ]) : [];
+    const txStatsMap = new Map(txStats.map((item) => [item._id, item]));
+    const items = users.map((user) => ({
+      ...compactAdminUser(user),
+      transactionsCount: Number(txStatsMap.get(user.id)?.transactionsCount || 0),
+      transactionVolume: money(txStatsMap.get(user.id)?.volume || 0)
+    }));
+    res.json(buildAdminPaginatedResponse(items, total, page, limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/users/activity", authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const email = normalizeEmail(req.query.email);
+    const userId = String(req.query.userId || "").trim();
+    if (!email && !userId) return res.status(400).json({ message: "Email ou userId requis." });
+    await ensureStorage();
+    const user = normalizeUserRecord(await UserModel.findOne(email ? { email } : { id: userId }, safeUserProjection).lean());
+    if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
+
+    const directPartnerClauses = [
+      { referrerId: user.id },
+      { referrerEmail: user.email },
+      { referrerCode: user.refCode }
+    ].filter((clause) => Object.values(clause)[0]);
+    const [transactions, ledgerEntries, cicoRequests, exchangeOrders, merchantApplications, disputes, directPartners] = await Promise.all([
+      TransactionModel.find({ userId: user.id }, transactionListProjection).sort({ createdAt: -1 }).limit(200).lean(),
+      LedgerEntryModel.find({ accountId: user.id }).sort({ createdAt: -1 }).limit(100).lean(),
+      CicoRequestModel.find({ $or: [{ userId: user.id }, { merchantId: user.id }] }).sort({ createdAt: -1 }).limit(100).lean(),
+      ExchangeOrderModel.find({ $or: [{ userId: user.id }, { merchantId: user.id }, { customerEmail: user.email }] }).sort({ createdAt: -1 }).limit(100).lean(),
+      MerchantApplicationModel.find({ userId: user.id }).sort({ createdAt: -1 }).limit(20).lean(),
+      DisputeModel.find({ userId: user.id }).sort({ createdAt: -1 }).limit(50).lean(),
+      directPartnerClauses.length
+        ? UserModel.find({ $or: directPartnerClauses }, safeUserProjection).sort({ createdAt: -1 }).limit(100).lean()
+        : []
+    ]);
+    const owner = compactAdminUser(user);
+    res.json({
+      user: owner,
+      activePlans: Array.isArray(user.activePlans) ? user.activePlans : [],
+      activeStakes: Array.isArray(user.activeStakes) ? user.activeStakes : [],
+      transactions: transactions.map((tx) => enrichAdminTransaction(tx, user)),
+      ledgerEntries,
+      cicoRequests,
+      exchangeOrders,
+      merchantApplications,
+      disputes,
+      directPartners: directPartners.map(compactAdminUser)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/transactions", authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    await ensureStorage();
+    const { page, limit, skip } = parseAdminPagination(req.query, 20, 100);
+    const searchText = String(req.query.search || "").trim();
+    const type = String(req.query.type || "").trim();
+    const status = String(req.query.status || "").trim();
+    const program = String(req.query.program || "").trim();
+    const andClauses = [];
+    if (type) andClauses.push({ type });
+    if (status) andClauses.push({ status });
+    if (program === "swap") {
+      andClauses.push({
+        $or: [
+          { type: "Swap" },
+          { "metadata.asset": { $in: ["GRSC_PURCHASE", "GRSC_WITHDRAWAL"] } },
+          { "metadata.source": /grscoin|afrix_swap/i }
+        ]
+      });
+    }
+    if (program === "staking") {
+      andClauses.push({
+        $or: [
+          { "metadata.source": /staking/i },
+          { "metadata.stakeId": { $exists: true } },
+          { description: /staking/i }
+        ]
+      });
+    }
+    if (program === "trading") {
+      andClauses.push({
+        $or: [
+          { type: "Plan" },
+          { "metadata.activePlanId": { $exists: true } },
+          { "metadata.planId": { $exists: true } }
+        ]
+      });
+    }
+    if (program === "money") {
+      andClauses.push({
+        $or: [
+          { type: { $in: ["P2P", "CICO", "Merchant"] } },
+          { "metadata.source": /cico|p2p/i }
+        ]
+      });
+    }
+
+    if (searchText) {
+      const search = adminRegex(searchText);
+      const matchingUsers = await UserModel.find({ $or: [{ email: search }, { fullName: search }] }, { id: 1 }).lean();
+      andClauses.push({ $or: [
+        { id: search },
+        { description: search },
+        { "metadata.txRef": search },
+        { "metadata.reference": search },
+        { userId: { $in: matchingUsers.map((user) => user.id) } }
+      ] });
+    }
+    const query = andClauses.length ? { $and: andClauses } : {};
+
+    const [total, transactions] = await Promise.all([
+      TransactionModel.countDocuments(query),
+      TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+    ]);
+    const owners = await UserModel.find({ id: { $in: transactions.map((tx) => tx.userId) } }, safeUserProjection).lean();
+    const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
+    res.json(buildAdminPaginatedResponse(transactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), total, page, limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/deposits", authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    req.query.type = "Depot";
+    const { page, limit, skip } = parseAdminPagination(req.query, 20, 100);
+    const status = String(req.query.status || "").trim();
+    const query = { type: "Depot", ...(status ? { status } : {}) };
+    const [total, transactions] = await Promise.all([
+      TransactionModel.countDocuments(query),
+      TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+    ]);
+    const owners = await UserModel.find({ id: { $in: transactions.map((tx) => tx.userId) } }, safeUserProjection).lean();
+    const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
+    res.json(buildAdminPaginatedResponse(transactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), total, page, limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/withdrawals", authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const { page, limit, skip } = parseAdminPagination(req.query, 20, 100);
+    const status = String(req.query.status || "").trim();
+    const query = { type: "Retrait", ...(status ? { status } : {}) };
+    const [total, transactions] = await Promise.all([
+      TransactionModel.countDocuments(query),
+      TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+    ]);
+    const owners = await UserModel.find({ id: { $in: transactions.map((tx) => tx.userId) } }, safeUserProjection).lean();
+    const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
+    res.json(buildAdminPaginatedResponse(transactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), total, page, limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/programs/:program", authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    await ensureStorage();
+    const program = String(req.params.program || "").trim();
+    const { page, limit, skip } = parseAdminPagination(req.query, 20, 100);
+    const users = await UserModel.find({}, safeUserProjection).lean();
+    const programStats = adminProgramStatsFromUsers(users);
+
+    if (program === "trading" || program === "staking") {
+      const rows = users.flatMap((user) => {
+        const list = program === "trading" ? (user.activePlans || []) : (user.activeStakes || []);
+        return list.map((item) => ({
+          ...item,
+          userId: user.id,
+          userEmail: user.email,
+          userName: user.fullName || user.email,
+          status: item.status || "active"
+        }));
+      }).sort((a, b) => String(b.startedAt || b.createdAt || "").localeCompare(String(a.startedAt || a.createdAt || "")));
+      const pageItems = rows.slice(skip, skip + limit);
+      return res.json({
+        stats: programStats[program],
+        ...buildAdminPaginatedResponse(pageItems, rows.length, page, limit)
+      });
+    }
+
+    if (program === "money") {
+      const [cicoRequests, exchangeOrders, p2pTransactionsTotal, p2pTransactions] = await Promise.all([
+        CicoRequestModel.find({}).sort({ createdAt: -1 }).limit(100).lean(),
+        ExchangeOrderModel.find({}).sort({ createdAt: -1 }).limit(100).lean(),
+        TransactionModel.countDocuments({ type: { $in: ["P2P", "CICO", "Merchant"] } }),
+        TransactionModel.find({ type: { $in: ["P2P", "CICO", "Merchant"] } }, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+      ]);
+      const owners = await UserModel.find({ id: { $in: p2pTransactions.map((tx) => tx.userId) } }, safeUserProjection).lean();
+      const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
+      return res.json({
+        cicoRequests,
+        exchangeOrders,
+        ...buildAdminPaginatedResponse(p2pTransactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), p2pTransactionsTotal, page, limit)
+      });
+    }
+
+    if (program === "swap") {
+      const query = {
+        $or: [
+          { type: "Swap" },
+          { "metadata.asset": { $in: ["GRSC_PURCHASE", "GRSC_WITHDRAWAL"] } },
+          { "metadata.source": /grscoin|afrix_swap/i }
+        ]
+      };
+      const [total, transactions] = await Promise.all([
+        TransactionModel.countDocuments(query),
+        TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+      ]);
+      const owners = await UserModel.find({ id: { $in: transactions.map((tx) => tx.userId) } }, safeUserProjection).lean();
+      const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
+      const issuedSupply = grsIssuedSupply({ transactions: await TransactionModel.find(query, transactionListProjection).lean() });
+      return res.json({
+        stats: {
+          totalSupply: GRSCOIN_TOTAL_SUPPLY,
+          issuedSupply,
+          remainingSupply: Math.max(0, money(GRSCOIN_TOTAL_SUPPLY - issuedSupply)),
+          priceUsdt: GRSCOIN_PRICE_USDT,
+          swapFeeRate: GRSCOIN_SWAP_FEE_RATE
+        },
+        ...buildAdminPaginatedResponse(transactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), total, page, limit)
+      });
+    }
+
+    return res.status(404).json({ message: "Programme admin introuvable." });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post("/api/admin/settings", authenticate, requireAdmin, validate(z.object({
