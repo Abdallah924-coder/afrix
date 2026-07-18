@@ -1172,6 +1172,9 @@ body[data-page="wallet"] select {
 .admin-program-summary {
   margin: 12px 0 16px;
 }
+.admin-transactions-summary {
+  margin: 12px 0 16px;
+}
 .admin-stat-grid.compact {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 12px;

@@ -31,6 +31,7 @@
       <button class="admin-section-tab is-active" type="button" data-admin-section-trigger="overview">Vue d'ensemble</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="accounts">Comptes <span class="admin-tab-badge" data-admin-users-count>0</span></button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="activity">Tracer utilisateur</button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="transactions">Transactions récentes</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="deposits">Dépôts <span class="admin-tab-badge" data-pending-deposits-count>0</span></button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="withdrawals">Retraits <span class="admin-tab-badge" data-pending-withdrawals-count>0</span></button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="trading">Trading</button>
@@ -42,14 +43,14 @@
     </section>
 
     <section class="admin-dashboard-stats">
-      <article><span>Total utilisateurs</span><strong data-admin-stat="totalUsers">0</strong></article>
-      <article><span>Actifs</span><strong data-admin-stat="activeUsers">0</strong></article>
-      <article><span>Nouveaux aujourd'hui</span><strong data-admin-stat="newUsersToday">0</strong></article>
-      <article><span>Dépôts validés</span><strong data-admin-deposits>0 USDT</strong></article>
-      <article><span>Retraits</span><strong data-admin-withdrawals>0 USDT</strong></article>
-      <article><span>Capital investi</span><strong data-admin-stat-usdt="investedCapital">0 USDT</strong></article>
-      <article><span>Revenus plateforme</span><strong data-admin-stat-usdt="platformRevenue">0 USDT</strong></article>
-      <article><span>Transactions</span><strong data-admin-tx>0</strong></article>
+      <article><span>Total utilisateurs</span><strong data-admin-summary="totalUsers">0</strong></article>
+      <article><span>Actifs</span><strong data-admin-summary="activeUsers">0</strong></article>
+      <article><span>Nouveaux aujourd'hui</span><strong data-admin-summary="newUsersToday">0</strong></article>
+      <article><span>Dépôts validés</span><strong data-admin-summary-usdt="deposits.completedAmount">0 USDT</strong></article>
+      <article><span>Retraits validés</span><strong data-admin-summary-usdt="withdrawals.completedAmount">0 USDT</strong></article>
+      <article><span>Capital investi</span><strong data-admin-summary-usdt="investedCapital">0 USDT</strong></article>
+      <article><span>Revenus plateforme</span><strong data-admin-summary-usdt="platformRevenue">0 USDT</strong></article>
+      <article><span>Transactions</span><strong data-admin-summary="platformSummary.transactions.total">0</strong></article>
     </section>
 
     <section class="admin-section-panel" data-admin-section="overview">
@@ -59,6 +60,7 @@
           <p class="muted">Ouvrez uniquement la section nécessaire pour éviter une page saturée et traiter plus vite les opérations.</p>
           <div class="admin-overview-actions">
             <button class="btn secondary" type="button" data-admin-section-trigger="activity">Tracer un utilisateur</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="transactions">Transactions récentes</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="accounts">Voir les comptes</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="deposits">Traiter les dépôts</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="withdrawals">Traiter les retraits</button>
@@ -98,7 +100,7 @@
           <div><span>Plans actifs</span><strong data-admin-stat="activePlansCount">0</strong></div>
           <div><span>Utilisateurs avec plans</span><strong data-admin-stat="usersWithActivePlans">0</strong></div>
           <div><span>Volume transactions</span><strong data-admin-stat-usdt="transactionVolume">0 USDT</strong></div>
-          <div><span>Solde compte plateforme</span><strong data-admin-stat-usdt="platformBalance">0 USDT</strong></div>
+          <div><span>Revenus calculés</span><strong data-admin-summary-usdt="platformSummary.platformRevenue">0 USDT</strong></div>
           <div><span>Partenaires</span><strong data-admin-stat="partners">0</strong></div>
           <div><span>Merchants agréés</span><strong data-admin-stat="approvedMerchants">0</strong></div>
           <div><span>Pays actifs</span><strong data-admin-stat="activeCountries">0</strong></div>
@@ -111,20 +113,53 @@
           <div><span>Volume AFRIX Money</span><strong data-admin-summary-usdt="money.volume">0 USDT</strong></div>
         </div>
       </article>
+
+      <article class="panel admin-stats-panel">
+        <div class="panel-head"><h1>Résumé plateforme</h1><span class="badge">Historique global</span></div>
+        <div class="admin-stat-grid">
+          <div><span>Transactions totales</span><strong data-admin-summary="platformSummary.transactions.total">0</strong></div>
+          <div><span>Transactions validées</span><strong data-admin-summary="platformSummary.transactions.completed">0</strong></div>
+          <div><span>Transactions rejetées</span><strong data-admin-summary="platformSummary.transactions.rejected">0</strong></div>
+          <div><span>Transactions actives</span><strong data-admin-summary="platformSummary.transactions.active">0</strong></div>
+          <div><span>Volume validé/actif</span><strong data-admin-summary-usdt="platformSummary.transactions.volume">0 USDT</strong></div>
+          <div><span>Revenus plateforme</span><strong data-admin-summary-usdt="platformSummary.platformRevenue">0 USDT</strong></div>
+          <div><span>Dépôts validés</span><strong data-admin-summary-usdt="platformSummary.deposits.completedAmount">0 USDT</strong></div>
+          <div><span>Dépôts rejetés</span><strong data-admin-summary-usdt="platformSummary.deposits.rejectedAmount">0 USDT</strong></div>
+          <div><span>Dépôts en attente</span><strong data-admin-summary-usdt="platformSummary.deposits.pendingAmount">0 USDT</strong></div>
+          <div><span>Retraits validés</span><strong data-admin-summary-usdt="platformSummary.withdrawals.completedAmount">0 USDT</strong></div>
+          <div><span>Retraits rejetés</span><strong data-admin-summary-usdt="platformSummary.withdrawals.rejectedAmount">0 USDT</strong></div>
+          <div><span>Retraits en attente</span><strong data-admin-summary-usdt="platformSummary.withdrawals.pendingAmount">0 USDT</strong></div>
+          <div><span>Nombre dépôts validés</span><strong data-admin-summary="platformSummary.deposits.completed">0</strong></div>
+          <div><span>Nombre retraits validés</span><strong data-admin-summary="platformSummary.withdrawals.completed">0</strong></div>
+          <div><span>Frais retraits</span><strong data-admin-summary-usdt="platformSummary.withdrawals.fees">0 USDT</strong></div>
+          <div><span>Solde comptable plateforme</span><strong data-admin-summary-usdt="platformAccount.balance">0 USDT</strong></div>
+          <div><span>Frais comptabilisés plateforme</span><strong data-admin-summary-usdt="platformAccount.fees">0 USDT</strong></div>
+        </div>
+      </article>
     </section>
 
     <section class="admin-section-panel admin-queues" data-admin-section="deposits" hidden>
       <article class="panel">
         <div class="panel-head"><h1>Dépôts</h1><span class="badge" data-pending-deposits-count>0</span></div>
         <div class="admin-filter-row">
+          <input type="search" data-admin-list-search="deposits" placeholder="Email, référence, tx">
           <select data-admin-list-status="deposits">
             <option value="">Tous les dépôts</option>
             <option value="Pending">En attente</option>
             <option value="Completed">Validés</option>
             <option value="Rejected">Rejetés</option>
           </select>
+          <input type="date" data-admin-list-date-from="deposits" aria-label="Date début dépôts">
+          <input type="date" data-admin-list-date-to="deposits" aria-label="Date fin dépôts">
+          <input type="search" data-admin-list-method="deposits" placeholder="Méthode">
+          <input type="search" data-admin-list-network="deposits" placeholder="Réseau">
+          <input type="search" data-admin-list-reference="deposits" placeholder="Référence">
+          <input type="number" min="0" step="0.01" data-admin-list-min="deposits" placeholder="Montant min">
+          <input type="number" min="0" step="0.01" data-admin-list-max="deposits" placeholder="Montant max">
           <button class="btn secondary" type="button" data-admin-refresh-list="deposits">Actualiser</button>
+          <button class="btn secondary" type="button" data-admin-export="deposits">CSV</button>
         </div>
+        <div class="admin-transactions-summary" data-admin-list-summary="deposits"></div>
         <div class="admin-detail-list" data-admin-list="deposits"></div>
       </article>
     </section>
@@ -133,14 +168,24 @@
       <article class="panel">
         <div class="panel-head"><h1>Retraits</h1><span class="badge" data-pending-withdrawals-count>0</span></div>
         <div class="admin-filter-row">
+          <input type="search" data-admin-list-search="withdrawals" placeholder="Email, référence, tx">
           <select data-admin-list-status="withdrawals">
             <option value="">Tous les retraits</option>
             <option value="Pending">En attente</option>
             <option value="Completed">Validés</option>
             <option value="Rejected">Rejetés</option>
           </select>
+          <input type="date" data-admin-list-date-from="withdrawals" aria-label="Date début retraits">
+          <input type="date" data-admin-list-date-to="withdrawals" aria-label="Date fin retraits">
+          <input type="search" data-admin-list-method="withdrawals" placeholder="Méthode">
+          <input type="search" data-admin-list-network="withdrawals" placeholder="Réseau">
+          <input type="search" data-admin-list-reference="withdrawals" placeholder="Référence">
+          <input type="number" min="0" step="0.01" data-admin-list-min="withdrawals" placeholder="Montant min">
+          <input type="number" min="0" step="0.01" data-admin-list-max="withdrawals" placeholder="Montant max">
           <button class="btn secondary" type="button" data-admin-refresh-list="withdrawals">Actualiser</button>
+          <button class="btn secondary" type="button" data-admin-export="withdrawals">CSV</button>
         </div>
+        <div class="admin-transactions-summary" data-admin-list-summary="withdrawals"></div>
         <div class="admin-detail-list" data-admin-list="withdrawals"></div>
       </article>
     </section>
@@ -153,6 +198,45 @@
           <button class="btn primary" type="button" data-admin-activity-search>Voir tous les détails</button>
         </div>
         <div class="admin-detail-list" data-admin-activity-result></div>
+      </article>
+    </section>
+
+    <section class="admin-section-panel" data-admin-section="transactions" hidden>
+      <article class="panel">
+        <div class="panel-head"><h1>Transactions récentes</h1><span class="badge">Paiements, gains, retraits, dépôts</span></div>
+        <div class="admin-filter-row">
+          <input type="search" data-admin-transactions-search placeholder="Email, référence, description, tx">
+          <select data-admin-transactions-type>
+            <option value="">Tous les types</option>
+            <option value="Depot">Dépôt</option>
+            <option value="Retrait">Retrait</option>
+            <option value="Gain">Gain</option>
+            <option value="Swap">Swap</option>
+            <option value="Bonus">Bonus</option>
+            <option value="Commission">Commission</option>
+            <option value="Merchant">Merchant</option>
+            <option value="P2P">P2P</option>
+            <option value="CICO">CICO</option>
+          </select>
+          <select data-admin-transactions-status>
+            <option value="">Tous les statuts</option>
+            <option value="Pending">En attente</option>
+            <option value="Completed">Validés</option>
+            <option value="Rejected">Rejetés</option>
+            <option value="Active">Actifs</option>
+          </select>
+          <input type="date" data-admin-transactions-date-from aria-label="Date début transactions">
+          <input type="date" data-admin-transactions-date-to aria-label="Date fin transactions">
+          <input type="search" data-admin-transactions-method placeholder="Méthode">
+          <input type="search" data-admin-transactions-network placeholder="Réseau">
+          <input type="search" data-admin-transactions-reference placeholder="Référence">
+          <input type="number" min="0" step="0.01" data-admin-transactions-min placeholder="Montant min">
+          <input type="number" min="0" step="0.01" data-admin-transactions-max placeholder="Montant max">
+          <button class="btn secondary" type="button" data-admin-refresh-list="transactions">Actualiser</button>
+          <button class="btn secondary" type="button" data-admin-export="transactions">CSV</button>
+        </div>
+        <div class="admin-transactions-summary" data-admin-transactions-summary></div>
+        <div class="admin-detail-list" data-admin-list="transactions"></div>
       </article>
     </section>
 
@@ -222,7 +306,7 @@
 
     <section class="admin-section-panel" data-admin-section="trading" hidden>
       <article class="panel">
-        <div class="panel-head"><h1>AFRIX Trading Program</h1><span class="badge">Plans et gains</span></div>
+        <div class="panel-head"><h1>AFRIX Trading Program</h1><button class="btn secondary" type="button" data-admin-export="trading">CSV</button></div>
         <div class="admin-program-summary" data-admin-program-summary="trading"></div>
         <div class="admin-detail-list" data-admin-program-list="trading"></div>
       </article>
@@ -230,7 +314,7 @@
 
     <section class="admin-section-panel" data-admin-section="staking" hidden>
       <article class="panel">
-        <div class="panel-head"><h1>AFRIX Staking Program</h1><span class="badge">GRSC verrouillé</span></div>
+        <div class="panel-head"><h1>AFRIX Staking Program</h1><button class="btn secondary" type="button" data-admin-export="staking">CSV</button></div>
         <div class="admin-program-summary" data-admin-program-summary="staking"></div>
         <div class="admin-detail-list" data-admin-program-list="staking"></div>
       </article>
@@ -238,7 +322,7 @@
 
     <section class="admin-section-panel" data-admin-section="swap" hidden>
       <article class="panel">
-        <div class="panel-head"><h1>AFRIX Swap GRSC</h1><span class="badge">Transactions GRSC</span></div>
+        <div class="panel-head"><h1>AFRIX Swap GRSC</h1><button class="btn secondary" type="button" data-admin-export="swap">CSV</button></div>
         <div class="admin-program-summary" data-admin-program-summary="swap"></div>
         <div class="admin-detail-list" data-admin-program-list="swap"></div>
       </article>
@@ -246,7 +330,7 @@
 
     <section class="admin-section-panel" data-admin-section="money" hidden>
       <article class="panel">
-        <div class="panel-head"><h1>AFRIX Money</h1><span class="badge">P2P, CICO, Exchange</span></div>
+        <div class="panel-head"><h1>AFRIX Money</h1><button class="btn secondary" type="button" data-admin-export="money">CSV</button></div>
         <div class="admin-program-summary" data-admin-program-summary="money"></div>
         <div class="admin-detail-list" data-admin-program-list="money"></div>
       </article>

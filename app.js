@@ -8,8 +8,8 @@ const pageTitles = {
   dashboard: "Tableau de bord",
   wallet: "Wallet USDT",
   "afrix-money": "AFRIX Money",
-  swap: "AFRIX Swap",
-  staking: "AFRIX Staking",
+  swap: "AFRIX Swap Program",
+  staking: "AFRIX Staking Program",
   exchange: "Exchange",
   merchant: "Merchant",
   plans: "AFRIX Trading Program",
@@ -27,8 +27,8 @@ const navItems = [
   ["dashboard", "Dashboard", "/dashboard"],
   ["wallet", "Wallet USDT", "/wallet"],
   ["afrix-money", "AFRIX Money", "/afrix-money"],
-  ["swap", "AFRIX Swap", "/swap"],
-  ["staking", "AFRIX Staking", "/staking"],
+  ["swap", "AFRIX Swap Program", "/swap"],
+  ["staking", "AFRIX Staking Program", "/staking"],
   ["exchange", "Exchange", "/exchange"],
   ["merchant", "Merchant", "/merchant"],
   ["plans", "AFRIX Trading Program", "/plans"],
@@ -1210,16 +1210,6 @@ function renderAdmin(user) {
   const pendingWithdrawals = filteredAdminTransactions.filter((item) => item.type === "Retrait" && item.status === "Pending");
   const platformControls = user.platformControls || {};
 
-  const depositTotal = adminTransactions
-    .filter((item) => item.type === "Depot" && item.status === "Completed")
-    .reduce((total, item) => total + Math.abs(Number(item.rawAmount || String(item.amount).replace(/[^\d.-]/g, ""))), 0);
-  const withdrawalTotal = adminTransactions
-    .filter((item) => item.type === "Retrait")
-    .reduce((total, item) => total + Math.abs(Number(item.rawAmount || String(item.amount).replace(/[^\d.-]/g, ""))), 0);
-
-  const adminDeposits = document.querySelector("[data-admin-deposits]");
-  const adminWithdrawals = document.querySelector("[data-admin-withdrawals]");
-  const adminTx = document.querySelector("[data-admin-tx]");
   const adminTeam = document.querySelector("[data-admin-team]");
   const pendingDepositsCounts = document.querySelectorAll("[data-pending-deposits-count]");
   const pendingWithdrawalsCounts = document.querySelectorAll("[data-pending-withdrawals-count]");
@@ -1228,9 +1218,6 @@ function renderAdmin(user) {
   const disputesCount = document.querySelector("[data-disputes-count]");
   const adminUsersCounts = document.querySelectorAll("[data-admin-users-count]");
 
-  if (adminDeposits) adminDeposits.textContent = formatUsdt(depositTotal);
-  if (adminWithdrawals) adminWithdrawals.textContent = formatUsdt(withdrawalTotal);
-  if (adminTx) adminTx.textContent = adminTransactions.length;
   if (adminTeam) adminTeam.textContent = Number(user.team || 0);
   pendingDepositsCounts.forEach((item) => { item.textContent = pendingDeposits.length; });
   pendingWithdrawalsCounts.forEach((item) => { item.textContent = pendingWithdrawals.length; });
@@ -1485,6 +1472,7 @@ const adminDetailedState = {
   section: "overview",
   pages: {
     users: 1,
+    transactions: 1,
     deposits: 1,
     withdrawals: 1,
     trading: 1,
@@ -1563,6 +1551,55 @@ function renderAdminDetailedTransactions(rows = [], kind = "") {
   }).join("") + renderAdminPagination(kind, rows.pagination);
 }
 
+function renderAdminTransactionSummary(summary = {}, selector = "[data-admin-transactions-summary]") {
+  const target = document.querySelector(selector);
+  if (!target) return;
+  target.innerHTML = `
+    <div class="admin-stat-grid compact">
+      <div><span>Total</span><strong>${Number(summary.total || 0).toLocaleString("fr-FR")}</strong></div>
+      <div><span>En attente</span><strong>${Number(summary.pending || 0).toLocaleString("fr-FR")}</strong></div>
+      <div><span>Validés</span><strong>${Number(summary.completed || 0).toLocaleString("fr-FR")}</strong></div>
+      <div><span>Rejetés</span><strong>${Number(summary.rejected || 0).toLocaleString("fr-FR")}</strong></div>
+      <div><span>Actifs</span><strong>${Number(summary.active || 0).toLocaleString("fr-FR")}</strong></div>
+    </div>
+  `;
+}
+
+function appendAdminListFilters(params, kind) {
+  const values = {
+    search: document.querySelector(`[data-admin-list-search='${kind}']`)?.value.trim(),
+    status: document.querySelector(`[data-admin-list-status='${kind}']`)?.value || "",
+    dateFrom: document.querySelector(`[data-admin-list-date-from='${kind}']`)?.value || "",
+    dateTo: document.querySelector(`[data-admin-list-date-to='${kind}']`)?.value || "",
+    method: document.querySelector(`[data-admin-list-method='${kind}']`)?.value.trim(),
+    network: document.querySelector(`[data-admin-list-network='${kind}']`)?.value.trim(),
+    reference: document.querySelector(`[data-admin-list-reference='${kind}']`)?.value.trim(),
+    minAmount: document.querySelector(`[data-admin-list-min='${kind}']`)?.value || "",
+    maxAmount: document.querySelector(`[data-admin-list-max='${kind}']`)?.value || ""
+  };
+  Object.entries(values).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+  });
+}
+
+function appendAdminTransactionFilters(params) {
+  const values = {
+    search: document.querySelector("[data-admin-transactions-search]")?.value.trim(),
+    type: document.querySelector("[data-admin-transactions-type]")?.value || "",
+    status: document.querySelector("[data-admin-transactions-status]")?.value || "",
+    dateFrom: document.querySelector("[data-admin-transactions-date-from]")?.value || "",
+    dateTo: document.querySelector("[data-admin-transactions-date-to]")?.value || "",
+    method: document.querySelector("[data-admin-transactions-method]")?.value.trim(),
+    network: document.querySelector("[data-admin-transactions-network]")?.value.trim(),
+    reference: document.querySelector("[data-admin-transactions-reference]")?.value.trim(),
+    minAmount: document.querySelector("[data-admin-transactions-min]")?.value || "",
+    maxAmount: document.querySelector("[data-admin-transactions-max]")?.value || ""
+  };
+  Object.entries(values).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+  });
+}
+
 async function loadAdminDetailedSummary() {
   const summary = await apiRequest("/admin/summary", { timeoutMs: 20_000 });
   document.querySelectorAll("[data-admin-summary]").forEach((item) => {
@@ -1616,13 +1653,44 @@ async function loadAdminDetailedTransactions(kind, page = adminDetailedState.pag
   const target = document.querySelector(`[data-admin-list='${kind}']`);
   if (!target) return;
   target.innerHTML = `<p class="muted">Chargement...</p>`;
-  const status = document.querySelector(`[data-admin-list-status='${kind}']`)?.value || "";
   const params = new URLSearchParams({ page: String(page), limit: "20" });
-  if (status) params.set("status", status);
+  appendAdminListFilters(params, kind);
   const data = await apiRequest(`/admin/${kind}?${params.toString()}`, { timeoutMs: 20_000 });
   const rows = data.items || [];
   rows.pagination = data.pagination;
+  renderAdminTransactionSummary(data.summary || {}, `[data-admin-list-summary='${kind}']`);
   target.innerHTML = renderAdminDetailedTransactions(rows, kind);
+}
+
+async function loadAdminRecentTransactions(page = adminDetailedState.pages.transactions || 1) {
+  adminDetailedState.pages.transactions = page;
+  const target = document.querySelector("[data-admin-list='transactions']");
+  if (!target) return;
+  target.innerHTML = `<p class="muted">Chargement des transactions récentes...</p>`;
+  const params = new URLSearchParams({ page: String(page), limit: "25" });
+  appendAdminTransactionFilters(params);
+  const data = await apiRequest(`/admin/transactions?${params.toString()}`, { timeoutMs: 20_000 });
+  const rows = data.items || [];
+  rows.pagination = data.pagination;
+  renderAdminTransactionSummary(data.summary || {});
+  target.innerHTML = renderAdminDetailedTransactions(rows, "transactions");
+}
+
+async function exportAdminSection(section) {
+  const params = new URLSearchParams();
+  if (section === "transactions") appendAdminTransactionFilters(params);
+  if (section === "deposits" || section === "withdrawals") appendAdminListFilters(params, section);
+  const csv = await apiRequest(`/admin/export/${section}?${params.toString()}`, { timeoutMs: 30_000 });
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `afrix-admin-${section}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast("Export CSV telecharge.");
 }
 
 function renderProgramSummary(program, payload = {}) {
@@ -1727,6 +1795,7 @@ async function lookupAdminActivity(emailOverride = "") {
       <div><span>Parrain</span><strong>${escapeHtml(user.referrerEmail || user.referrerCode || "-")}</strong></div>
       <div><span>Statut</span><strong>${escapeHtml(adminStatusLabel(user.status))}</strong></div>
     </div>
+    <article class="admin-sublist admin-timeline"><h2>Timeline unifiée</h2>${(data.timeline || []).map((item) => `<div><span>${escapeHtml(item.title || item.kind || "Activité")}<small>${escapeHtml(item.date || "-")} - ${escapeHtml(item.program || item.kind || "-")} - ${escapeHtml(item.reference || "-")}</small></span><strong>${escapeHtml(item.amount || "-")}<small>${escapeHtml(adminStatusLabel(item.status))}</small></strong></div>`).join("") || `<p class="muted">Aucune activité.</p>`}</article>
     <article class="admin-sublist"><h2>AFRIX Trading Program</h2>${(data.activePlans || []).map((plan) => `<div><span>${escapeHtml(plan.name || plan.planId || "Plan")}<small>${escapeHtml(plan.status || "")} - ${escapeHtml(plan.startedAt || "-")} - Jours ${Number(plan.daysPaid || 0)}/${Number(plan.durationDays || 0)}</small></span><strong>${formatUsdt(plan.amount)}<small>${formatUsdt(plan.earnedAmount)} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun plan.</p>`}</article>
     <article class="admin-sublist"><h2>AFRIX Staking Program</h2>${(data.activeStakes || []).map((stake) => `<div><span>${escapeHtml(stake.name || stake.planId || "Stake")}<small>${escapeHtml(stake.status || "")} - ${escapeHtml(stake.startedAt || "-")} - Jours ${Number(stake.daysPaid || 0)}/${Number(stake.durationDays || 0)}</small></span><strong>${formatGrsc(stake.amount)}<small>${formatGrsc(stake.earnedAmount)} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun staking.</p>`}</article>
     <article class="admin-sublist"><h2>Transactions traçables</h2>${renderAdminDetailedTransactions(txRows)}</article>
@@ -1740,6 +1809,7 @@ async function loadActiveDetailedAdminSection(section = adminDetailedState.secti
   try {
     await loadAdminDetailedSummary();
     if (section === "accounts") await loadAdminDetailedUsers();
+    if (section === "transactions") await loadAdminRecentTransactions();
     if (section === "deposits") await loadAdminDetailedTransactions("deposits");
     if (section === "withdrawals") await loadAdminDetailedTransactions("withdrawals");
     if (["trading", "staking", "swap", "money"].includes(section)) await loadAdminProgram(section);
@@ -1763,11 +1833,34 @@ function initDetailedAdmin() {
       const kind = button.dataset.adminRefreshList;
       adminDetailedState.pages[kind] = 1;
       if (kind === "users") loadAdminDetailedUsers(1).catch((error) => showToast(error.message, "error"));
+      if (kind === "transactions") loadAdminRecentTransactions(1).catch((error) => showToast(error.message, "error"));
       if (kind === "deposits" || kind === "withdrawals") loadAdminDetailedTransactions(kind, 1).catch((error) => showToast(error.message, "error"));
     });
   });
   document.querySelectorAll("[data-admin-list-status]").forEach((field) => {
     field.addEventListener("change", () => loadAdminDetailedTransactions(field.dataset.adminListStatus, 1).catch((error) => showToast(error.message, "error")));
+  });
+  document.querySelectorAll("[data-admin-list-search], [data-admin-list-date-from], [data-admin-list-date-to], [data-admin-list-method], [data-admin-list-network], [data-admin-list-reference], [data-admin-list-min], [data-admin-list-max]").forEach((field) => {
+    const kind = field.dataset.adminListSearch || field.dataset.adminListDateFrom || field.dataset.adminListDateTo || field.dataset.adminListMethod || field.dataset.adminListNetwork || field.dataset.adminListReference || field.dataset.adminListMin || field.dataset.adminListMax;
+    field.addEventListener(field.type === "date" ? "change" : "input", () => {
+      window.clearTimeout(adminDetailedState[`${kind}FilterTimer`]);
+      adminDetailedState[`${kind}FilterTimer`] = window.setTimeout(() => {
+        loadAdminDetailedTransactions(kind, 1).catch((error) => showToast(error.message, "error"));
+      }, 250);
+    });
+  });
+  ["[data-admin-transactions-search]", "[data-admin-transactions-type]", "[data-admin-transactions-status]", "[data-admin-transactions-date-from]", "[data-admin-transactions-date-to]", "[data-admin-transactions-method]", "[data-admin-transactions-network]", "[data-admin-transactions-reference]", "[data-admin-transactions-min]", "[data-admin-transactions-max]"].forEach((selector) => {
+    const field = document.querySelector(selector);
+    if (!field) return;
+    field.addEventListener(field.tagName === "INPUT" && field.type !== "date" ? "input" : "change", () => {
+      window.clearTimeout(adminDetailedState.transactionsFilterTimer);
+      adminDetailedState.transactionsFilterTimer = window.setTimeout(() => {
+        loadAdminRecentTransactions(1).catch((error) => showToast(error.message, "error"));
+      }, 250);
+    });
+  });
+  document.querySelectorAll("[data-admin-export]").forEach((button) => {
+    button.addEventListener("click", () => exportAdminSection(button.dataset.adminExport).catch((error) => showToast(error.message, "error")));
   });
   document.querySelector("[data-admin-activity-search]")?.addEventListener("click", () => lookupAdminActivity().catch((error) => showToast(error.message, "error")));
   document.querySelector("[data-admin-activity-email]")?.addEventListener("keydown", (event) => {
@@ -1779,6 +1872,7 @@ function initDetailedAdmin() {
       const kind = pager.dataset.adminPage;
       const page = Number(pager.dataset.page || 1);
       if (kind === "users") loadAdminDetailedUsers(page).catch((error) => showToast(error.message, "error"));
+      if (kind === "transactions") loadAdminRecentTransactions(page).catch((error) => showToast(error.message, "error"));
       if (kind === "deposits" || kind === "withdrawals") loadAdminDetailedTransactions(kind, page).catch((error) => showToast(error.message, "error"));
       if (["trading", "staking", "swap", "money"].includes(kind)) loadAdminProgram(kind, page).catch((error) => showToast(error.message, "error"));
     }

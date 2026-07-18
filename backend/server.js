@@ -490,11 +490,55 @@ function buildAdminStats(db) {
     usersWithActivePlans: users.filter((user) => (user.activePlans || []).some((plan) => plan.status === "active")).length,
     investedCapital: money(activePlans.reduce((total, plan) => total + Number(plan.amount || 0), 0)),
     transactionVolume: money(completedTransactions.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0)),
-    platformBalance: money(platformRevenue),
     platformRevenue: money(platformRevenue),
     partners: users.filter((user) => user.referrerId).length,
     approvedMerchants: users.filter((user) => user.merchantProfile?.status === "approved").length,
     activeCountries: countries.size
+  };
+}
+
+function buildPlatformSummary(transactions = []) {
+  const completedOrActive = transactions.filter((tx) => tx.status === "Completed" || tx.status === "Active");
+  const deposits = transactions.filter((tx) => tx.type === "Depot");
+  const withdrawals = transactions.filter((tx) => tx.type === "Retrait");
+  const byStatus = (rows, status) => rows.filter((tx) => tx.status === status);
+  const sumAmount = (rows) => money(rows.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0));
+  const sumFees = (rows) => money(rows.reduce((total, tx) => total + Number(tx.metadata?.fee || 0), 0));
+  const platformRevenue = money(completedOrActive.reduce((total, tx) => {
+    if (tx.type === "Retrait") return total + Number(tx.metadata?.fee || 0);
+    if (tx.type === "P2P" && tx.displayAmount?.startsWith("-")) return total + Number(tx.metadata?.fee || 0);
+    return total;
+  }, 0));
+
+  return {
+    transactions: {
+      total: transactions.length,
+      completed: byStatus(transactions, "Completed").length,
+      pending: byStatus(transactions, "Pending").length,
+      rejected: byStatus(transactions, "Rejected").length,
+      active: byStatus(transactions, "Active").length,
+      volume: sumAmount(completedOrActive)
+    },
+    deposits: {
+      total: deposits.length,
+      pending: byStatus(deposits, "Pending").length,
+      completed: byStatus(deposits, "Completed").length,
+      rejected: byStatus(deposits, "Rejected").length,
+      completedAmount: sumAmount(byStatus(deposits, "Completed")),
+      rejectedAmount: sumAmount(byStatus(deposits, "Rejected")),
+      pendingAmount: sumAmount(byStatus(deposits, "Pending"))
+    },
+    withdrawals: {
+      total: withdrawals.length,
+      pending: byStatus(withdrawals, "Pending").length,
+      completed: byStatus(withdrawals, "Completed").length,
+      rejected: byStatus(withdrawals, "Rejected").length,
+      completedAmount: sumAmount(byStatus(withdrawals, "Completed")),
+      rejectedAmount: sumAmount(byStatus(withdrawals, "Rejected")),
+      pendingAmount: sumAmount(byStatus(withdrawals, "Pending")),
+      fees: sumFees(withdrawals)
+    },
+    platformRevenue
   };
 }
 
@@ -617,6 +661,139 @@ function adminProgramStatsFromUsers(users = []) {
       totalEarned: money(allStaking.reduce((total, stake) => total + Number(stake.earnedAmount || 0), 0))
     }
   };
+}
+
+async function transactionStatusSummary(query = {}) {
+  const rows = await TransactionModel.aggregate([
+    { $match: query },
+    {
+      $group: {
+        _id: "$status",
+        count: { $sum: 1 },
+        amount: { $sum: { $toDouble: { $ifNull: ["$amount", 0] } } }
+      }
+    }
+  ]);
+  const summary = { total: 0, pending: 0, completed: 0, rejected: 0, active: 0 };
+  rows.forEach((row) => {
+    const key = String(row._id || "").toLowerCase();
+    summary.total += Number(row.count || 0);
+    if (key === "pending") summary.pending = Number(row.count || 0);
+    if (key === "completed") summary.completed = Number(row.count || 0);
+    if (key === "rejected") summary.rejected = Number(row.count || 0);
+    if (key === "active") summary.active = Number(row.count || 0);
+  });
+  summary.rows = rows.map((row) => ({
+    status: row._id || "",
+    count: Number(row.count || 0),
+    amount: money(row.amount || 0)
+  }));
+  return summary;
+}
+
+function buildAdminTransactionQuery(queryParams = {}, baseClauses = []) {
+  const clauses = [...baseClauses];
+  const searchText = String(queryParams.search || "").trim();
+  const status = String(queryParams.status || "").trim();
+  const type = String(queryParams.type || "").trim();
+  const method = String(queryParams.method || "").trim();
+  const network = String(queryParams.network || "").trim();
+  const reference = String(queryParams.reference || "").trim();
+  const dateFrom = String(queryParams.dateFrom || "").trim();
+  const dateTo = String(queryParams.dateTo || "").trim();
+  const minAmount = Number(queryParams.minAmount || 0);
+  const maxAmount = Number(queryParams.maxAmount || 0);
+
+  if (type) clauses.push({ type });
+  if (status) clauses.push({ status });
+  if (method) {
+    const methodRegex = adminRegex(method);
+    clauses.push({ $or: [{ "metadata.method": methodRegex }, { "metadata.paymentMethod": methodRegex }] });
+  }
+  if (network) {
+    const networkRegex = adminRegex(network);
+    clauses.push({ $or: [{ "metadata.network": networkRegex }, { "metadata.method": networkRegex }, { "metadata.asset": networkRegex }] });
+  }
+  if (reference) {
+    const refRegex = adminRegex(reference);
+    clauses.push({ $or: [{ id: refRegex }, { "metadata.reference": refRegex }, { "metadata.txRef": refRegex }, { reference: refRegex }] });
+  }
+  if (dateFrom || dateTo) {
+    clauses.push({
+      createdAt: {
+        ...(dateFrom ? { $gte: `${dateFrom}T00:00:00.000Z` } : {}),
+        ...(dateTo ? { $lte: `${dateTo}T23:59:59.999Z` } : {})
+      }
+    });
+  }
+  if (Number.isFinite(minAmount) && minAmount > 0) clauses.push({ amount: { $gte: minAmount } });
+  if (Number.isFinite(maxAmount) && maxAmount > 0) clauses.push({ amount: { ...(Number.isFinite(minAmount) && minAmount > 0 ? { $gte: minAmount } : {}), $lte: maxAmount } });
+
+  return { clauses, searchText };
+}
+
+async function buildAdminTransactionQueryWithSearch(queryParams = {}, baseClauses = []) {
+  const { clauses, searchText } = buildAdminTransactionQuery(queryParams, baseClauses);
+  if (searchText) {
+    const search = adminRegex(searchText);
+    const matchingUsers = await UserModel.find({ $or: [{ email: search }, { fullName: search }] }, { id: 1 }).lean();
+    clauses.push({ $or: [
+      { id: search },
+      { description: search },
+      { "metadata.txRef": search },
+      { "metadata.reference": search },
+      { userId: { $in: matchingUsers.map((user) => user.id) } }
+    ] });
+  }
+  return clauses.length ? { $and: clauses } : {};
+}
+
+function csvEscape(value) {
+  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+}
+
+function adminTransactionsCsv(rows = [], ownerMap = new Map()) {
+  return [
+    "date,user_email,user_name,type,program,status,amount,description,reference,method,network,address,phone,tx_ref",
+    ...rows.map((tx) => {
+      const owner = ownerMap.get(tx.userId);
+      const metadata = tx.metadata || {};
+      return [
+        tx.createdAt || "",
+        owner?.email || "",
+        owner?.fullName || owner?.email || "",
+        tx.type || "",
+        transactionProgram(tx),
+        tx.status || "",
+        tx.amount || 0,
+        tx.description || "",
+        metadata.reference || tx.id || "",
+        metadata.method || metadata.paymentMethod || "",
+        metadata.network || metadata.asset || "",
+        metadata.address || "",
+        metadata.phone || "",
+        metadata.txRef || ""
+      ].map(csvEscape).join(",");
+    })
+  ].join("\n");
+}
+
+function adminParticipationCsv(rows = [], unit = "USDT") {
+  return [
+    "date,user_email,user_name,program,status,amount,earned,days_paid,duration,reference",
+    ...rows.map((item) => [
+      item.startedAt || item.createdAt || "",
+      item.userEmail || "",
+      item.userName || "",
+      item.name || item.planId || "",
+      item.status || "",
+      `${Number(item.amount || 0).toFixed(2)} ${unit}`,
+      `${Number(item.earnedAmount || 0).toFixed(2)} ${unit}`,
+      item.daysPaid || 0,
+      item.durationDays || 0,
+      item.id || item.planId || ""
+    ].map(csvEscape).join(","))
+  ].join("\n");
 }
 
 function notifyTransactionDecision(tx) {
@@ -3631,18 +3808,16 @@ app.get("/api/admin/summary", authenticate, requireAdmin, async (_req, res, next
     });
     const stats = buildAdminStats(db);
     const programStats = adminProgramStatsFromUsers(users);
-    const completedDeposits = transactions.filter((tx) => tx.type === "Depot" && tx.status === "Completed");
-    const rejectedDeposits = transactions.filter((tx) => tx.type === "Depot" && tx.status === "Rejected");
-    const pendingDeposits = transactions.filter((tx) => tx.type === "Depot" && tx.status === "Pending");
-    const completedWithdrawals = transactions.filter((tx) => tx.type === "Retrait" && tx.status === "Completed");
-    const rejectedWithdrawals = transactions.filter((tx) => tx.type === "Retrait" && tx.status === "Rejected");
-    const pendingWithdrawals = transactions.filter((tx) => tx.type === "Retrait" && tx.status === "Pending");
+    const platformSummary = buildPlatformSummary(transactions);
     const swapTransactions = transactions.filter((tx) => transactionProgram(tx) === "swap");
     const moneyTransactions = transactions.filter((tx) => transactionProgram(tx) === "money");
 
     res.json({
       ...stats,
+      transactionVolume: platformSummary.transactions.volume,
+      platformRevenue: platformSummary.platformRevenue,
       platformAccount: ensurePlatform(db),
+      platformSummary,
       programStats,
       operations: {
         cicoCount,
@@ -3650,18 +3825,8 @@ app.get("/api/admin/summary", authenticate, requireAdmin, async (_req, res, next
         merchantApplicationsCount,
         disputesCount
       },
-      deposits: {
-        pending: pendingDeposits.length,
-        completed: completedDeposits.length,
-        rejected: rejectedDeposits.length,
-        completedAmount: money(completedDeposits.reduce((total, tx) => total + Number(tx.amount || 0), 0))
-      },
-      withdrawals: {
-        pending: pendingWithdrawals.length,
-        completed: completedWithdrawals.length,
-        rejected: rejectedWithdrawals.length,
-        completedAmount: money(completedWithdrawals.reduce((total, tx) => total + Number(tx.amount || 0), 0))
-      },
+      deposits: platformSummary.deposits,
+      withdrawals: platformSummary.withdrawals,
       swap: {
         transactions: swapTransactions.length,
         issuedSupply: grsIssuedSupply({ transactions }),
@@ -3744,6 +3909,63 @@ app.get("/api/admin/users/activity", authenticate, requireAdmin, async (req, res
       activePlans: Array.isArray(user.activePlans) ? user.activePlans : [],
       activeStakes: Array.isArray(user.activeStakes) ? user.activeStakes : [],
       transactions: transactions.map((tx) => enrichAdminTransaction(tx, user)),
+      timeline: [
+        ...transactions.map((tx) => ({
+          id: tx.id,
+          kind: "transaction",
+          date: tx.createdAt || "",
+          title: tx.description || tx.type || "Transaction",
+          status: tx.status || "",
+          amount: tx.displayAmount || formatAmount(tx.amount || 0),
+          program: transactionProgram(tx),
+          reference: tx.metadata?.reference || tx.id || "",
+          details: tx.metadata || {}
+        })),
+        ...(Array.isArray(user.activePlans) ? user.activePlans : []).map((plan) => ({
+          id: plan.id,
+          kind: "trading",
+          date: plan.startedAt || plan.createdAt || "",
+          title: plan.name || plan.planId || "AFRIX Trading Program",
+          status: plan.status || "",
+          amount: formatAmount(plan.amount || 0),
+          program: "trading",
+          reference: plan.id || plan.planId || "",
+          details: plan
+        })),
+        ...(Array.isArray(user.activeStakes) ? user.activeStakes : []).map((stake) => ({
+          id: stake.id,
+          kind: "staking",
+          date: stake.startedAt || stake.createdAt || "",
+          title: stake.name || stake.planId || "AFRIX Staking Program",
+          status: stake.status || "",
+          amount: `${Number(stake.amount || 0).toFixed(2)} GRSC`,
+          program: "staking",
+          reference: stake.id || stake.planId || "",
+          details: stake
+        })),
+        ...cicoRequests.map((item) => ({
+          id: item.id,
+          kind: "money",
+          date: item.createdAt || "",
+          title: `CICO ${item.type || ""}`.trim(),
+          status: item.status || "",
+          amount: formatAmount(item.amount || 0),
+          program: "money",
+          reference: item.reference || item.id || "",
+          details: item
+        })),
+        ...exchangeOrders.map((item) => ({
+          id: item.id,
+          kind: "exchange",
+          date: item.createdAt || "",
+          title: `Exchange ${item.type || ""}`.trim(),
+          status: item.status || "",
+          amount: formatAmount(item.amount || 0),
+          program: "money",
+          reference: item.reference || item.id || "",
+          details: item
+        }))
+      ].sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 300),
       ledgerEntries,
       cicoRequests,
       exchangeOrders,
@@ -3760,69 +3982,66 @@ app.get("/api/admin/transactions", authenticate, requireAdmin, async (req, res, 
   try {
     await ensureStorage();
     const { page, limit, skip } = parseAdminPagination(req.query, 20, 100);
-    const searchText = String(req.query.search || "").trim();
-    const type = String(req.query.type || "").trim();
-    const status = String(req.query.status || "").trim();
     const program = String(req.query.program || "").trim();
-    const andClauses = [];
-    if (type) andClauses.push({ type });
-    if (status) andClauses.push({ status });
+    const programClauses = [];
+    const summaryClauses = [];
     if (program === "swap") {
-      andClauses.push({
+      const programQuery = {
         $or: [
           { type: "Swap" },
           { "metadata.asset": { $in: ["GRSC_PURCHASE", "GRSC_WITHDRAWAL"] } },
           { "metadata.source": /grscoin|afrix_swap/i }
         ]
-      });
+      };
+      programClauses.push(programQuery);
+      summaryClauses.push(programQuery);
     }
     if (program === "staking") {
-      andClauses.push({
+      const programQuery = {
         $or: [
           { "metadata.source": /staking/i },
           { "metadata.stakeId": { $exists: true } },
           { description: /staking/i }
         ]
-      });
+      };
+      programClauses.push(programQuery);
+      summaryClauses.push(programQuery);
     }
     if (program === "trading") {
-      andClauses.push({
+      const programQuery = {
         $or: [
           { type: "Plan" },
           { "metadata.activePlanId": { $exists: true } },
           { "metadata.planId": { $exists: true } }
         ]
-      });
+      };
+      programClauses.push(programQuery);
+      summaryClauses.push(programQuery);
     }
     if (program === "money") {
-      andClauses.push({
+      const programQuery = {
         $or: [
           { type: { $in: ["P2P", "CICO", "Merchant"] } },
           { "metadata.source": /cico|p2p/i }
         ]
-      });
+      };
+      programClauses.push(programQuery);
+      summaryClauses.push(programQuery);
     }
+    const query = await buildAdminTransactionQueryWithSearch(req.query, programClauses);
+    const summaryQuery = await buildAdminTransactionQueryWithSearch({ ...req.query, status: "" }, summaryClauses);
 
-    if (searchText) {
-      const search = adminRegex(searchText);
-      const matchingUsers = await UserModel.find({ $or: [{ email: search }, { fullName: search }] }, { id: 1 }).lean();
-      andClauses.push({ $or: [
-        { id: search },
-        { description: search },
-        { "metadata.txRef": search },
-        { "metadata.reference": search },
-        { userId: { $in: matchingUsers.map((user) => user.id) } }
-      ] });
-    }
-    const query = andClauses.length ? { $and: andClauses } : {};
-
-    const [total, transactions] = await Promise.all([
+    const [total, transactions, summary] = await Promise.all([
       TransactionModel.countDocuments(query),
-      TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+      TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      transactionStatusSummary(summaryQuery)
     ]);
     const owners = await UserModel.find({ id: { $in: transactions.map((tx) => tx.userId) } }, safeUserProjection).lean();
     const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
-    res.json(buildAdminPaginatedResponse(transactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), total, page, limit));
+    res.json({
+      ...buildAdminPaginatedResponse(transactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), total, page, limit),
+      summary
+    });
   } catch (error) {
     next(error);
   }
@@ -3832,15 +4051,19 @@ app.get("/api/admin/deposits", authenticate, requireAdmin, async (req, res, next
   try {
     req.query.type = "Depot";
     const { page, limit, skip } = parseAdminPagination(req.query, 20, 100);
-    const status = String(req.query.status || "").trim();
-    const query = { type: "Depot", ...(status ? { status } : {}) };
-    const [total, transactions] = await Promise.all([
+    const query = await buildAdminTransactionQueryWithSearch(req.query, [{ type: "Depot" }]);
+    const summaryQuery = await buildAdminTransactionQueryWithSearch({ ...req.query, status: "" }, [{ type: "Depot" }]);
+    const [total, transactions, summary] = await Promise.all([
       TransactionModel.countDocuments(query),
-      TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+      TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      transactionStatusSummary(summaryQuery)
     ]);
     const owners = await UserModel.find({ id: { $in: transactions.map((tx) => tx.userId) } }, safeUserProjection).lean();
     const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
-    res.json(buildAdminPaginatedResponse(transactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), total, page, limit));
+    res.json({
+      ...buildAdminPaginatedResponse(transactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), total, page, limit),
+      summary
+    });
   } catch (error) {
     next(error);
   }
@@ -3849,15 +4072,76 @@ app.get("/api/admin/deposits", authenticate, requireAdmin, async (req, res, next
 app.get("/api/admin/withdrawals", authenticate, requireAdmin, async (req, res, next) => {
   try {
     const { page, limit, skip } = parseAdminPagination(req.query, 20, 100);
-    const status = String(req.query.status || "").trim();
-    const query = { type: "Retrait", ...(status ? { status } : {}) };
-    const [total, transactions] = await Promise.all([
+    const query = await buildAdminTransactionQueryWithSearch(req.query, [{ type: "Retrait" }]);
+    const summaryQuery = await buildAdminTransactionQueryWithSearch({ ...req.query, status: "" }, [{ type: "Retrait" }]);
+    const [total, transactions, summary] = await Promise.all([
       TransactionModel.countDocuments(query),
-      TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+      TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      transactionStatusSummary(summaryQuery)
     ]);
     const owners = await UserModel.find({ id: { $in: transactions.map((tx) => tx.userId) } }, safeUserProjection).lean();
     const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
-    res.json(buildAdminPaginatedResponse(transactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), total, page, limit));
+    res.json({
+      ...buildAdminPaginatedResponse(transactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), total, page, limit),
+      summary
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/export/:section", authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    await ensureStorage();
+    const section = String(req.params.section || "").trim();
+    let baseClauses = [];
+    if (section === "deposits") baseClauses = [{ type: "Depot" }];
+    if (section === "withdrawals") baseClauses = [{ type: "Retrait" }];
+    if (section === "swap") {
+      baseClauses = [{
+        $or: [
+          { type: "Swap" },
+          { "metadata.asset": { $in: ["GRSC_PURCHASE", "GRSC_WITHDRAWAL"] } },
+          { "metadata.source": /grscoin|afrix_swap/i }
+        ]
+      }];
+    }
+    if (section === "money") {
+      baseClauses = [{
+        $or: [
+          { type: { $in: ["P2P", "CICO", "Merchant"] } },
+          { "metadata.source": /cico|p2p/i }
+        ]
+      }];
+    }
+    if (section === "trading" || section === "staking") {
+      const users = await UserModel.find({}, safeUserProjection).lean();
+      const rows = users.flatMap((user) => {
+        const list = section === "trading" ? (user.activePlans || []) : (user.activeStakes || []);
+        return list.map((item) => ({
+          ...item,
+          userId: user.id,
+          userEmail: user.email,
+          userName: user.fullName || user.email
+        }));
+      }).sort((a, b) => String(b.startedAt || b.createdAt || "").localeCompare(String(a.startedAt || a.createdAt || "")));
+      return res
+        .type("text/csv")
+        .set("Content-Disposition", `attachment; filename="afrix-admin-${section}-${today()}.csv"`)
+        .send(adminParticipationCsv(rows, section === "staking" ? "GRSC" : "USDT"));
+    }
+    if (section === "transactions") baseClauses = [];
+    if (!["deposits", "withdrawals", "transactions", "swap", "money"].includes(section)) {
+      return res.status(404).json({ message: "Export admin introuvable." });
+    }
+    const query = await buildAdminTransactionQueryWithSearch(req.query, baseClauses);
+    const rows = await TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).limit(5000).lean();
+    const owners = await UserModel.find({ id: { $in: rows.map((tx) => tx.userId) } }, safeUserProjection).lean();
+    const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
+    res
+      .type("text/csv")
+      .set("Content-Disposition", `attachment; filename="afrix-admin-${section}-${today()}.csv"`)
+      .send(adminTransactionsCsv(rows, ownerMap));
   } catch (error) {
     next(error);
   }
