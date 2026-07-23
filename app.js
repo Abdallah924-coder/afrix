@@ -8,11 +8,11 @@ const pageTitles = {
   dashboard: "Tableau de bord",
   wallet: "Wallet USDT",
   "afrix-money": "AFRIX Money",
-  swap: "AFRIX Swap Program",
+  plans: "AFRIX Trading Program",
   staking: "AFRIX Staking Program",
+  swap: "AFRIX Swap GRSCOIN",
   exchange: "Exchange",
   merchant: "Merchant",
-  plans: "AFRIX Trading Program",
   network: "Reseau",
   profile: "Profil",
   contact: "Contact",
@@ -27,11 +27,11 @@ const navItems = [
   ["dashboard", "Dashboard", "/dashboard"],
   ["wallet", "Wallet USDT", "/wallet"],
   ["afrix-money", "AFRIX Money", "/afrix-money"],
-  ["swap", "AFRIX Swap Program", "/swap"],
+  ["plans", "AFRIX Trading Program", "/plans"],
   ["staking", "AFRIX Staking Program", "/staking"],
+  ["swap", "AFRIX Swap GRSCOIN", "/swap"],
   ["exchange", "Exchange", "/exchange"],
   ["merchant", "Merchant", "/merchant"],
-  ["plans", "AFRIX Trading Program", "/plans"],
   ["network", "Reseau", "/network"],
   ["profile", "Profil", "/profile"],
   ["contact", "Contact", "/contact"],
@@ -388,6 +388,7 @@ function renderSidebar(page, user = emptyUser) {
       <span>Rang partenaire</span>
       <strong>${escapeHtml(user.rank || "Niveau 0")}</strong>
       <small>Progression Web3 active</small>
+      <button class="btn secondary side-logout" type="button" data-logout>Se deconnecter</button>
     </div>
   `;
 }
@@ -2034,6 +2035,11 @@ function setupActions(user) {
     element.addEventListener("click", handler);
   };
 
+  bindClickOnce("[data-logout]", () => {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    window.location.href = "/login";
+  });
+
   document.querySelector("[data-copy-ref]")?.addEventListener("click", () => {
     if (!user.refLink) {
       showToast("Lien de parrainage indisponible.", "error");
@@ -3004,6 +3010,27 @@ function renderProtectedShell(page, user) {
   setupActions(user);
 }
 
+function setupPublicHomeReveal() {
+  const revealItems = Array.from(document.querySelectorAll(".home-reveal"));
+  if (!revealItems.length) return;
+
+  if (!("IntersectionObserver" in window)) {
+    revealItems.forEach((item) => item.classList.add("is-visible"));
+    return;
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      entry.target.classList.toggle("is-visible", entry.isIntersecting);
+    });
+  }, { threshold: 0.18, rootMargin: "0px 0px -8% 0px" });
+
+  revealItems.forEach((item, index) => {
+    item.style.transitionDelay = `${Math.min(index * 45, 220)}ms`;
+    observer.observe(item);
+  });
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const page = document.body.dataset.page;
   const isProtected = document.body.matches("[data-protected]");
@@ -3011,6 +3038,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   hydrateInvitationLinks();
   setupAuthForms();
   setupPwa();
+  setupPublicHomeReveal();
 
   if (!isProtected) return;
 

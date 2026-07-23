@@ -15,13 +15,7 @@
 </head>
 <body class="public-page">
   <main class="afrix-home">
-    <div class="home-noise" aria-hidden="true"></div>
-    <div class="world-map" aria-hidden="true"></div>
-    <div class="network-lines" aria-hidden="true">
-      <span></span><span></span><span></span><span></span><span></span>
-    </div>
-
-    <header class="home-header">
+    <header class="home-header home-reveal">
       <a class="brand home-brand" href="/" aria-label="AFRIX Capital Investment">
         <svg class="brand-mark afrix-mark" viewBox="0 0 150 120" role="img" aria-labelledby="afrixLogoTitle">
           <title id="afrixLogoTitle">AFRIX Capital Investment</title>
@@ -33,69 +27,113 @@
         </svg>
         <span><strong>AFRIX</strong><small>Capital Investment</small></span>
       </a>
+      <nav class="home-nav" aria-label="Navigation accueil">
+        <a href="#solutions">Solutions</a>
+        <a href="#mission">Mission</a>
+        <a href="/login">Connexion</a>
+        <a class="btn primary" href="/register">Rejoindre</a>
+      </nav>
     </header>
 
-    <section class="home-title" aria-labelledby="home-title">
-      <h1 id="home-title">
-        <span>Blockchain <em>• Crypto</em></span>
-        <span>DeFi • Digital Finance</span>
-      </h1>
-      <p>propulsée par la Blockchain</p>
-    </section>
-
-    <section class="finance-visual" aria-label="Ecosystème crypto AFRIX">
-      <div class="globe">
-        <span class="globe-ring"></span>
-        <span class="continent c1"></span>
-        <span class="continent c2"></span>
-        <span class="continent c3"></span>
-      </div>
-      <div class="phone">
-        <div class="phone-screen">
-          <span class="phone-bar"></span>
-          <strong>USDT</strong>
-          <small>Wallet actif</small>
-        </div>
-        <div class="wallet-card">
-          <span></span>
-          <strong>07 18 0020 9008 8088</strong>
+    <section class="home-hero" aria-labelledby="home-title">
+      <div class="home-hero-copy home-reveal">
+        <span class="pill">Blockchain • Digital Assets • DeFi • Tokenisation • Web3 • FinTech</span>
+        <h1 id="home-title">AFRIX CAPITAL INVESTMENT</h1>
+        <p class="home-tagline">Investir • Connecter • Prospérer</p>
+        <p class="home-lead">L'avenir de la finance digitale en Afrique.</p>
+        <p>AFRIX CAPITAL INVESTMENT est une plateforme internationale spécialisée dans la gestion d'actifs numériques, la Blockchain, la DeFi, la Tokenisation et les solutions Web3.</p>
+        <p>Notre mission est de rendre la finance digitale plus accessible grâce à des solutions innovantes, sécurisées et adaptées aux particuliers, entreprises et partenaires.</p>
+        <div class="home-actions" aria-label="Actions principales">
+          <a class="btn primary" href="/register">Rejoignez-nous</a>
+          <a class="btn secondary" href="/login">Accéder à mon compte</a>
         </div>
       </div>
-      <span class="coin coin-a">B</span>
-      <span class="coin coin-b">T</span>
-      <span class="coin coin-c">B</span>
-      <span class="coin coin-d">B</span>
+
+      <div class="crypto-orbit home-reveal" aria-label="Ecosystème digital AFRIX">
+        <div class="orbit-grid"></div>
+        <div class="orbit-core">
+          <span>AFRIX</span>
+          <strong>Web3</strong>
+          <small>Finance digitale</small>
+        </div>
+        <span class="orbit-node node-trading">Trading</span>
+        <span class="orbit-node node-staking">Staking</span>
+        <span class="orbit-node node-swap">GRSCOIN</span>
+        <span class="orbit-node node-money">Money</span>
+        <span class="orbit-node node-defi">DeFi</span>
+        <span class="orbit-line line-one"></span>
+        <span class="orbit-line line-two"></span>
+        <span class="orbit-line line-three"></span>
+      </div>
     </section>
 
-    <section class="home-actions" aria-label="Actions principales">
-      <a class="home-cta join" href="/register">
-        <span>Rejoindre AFRIX Capital Investment</span>
-        <strong>›</strong>
-      </a>
-      <a class="home-cta access" href="/login">
-        <span>Accédez à l'écosystème AFRIX Capital Investment</span>
-        <strong>›</strong>
-      </a>
+    <section class="home-metrics" aria-label="Axes AFRIX">
+      <article class="home-reveal"><span>01</span><strong>Investir</strong><small>Programmes structurés autour des actifs digitaux.</small></article>
+      <article class="home-reveal"><span>02</span><strong>Connecter</strong><small>Passerelles entre économie locale, blockchain et partenaires.</small></article>
+      <article class="home-reveal"><span>03</span><strong>Prospérer</strong><small>Un écosystème conçu pour évoluer avec ses utilisateurs.</small></article>
     </section>
 
-    <nav class="home-categories" aria-label="Domaines AFRIX">
-      <a href="/register">
-        <span class="cat-icon blockchain-icon"></span>
-        <strong>Blockchain</strong>
-      </a>
-      <a href="/register">
-        <span class="cat-icon crypto-icon">B</span>
-        <strong>Crypto</strong>
-      </a>
-      <a href="/register">
-        <span class="cat-icon defi-icon"></span>
-        <strong>DeFi</strong>
-      </a>
-      <a href="/register">
-        <span class="cat-icon card-icon"></span>
-        <strong>Digital Finance</strong>
-      </a>
-    </nav>
+    <section class="home-section split" id="mission">
+      <article class="home-panel home-reveal">
+        <span class="section-kicker">À propos</span>
+        <h2>Un écosystème financier moderne pour les actifs numériques.</h2>
+        <p>Nous développons un écosystème financier moderne permettant d'investir, d'échanger, de sécuriser et de valoriser les actifs numériques tout en favorisant l'adoption de la Blockchain en Afrique et dans le monde.</p>
+      </article>
+      <article class="home-panel home-reveal">
+        <span class="section-kicker">Notre mission</span>
+        <h2>Connecter l'économie locale aux opportunités du numérique.</h2>
+        <p>Offrir des solutions de finance digitale simples, innovantes et sécurisées, afin de connecter l'économie locale aux opportunités du numérique.</p>
+      </article>
+      <article class="home-panel wide home-reveal">
+        <span class="section-kicker">Notre vision</span>
+        <h2>Construire une référence financière africaine connectée au monde.</h2>
+        <p>Construire un écosystème financier africain de référence, capable de connecter l'Afrique au reste du monde grâce à la Blockchain et au Web3.</p>
+      </article>
+    </section>
+
+    <section class="home-section" id="solutions">
+      <div class="section-title home-reveal">
+        <span class="section-kicker">Nos solutions</span>
+        <h2>Une plateforme complète pour investir, échanger et bâtir dans la finance digitale.</h2>
+      </div>
+      <div class="solutions-grid">
+        <a class="solution-card home-reveal" href="/plans"><span>01</span><h3>AFRIX Trading Program</h3><p>Programmes d'investissement structurés pour suivre l'activité, le capital engagé et les gains dans un cadre digital.</p></a>
+        <a class="solution-card home-reveal" href="/staking"><span>02</span><h3>AFRIX Staking Program</h3><p>Verrouillage de GRSCOIN, objectifs de rendement, cycles de maturité et progression connectée au Trading Program.</p></a>
+        <a class="solution-card home-reveal" href="/swap"><span>03</span><h3>AFRIX Swap GRSCOIN</h3><p>Conversion, dépôt, retrait et suivi des actifs GRSCOIN dans l'écosystème AFRIX.</p></a>
+        <a class="solution-card home-reveal" href="/afrix-money"><span>04</span><h3>AFRIX Money</h3><p>Services digitaux pour paiements, opérations communautaires, marchands et circulation de valeur.</p></a>
+        <a class="solution-card home-reveal" href="/exchange"><span>05</span><h3>AFRIX Exchange</h3><p>Solutions d'échange et de liquidité pensées pour relier les utilisateurs, les partenaires et les marchés.</p></a>
+        <a class="solution-card home-reveal" href="/register"><span>06</span><h3>AFRIX Prêt</h3><p>Perspective de financement digital intégrée à l'écosystème pour accompagner particuliers, marchands et projets.</p></a>
+        <a class="solution-card partner home-reveal" href="/network"><span>07</span><h3>Programme Partenaire International</h3><p>Réseau de partenaires, progression de rang, parrainage et opportunités internationales autour de la finance digitale.</p></a>
+      </div>
+    </section>
+
+    <section class="home-section why-section">
+      <div class="section-title home-reveal">
+        <span class="section-kicker">Pourquoi choisir AFRIX ?</span>
+        <h2>Sécurité, innovation et accompagnement pour avancer dans le Web3.</h2>
+      </div>
+      <div class="why-grid">
+        <article class="home-reveal"><strong>✓ Plateforme sécurisée</strong><p>Des parcours clairs, des validations contrôlées et une expérience pensée pour protéger les opérations.</p></article>
+        <article class="home-reveal"><strong>✓ Solutions innovantes</strong><p>Trading, staking, swap, money, exchange et futurs services financiers réunis dans un même environnement.</p></article>
+        <article class="home-reveal"><strong>✓ Technologie Blockchain</strong><p>Un socle orienté actifs numériques, tokenisation, traçabilité et adoption progressive du Web3.</p></article>
+        <article class="home-reveal"><strong>✓ Écosystème en constante évolution</strong><p>La plateforme se développe autour des besoins réels des investisseurs, entreprises, marchands et partenaires.</p></article>
+        <article class="home-reveal"><strong>✓ Réseau international de partenaires</strong><p>Une vision ouverte sur l'Afrique et le reste du monde, avec une communauté structurée.</p></article>
+        <article class="home-reveal"><strong>✓ Accompagnement et support</strong><p>Un cadre opérationnel pour aider les utilisateurs à comprendre, participer et évoluer dans l'écosystème.</p></article>
+      </div>
+    </section>
+
+    <section class="join-section home-reveal">
+      <span class="pill">Rejoignez-nous</span>
+      <h2>Investisseur, entrepreneur, marchand ou partenaire : AFRIX CAPITAL INVESTMENT vous accompagne dans la nouvelle économie numérique.</h2>
+      <p>AFRIX CAPITAL INVESTMENT</p>
+      <strong>Blockchain • Digital Assets • DeFi • Tokenisation • Web3 • FinTech</strong>
+      <small>Investir • Connecter • Prospérer</small>
+      <div class="home-actions">
+        <a class="btn primary" href="/register">Créer mon compte</a>
+        <a class="btn secondary" href="/login">Me connecter</a>
+      </div>
+    </section>
   </main>
+  <script src="app.js?v=20260706-1"></script>
 </body>
 </html>
