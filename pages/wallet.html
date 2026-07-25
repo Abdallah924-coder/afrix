@@ -81,7 +81,7 @@
             <label>Nom qui apparaît<input name="beneficiary" placeholder="Nom du compte MTN" data-withdraw-beneficiary></label>
           </div>
           <label>Montant à retirer<input name="amount" type="number" min="10" step="0.01" value="10" required data-withdraw-amount></label>
-          <p class="muted" data-withdraw-conversion hidden>Frais retrait 10%: <strong data-withdraw-fee>1.00 USDT</strong>. Montant reçu: <strong data-withdraw-net>9.00 USDT</strong>. Solde débité: <strong data-withdraw-total>10.00 USDT</strong>.</p>
+          <p class="muted" data-withdraw-conversion hidden>Frais retrait 10% payables en GRSC: <strong data-withdraw-fee>0.00 GRSC</strong>. Montant reçu: <strong data-withdraw-net>10.00 USDT</strong>. Solde USDT débité: <strong data-withdraw-total>10.00 USDT</strong>.</p>
           <button class="btn primary full" type="submit">Soumettre le retrait</button>
         </form>
         <section class="panel">
@@ -89,11 +89,11 @@
           <div class="info-grid">
             <div><span>Minimum</span><strong>10 USDT</strong></div>
             <div><span>Réseau</span><strong>BEP20 / MTN</strong></div>
-            <div><span>Frais BEP20</span><strong>10%</strong></div>
-            <div><span>Frais retrait</span><strong>10%</strong></div>
+            <div><span>Frais BEP20</span><strong>10% en GRSC</strong></div>
+            <div><span>Frais retrait</span><strong>GRSC uniquement</strong></div>
             <div><span>Traitement</span><strong>Admin</strong></div>
           </div>
-          <p class="muted">Pour MTN, indiquez le numéro et le nom exact qui apparaît sur le compte. 1 USDT = 550 FCFA. Les frais de 10% sont appliqués sur tout retrait, puis le net est versé.</p>
+          <p class="muted">Pour MTN, indiquez le numéro et le nom exact qui apparaît sur le compte. 1 USDT = 550 FCFA. Les frais de 10% sont convertis et débités exclusivement en GRSCOIN; le solde GRSC doit être suffisant avant la soumission.</p>
         </section>
       </div>
     </section>

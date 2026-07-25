@@ -44,6 +44,7 @@ import {
 } from "./config.js";
 import {
   addTransaction,
+  appendLedger,
   consumeReservedFunds,
   creditMerchantAvailable,
   creditMerchantBonus,
@@ -84,6 +85,7 @@ const PLAN_EARNINGS_INTERVAL_MS = 60 * 1000;
 const PLAN_PAYOUT_INTERVAL_MS = 86_400_000;
 const GRSCOIN_SWAP_FEE_RATE = 0.05;
 const GRSCOIN_WITHDRAWAL_FEE_RATE = 0.10;
+const USDT_WITHDRAWAL_FEE_RATE = 0.10;
 const GRSCOIN_SWAP_ADMIN_RATE = 0.02;
 const GRSCOIN_SWAP_DEVELOPER_RATE = 0.02;
 const GRSCOIN_SWAP_PLATFORM_RATE = 0.01;
@@ -2489,14 +2491,18 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
   if (isMtnCongoWithdrawal && (!phone || !beneficiary)) {
     return res.status(400).json({ message: "Numero MTN et nom beneficiaire requis." });
   }
-  const fee = money(amount * 0.10);
-  const netAmount = money(amount - fee);
-  const reservedAmount = money(amount);
-  if (netAmount <= 0) {
-    return res.status(400).json({ message: "Le montant apres frais doit rester positif." });
+  if (!GRSCOIN_PRICE_USDT) {
+    return res.status(503).json({ message: "Prix GRSCOIN indisponible. Retrait impossible pour le moment." });
   }
+  const fee = money(amount * USDT_WITHDRAWAL_FEE_RATE);
+  const feeGrsAmount = grsFromUsdt(fee);
+  const netAmount = money(amount);
+  const reservedAmount = money(amount);
   if (money(req.user.balance) < reservedAmount) {
     return res.status(400).json({ message: "Solde insuffisant." });
+  }
+  if (money(req.user.grsBalance) < feeGrsAmount) {
+    return res.status(400).json({ message: "Solde GRSCOIN insuffisant. Les frais de retrait sont payables exclusivement en GRSC. Veuillez recharger votre portefeuille GRSCOIN pour poursuivre cette opération." });
   }
 
   let result;
@@ -2514,6 +2520,10 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
         metadata: {
           method,
           fee,
+          feeAsset: "GRSC",
+          feeUsdtEquivalent: fee,
+          feeGrsAmount,
+          grsCoinPriceUsdt: GRSCOIN_PRICE_USDT,
           netAmount,
           reservedAmount,
           ...(address ? { address } : {}),
@@ -2529,12 +2539,18 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
           updatedUser = await UserModel.findOneAndUpdate(
             {
               id: req.user.id,
-              $expr: { $gte: [{ $toDouble: "$balance" }, reservedAmount] }
+              $expr: {
+                $and: [
+                  { $gte: [{ $toDouble: "$balance" }, reservedAmount] },
+                  { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }
+                ]
+              }
             },
             [{
               $set: {
                 balance: { $round: [{ $subtract: [{ $toDouble: "$balance" }, reservedAmount] }, 2] },
-                reservedBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$reservedBalance", 0] } }, reservedAmount] }, 2] }
+                reservedBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$reservedBalance", 0] } }, reservedAmount] }, 2] },
+                grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }, 2] }
               }
             }],
             { new: true, session, lean: true }
@@ -2543,7 +2559,7 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
             throw new Error("Solde insuffisant.");
           }
 
-          const ledgerEntries = buildLedgerEntries([{
+          const ledgerRows = [{
             accountType: "user",
             accountId: req.user.id,
             direction: "debit",
@@ -2557,9 +2573,21 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
             amount: reservedAmount,
             balanceAfter: updatedUser.reservedBalance,
             description: tx.description
-          }], {
+          }];
+          if (feeGrsAmount > 0) {
+            ledgerRows.push({
+              accountType: "user_grs",
+              accountId: req.user.id,
+              direction: "debit",
+              amount: feeGrsAmount,
+              balanceAfter: updatedUser.grsBalance,
+              description: `${tx.description} - frais GRSC`
+            });
+          }
+          const ledgerEntries = buildLedgerEntries(ledgerRows, {
             source: "withdrawal_request",
-            referenceId: tx.id
+            referenceId: tx.id,
+            extra: { feeAsset: "GRSC", feeUsdtEquivalent: fee, feeGrsAmount, grsCoinPriceUsdt: GRSCOIN_PRICE_USDT }
           });
 
           await TransactionModel.create([tx], { session });
@@ -2583,7 +2611,9 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     reference: result.request?.reference || result.transaction?.id,
     amount,
     fee: result.request?.fee || result.transaction?.metadata?.fee || 0,
-    netAmount: result.request?.netAmount || result.transaction?.metadata?.netAmount || money(amount - fee),
+    feeAsset: result.transaction?.metadata?.feeAsset || "GRSC",
+    feeGrsAmount: result.transaction?.metadata?.feeGrsAmount || feeGrsAmount,
+    netAmount: result.request?.netAmount || result.transaction?.metadata?.netAmount || amount,
     status: result.request?.status || result.transaction?.status
   });
 
@@ -2596,8 +2626,8 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     rows: [
       { label: "Methode", value: method.toUpperCase() },
       { label: "Montant", value: formatAmount(amount) },
-      { label: "Frais", value: formatAmount(result.request?.fee || result.transaction?.metadata?.fee || 0) },
-      { label: "Net a recevoir", value: formatAmount(result.request?.netAmount || result.transaction?.metadata?.netAmount || money(amount - fee)) },
+      { label: "Frais", value: `${(result.transaction?.metadata?.feeGrsAmount || feeGrsAmount).toFixed(2)} GRSC (${formatAmount(result.transaction?.metadata?.feeUsdtEquivalent || fee)} equivalent)` },
+      { label: "Net a recevoir", value: formatAmount(result.transaction?.metadata?.netAmount || amount) },
       { label: "Reference", value: result.request?.reference || result.transaction?.id },
       { label: "Statut", value: result.request?.status || result.transaction?.status }
     ]
@@ -2606,8 +2636,8 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     { label: "Client", value: req.user.email },
     { label: "Methode", value: method.toUpperCase() },
     { label: "Montant", value: formatAmount(amount) },
-    { label: "Frais", value: formatAmount(result.transaction?.metadata?.fee || 0) },
-    { label: "Net a recevoir", value: formatAmount(result.transaction?.metadata?.netAmount || money(amount - fee)) },
+    { label: "Frais", value: `${(result.transaction?.metadata?.feeGrsAmount || feeGrsAmount).toFixed(2)} GRSC (${formatAmount(result.transaction?.metadata?.feeUsdtEquivalent || fee)} equivalent)` },
+    { label: "Net a recevoir", value: formatAmount(result.transaction?.metadata?.netAmount || amount) },
     ...(phone ? [{ label: "Numero MTN", value: phone }] : []),
     ...(beneficiary ? [{ label: "Beneficiaire", value: beneficiary }] : [])
     ])
@@ -4850,6 +4880,7 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
         } else {
         const reservedAmount = money(tx.metadata?.reservedAmount || tx.amount);
         const feeAmount = money(tx.metadata?.fee || 0);
+        const feeGrsAmount = money(tx.metadata?.feeGrsAmount || 0);
         if (action === "approve") {
           const updatedUser = await UserModel.findOneAndUpdate(
             {
@@ -4877,7 +4908,43 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
           }], { source: "admin_withdrawal_approval", referenceId: tx.id, extra: { reviewedBy: adminId } });
           if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
 
-          if (feeAmount > 0) {
+          if (feeGrsAmount > 0 && PLATFORM_EMAIL) {
+            const platformUser = await UserModel.findOneAndUpdate(
+              { email: PLATFORM_EMAIL },
+              [{
+                $set: {
+                  grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }, 2] }
+                }
+              }],
+              { new: true, session, lean: true }
+            );
+            if (platformUser) {
+              const feeEntries = buildLedgerEntries([{
+                accountType: "platform_user_grs",
+                accountId: platformUser.id,
+                direction: "credit",
+                amount: feeGrsAmount,
+                balanceAfter: platformUser.grsBalance,
+                description: `Frais GRSC ${tx.description || "Retrait approuve"}`
+              }], {
+                source: "admin_withdrawal_fee_grs",
+                referenceId: tx.id,
+                extra: { reviewedBy: adminId, userId: tx.userId, method: tx.metadata?.method || "", feeUsdtEquivalent: feeAmount, grsCoinPriceUsdt: tx.metadata?.grsCoinPriceUsdt || GRSCOIN_PRICE_USDT }
+              });
+              if (feeEntries.length) await LedgerEntryModel.insertMany(feeEntries, { session });
+              await TransactionModel.create([{
+                id: nanoid(),
+                userId: platformUser.id,
+                type: "Frais",
+                description: `Frais GRSC ${tx.description || "Retrait approuve"}`,
+                amount: feeGrsAmount,
+                displayAmount: `+${feeGrsAmount.toFixed(2)} GRSC`,
+                status: "Completed",
+                createdAt: nowIso(),
+                metadata: { source: "admin_withdrawal_fee_grs", withdrawalId: tx.id, sourceUserId: tx.userId, feeUsdtEquivalent: feeAmount, grsCoinPriceUsdt: tx.metadata?.grsCoinPriceUsdt || GRSCOIN_PRICE_USDT }
+              }], { session });
+            }
+          } else if (feeAmount > 0 && tx.metadata?.feeAsset !== "GRSC") {
             const platform = await PlatformAccountModel.findOneAndUpdate(
               { id: "platform" },
               { $inc: { balance: feeAmount, fees: feeAmount }, $setOnInsert: { createdAt: nowIso() } },
@@ -4890,12 +4957,12 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
               amount: feeAmount,
               balanceAfter: platform.balance,
               description: `Frais ${tx.description || "Retrait approuve"}`
-            }], { source: "admin_withdrawal_fee", referenceId: tx.id, extra: { reviewedBy: adminId, userId: tx.userId } });
+            }], { source: "admin_withdrawal_fee_legacy", referenceId: tx.id, extra: { reviewedBy: adminId, userId: tx.userId } });
             if (feeEntries.length) await LedgerEntryModel.insertMany(feeEntries, { session });
             await creditPlatformUserFee({
               amount: feeAmount,
               description: `Frais ${tx.description || "Retrait approuve"}`,
-              source: "admin_withdrawal_fee",
+              source: "admin_withdrawal_fee_legacy",
               referenceId: tx.id,
               extra: { reviewedBy: adminId, userId: tx.userId, method: tx.metadata?.method || "" },
               session
@@ -4910,7 +4977,8 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
             [{
               $set: {
                 reservedBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$reservedBalance", 0] } }, reservedAmount] }, 2] },
-                balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, reservedAmount] }, 2] }
+                balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, reservedAmount] }, 2] },
+                grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }, 2] }
               }
             }],
             { new: true, session, lean: true }
@@ -4933,7 +5001,14 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
             amount: reservedAmount,
             balanceAfter: updatedUser.balance,
             description: `${tx.description || "Retrait"} - retour disponible`
-          }], { source: "admin_withdrawal_rejection", referenceId: tx.id, extra: { reviewedBy: adminId } });
+          }, ...(feeGrsAmount > 0 ? [{
+            accountType: "user_grs",
+            accountId: tx.userId,
+            direction: "credit",
+            amount: feeGrsAmount,
+            balanceAfter: updatedUser.grsBalance,
+            description: `${tx.description || "Retrait"} - retour frais GRSC`
+          }] : [])], { source: "admin_withdrawal_rejection", referenceId: tx.id, extra: { reviewedBy: adminId, feeAsset: tx.metadata?.feeAsset || "" } });
           if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
         }
         }
@@ -5161,15 +5236,33 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
       if (user && tx.type === "Retrait") {
         const reservedAmount = money(tx.metadata.reservedAmount || tx.amount);
         const feeAmount = money(tx.metadata.fee || 0);
+        const feeGrsAmount = money(tx.metadata.feeGrsAmount || 0);
         if (action === "approve") {
           if (money(user.reservedBalance) >= reservedAmount) {
             consumeReservedFunds(db, user, reservedAmount, tx.description || "Retrait approuve", {
               source: "admin_withdrawal_approval",
               referenceId: tx.id
             });
-            if (feeAmount > 0) {
+            if (feeGrsAmount > 0) {
+              const platformUser = db.users.find((candidate) => PLATFORM_EMAIL && candidate.email === PLATFORM_EMAIL);
+              if (platformUser) {
+                platformUser.grsBalance = money(Number(platformUser.grsBalance || 0) + feeGrsAmount);
+                appendLedger(db, [{
+                  accountType: "platform_user_grs",
+                  accountId: platformUser.id,
+                  direction: "credit",
+                  amount: feeGrsAmount,
+                  balanceAfter: platformUser.grsBalance,
+                  description: `Frais GRSC ${tx.description || "Retrait approuve"}`
+                }], {
+                  source: "admin_withdrawal_fee_grs",
+                  referenceId: tx.id,
+                  extra: { userId: user.id, method: tx.metadata.method || "", feeUsdtEquivalent: feeAmount }
+                });
+              }
+            } else if (feeAmount > 0 && tx.metadata.feeAsset !== "GRSC") {
               creditPlatform(db, feeAmount, `Frais ${tx.description || "Retrait approuve"}`, {
-                source: "admin_withdrawal_fee",
+                source: "admin_withdrawal_fee_legacy",
                 referenceId: tx.id,
                 extra: { userId: user.id, method: tx.metadata.method || "" }
               });
@@ -5180,6 +5273,21 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
             source: "admin_withdrawal_rejection",
             referenceId: tx.id
           });
+          if (feeGrsAmount > 0) {
+            user.grsBalance = money(Number(user.grsBalance || 0) + feeGrsAmount);
+            appendLedger(db, [{
+              accountType: "user_grs",
+              accountId: user.id,
+              direction: "credit",
+              amount: feeGrsAmount,
+              balanceAfter: user.grsBalance,
+              description: `${tx.description || "Retrait"} - retour frais GRSC`
+            }], {
+              source: "admin_withdrawal_rejection",
+              referenceId: tx.id,
+              extra: { feeAsset: tx.metadata.feeAsset || "" }
+            });
+          }
         } else {
           creditUser(db, user, tx.amount, `${tx.description || "Retrait"} - remboursement`, {
             source: "admin_withdrawal_rejection_legacy",

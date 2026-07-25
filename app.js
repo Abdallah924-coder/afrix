@@ -142,6 +142,18 @@ const emptyUser = {
 const formatUsdt = (value) => `${Number(value || 0).toFixed(2)} USDT`;
 const formatGrsc = (value) => `${Number(value || 0).toFixed(2)} GRSC`;
 const formatTokenPrice = (value) => `${Number(value || 0).toFixed(4)} USDT`;
+const getGrsCoinPerUsdt = (user = {}) => {
+  const price = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
+  return price > 0 ? 1 / price : 0;
+};
+const formatTransactionFee = (metadata = {}) => {
+  if (metadata.feeAsset === "GRSC") return formatGrsc(metadata.feeGrsAmount || 0);
+  if (metadata.asset === "GRSC_WITHDRAWAL") return formatGrsc(metadata.fee || 0);
+  return formatUsdt(metadata.fee || 0);
+};
+const formatTransactionNet = (metadata = {}) => (
+  metadata.asset === "GRSC_WITHDRAWAL" ? formatGrsc(metadata.netAmount || 0) : formatUsdt(metadata.netAmount || 0)
+);
 const formatXaf = (value) => `${Math.round(Number(value || 0)).toLocaleString("fr-FR")} XAF`;
 
 function canUseBackoffice(user = {}) {
@@ -661,6 +673,7 @@ function renderWallet(user) {
   const withdrawFee = document.querySelector("[data-withdraw-fee]");
   const withdrawNet = document.querySelector("[data-withdraw-net]");
   const withdrawTotal = document.querySelector("[data-withdraw-total]");
+  const grsCoinPerUsdt = getGrsCoinPerUsdt(user);
 
   function updateDepositConversion() {
     if (depositConversion) depositConversion.hidden = true;
@@ -670,12 +683,11 @@ function renderWallet(user) {
 
   function updateWithdrawConversion() {
     const amount = Number(withdrawAmount?.value || 0);
-    const method = withdrawMethod?.value || "bep20";
     const fee = Number((amount * MTN_WITHDRAW_FEE_RATE).toFixed(2));
-    const net = Number((amount - fee).toFixed(2));
+    const feeGrs = grsCoinPerUsdt ? Number((fee * grsCoinPerUsdt).toFixed(2)) : 0;
     if (withdrawConversion) withdrawConversion.hidden = false;
-    if (withdrawFee) withdrawFee.textContent = formatUsdt(fee);
-    if (withdrawNet) withdrawNet.textContent = formatUsdt(net);
+    if (withdrawFee) withdrawFee.textContent = grsCoinPerUsdt ? `${formatGrsc(feeGrs)} (${formatUsdt(fee)} equivalent)` : "Prix GRSC indisponible";
+    if (withdrawNet) withdrawNet.textContent = formatUsdt(amount);
     if (withdrawTotal) withdrawTotal.textContent = formatUsdt(amount);
     if (withdrawLocalAmount) withdrawLocalAmount.textContent = formatXaf(amount * WITHDRAW_MOBILE_RATE);
   }
@@ -1451,8 +1463,8 @@ function renderQueue(selector, rows, options = {}) {
       item.metadata?.address ? `Adresse ${item.metadata.address}` : "",
       item.metadata?.phone ? `Tel ${item.metadata.phone}` : "",
       item.metadata?.beneficiary ? `Nom ${item.metadata.beneficiary}` : "",
-      item.metadata?.fee ? `Frais ${item.metadata?.asset === "GRSC_WITHDRAWAL" ? formatGrsc(item.metadata.fee) : formatUsdt(item.metadata.fee)}` : "",
-      item.metadata?.netAmount ? `Net ${item.metadata?.asset === "GRSC_WITHDRAWAL" ? formatGrsc(item.metadata.netAmount) : formatUsdt(item.metadata.netAmount)}` : ""
+      item.metadata?.fee || item.metadata?.feeGrsAmount ? `Frais ${formatTransactionFee(item.metadata)}` : "",
+      item.metadata?.netAmount ? `Net ${formatTransactionNet(item.metadata)}` : ""
     ].filter(Boolean).join(" - ");
 
     return `
@@ -1590,8 +1602,8 @@ function renderAdminDetailedTransactions(rows = [], kind = "") {
       meta.address ? `Adresse ${meta.address}` : "",
       meta.phone ? `Tel ${meta.phone}` : "",
       meta.beneficiary ? `Nom ${meta.beneficiary}` : "",
-      meta.fee ? `Frais ${meta.asset === "GRSC_WITHDRAWAL" ? formatGrsc(meta.fee) : formatUsdt(meta.fee)}` : "",
-      meta.netAmount ? `Net ${meta.asset === "GRSC_WITHDRAWAL" ? formatGrsc(meta.netAmount) : formatUsdt(meta.netAmount)}` : ""
+      meta.fee || meta.feeGrsAmount ? `Frais ${formatTransactionFee(meta)}` : "",
+      meta.netAmount ? `Net ${formatTransactionNet(meta)}` : ""
     ].filter(Boolean).join(" - ");
     const canReview = item.status === "Pending" && (item.type === "Depot" || item.type === "Retrait");
     return `
@@ -2206,8 +2218,25 @@ function setupActions(user) {
     const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Traitement...");
     try {
+      const grsCoinPerUsdt = getGrsCoinPerUsdt(user);
+      const amount = Number(form.querySelector("[name='amount']")?.value || 0);
+      const fee = Number((amount * MTN_WITHDRAW_FEE_RATE).toFixed(2));
+      const feeGrs = grsCoinPerUsdt ? Number((fee * grsCoinPerUsdt).toFixed(2)) : 0;
+      if (amount > Number(user.balance || 0)) {
+        showToast(`Solde USDT insuffisant. Disponible: ${formatUsdt(user.balance)}.`, "error");
+        return;
+      }
+      if (!grsCoinPerUsdt || feeGrs > Number(user.grsBalance || 0)) {
+        showToast("Solde GRSCOIN insuffisant. Les frais de retrait sont payables exclusivement en GRSC. Veuillez recharger votre portefeuille GRSCOIN pour poursuivre cette opération.", "error");
+        return;
+      }
       const response = await apiJson("/withdrawals", formToObject(form));
-      if (response.reference) showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0, response.netAmount);
+      if (response.reference) {
+        showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0, response.netAmount, {
+          feeAsset: response.feeAsset,
+          feeGrsAmount: response.feeGrsAmount
+        });
+      }
       showToast("Demande de retrait soumise. Elle est visible dans vos transactions.");
       form.reset();
       loadCurrentUser()
@@ -2914,17 +2943,20 @@ function setupActions(user) {
   if (exchangeCodeForm) exchangeCodeForm.dataset.boundSubmit = "true";
 }
 
-function showCicoReference(reference, operation, amount, fee, netAmount = null) {
+function showCicoReference(reference, operation, amount, fee, netAmount = null, options = {}) {
   const output = document.querySelector("[data-cico-reference-output]");
   const refValue = document.querySelector("[data-cico-reference]");
   const refSummary = document.querySelector("[data-cico-reference-summary]");
   if (!output || !refValue || !refSummary) return;
 
   refValue.textContent = reference;
+  const feeLabel = options.feeAsset === "GRSC"
+    ? `${formatGrsc(options.feeGrsAmount || 0)} de frais GRSC`
+    : `${formatUsdt(fee)} de frais`;
   if (netAmount !== null && Number.isFinite(Number(netAmount))) {
-    refSummary.textContent = `${operation}: ${formatUsdt(amount)} - frais ${formatUsdt(fee)} = ${formatUsdt(netAmount)}.`;
+    refSummary.textContent = `${operation}: ${formatUsdt(amount)} - ${feeLabel}. Montant reçu: ${formatUsdt(netAmount)}.`;
   } else {
-    refSummary.textContent = `${operation}: ${formatUsdt(amount)}${fee ? ` + ${formatUsdt(fee)} de frais` : " sans frais"}.`;
+    refSummary.textContent = `${operation}: ${formatUsdt(amount)}${fee || options.feeGrsAmount ? ` + ${feeLabel}` : " sans frais"}.`;
   }
   output.hidden = false;
 
