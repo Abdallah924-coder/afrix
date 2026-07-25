@@ -52,6 +52,7 @@ export const pageRoutes = {
   "/network": "pages/network.html",
   "/profile": "pages/profile.html",
   "/contact": "pages/contact.html",
+  "/support": "pages/contact.html",
   "/afrix-money": "pages/afrix-money.html",
   "/swap": "pages/swap.html",
   "/staking": "pages/staking.html",

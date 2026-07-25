@@ -15,7 +15,7 @@ const pageTitles = {
   merchant: "Merchant",
   network: "Reseau",
   profile: "Profil",
-  contact: "Contact",
+  contact: "Support",
   elite: "Programme Elite",
   transactions: "Historique",
   admin: "Admin",
@@ -34,7 +34,7 @@ const navItems = [
   ["merchant", "Merchant", "/merchant"],
   ["network", "Reseau", "/network"],
   ["profile", "Profil", "/profile"],
-  ["contact", "Contact", "/contact"],
+  ["contact", "Support", "/support"],
   ["elite", "Elite", "/elite"],
   ["transactions", "Transactions", "/transactions"],
   ["admin", "Admin", "/admin"]
@@ -49,6 +49,22 @@ const contactLinks = {
   telegramChannel: "https://t.me/ecosysteme_grs",
   whatsappChannel: "https://whatsapp.com/channel/0029Vb6hyxfF1YlXTyGa0n21"
 };
+const supportChannels = [
+  {
+    key: "telegram",
+    label: "Telegram",
+    title: "Canal Telegram",
+    href: contactLinks.telegramChannel,
+    icon: "✈"
+  },
+  {
+    key: "whatsapp",
+    label: "WhatsApp",
+    title: "Chaîne WhatsApp",
+    href: contactLinks.whatsappChannel,
+    icon: "☎"
+  }
+];
 let deferredInstallPrompt = null;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 const plans = [
@@ -200,7 +216,10 @@ async function apiRequest(path, options = {}) {
     if (error?.name === "AbortError") {
       throw new Error("Le serveur met trop de temps à répondre. Réessayez dans quelques secondes.");
     }
-    throw new Error("Connexion au serveur AFRIX impossible. Vérifiez que le déploiement Render est terminé et que l'API est en ligne.");
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      throw new Error("Connexion internet indisponible. Vérifiez votre réseau puis réessayez.");
+    }
+    throw new Error("Connexion momentanée à l'API AFRIX impossible. Réessayez dans quelques secondes; si le message persiste, contactez le support.");
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId);
   }
@@ -521,6 +540,47 @@ function renderContact() {
   document.querySelectorAll("[data-contact-telegram-support]").forEach((link) => { link.href = contactLinks.telegramSupport; });
   document.querySelectorAll("[data-contact-telegram-channel]").forEach((link) => { link.href = contactLinks.telegramChannel; });
   document.querySelectorAll("[data-contact-whatsapp-channel]").forEach((link) => { link.href = contactLinks.whatsappChannel; });
+}
+
+function renderSupportWidget() {
+  if (document.querySelector("[data-support-widget]")) return;
+
+  const widget = document.createElement("div");
+  widget.className = "support-widget";
+  widget.dataset.supportWidget = "true";
+  widget.innerHTML = `
+    <div class="support-panel" hidden>
+      <strong>Support AFRIX</strong>
+      <p>Utilisez uniquement la chaîne WhatsApp et le canal Telegram officiels.</p>
+      <div>
+        ${supportChannels.map((channel) => `
+          <a class="btn ${channel.key === "whatsapp" ? "primary" : "secondary"}" href="${channel.href}" target="_blank" rel="noopener" aria-label="${channel.title}">
+            <span aria-hidden="true">${channel.icon}</span>${channel.label}
+          </a>
+        `).join("")}
+        <button class="btn secondary" type="button" data-support-close>Fermer</button>
+      </div>
+    </div>
+    <a class="support-float support-telegram" href="${contactLinks.telegramChannel}" target="_blank" rel="noopener" aria-label="Rejoindre le canal Telegram AFRIX">
+      <span aria-hidden="true">✈</span><strong>Telegram</strong>
+    </a>
+    <button class="support-float support-whatsapp" type="button" aria-expanded="false" aria-label="Afficher les canaux de support AFRIX">
+      <span aria-hidden="true">☎</span><strong>WhatsApp</strong>
+    </button>
+  `;
+  document.body.appendChild(widget);
+
+  const toggle = widget.querySelector(".support-whatsapp");
+  const panel = widget.querySelector(".support-panel");
+  const close = widget.querySelector("[data-support-close]");
+  const setOpen = (isOpen) => {
+    widget.classList.toggle("open", isOpen);
+    toggle.setAttribute("aria-expanded", String(isOpen));
+    panel.hidden = !isOpen;
+  };
+
+  toggle.addEventListener("click", () => setOpen(!widget.classList.contains("open")));
+  close.addEventListener("click", () => setOpen(false));
 }
 
 function renderDashboard(user) {
@@ -3008,6 +3068,7 @@ function renderProtectedShell(page, user) {
   renderMerchants(user);
   renderAdmin(user);
   setupActions(user);
+  renderSupportWidget();
 }
 
 function setupPublicHomeReveal() {
@@ -3039,6 +3100,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupAuthForms();
   setupPwa();
   setupPublicHomeReveal();
+  renderSupportWidget();
 
   if (!isProtected) return;
 
