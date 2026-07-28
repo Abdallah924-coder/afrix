@@ -705,6 +705,7 @@ function renderWallet(user) {
   const withdrawConversion = document.querySelector("[data-withdraw-conversion]");
   const depositLocalAmount = document.querySelector("[data-deposit-local-amount]");
   const withdrawLocalAmount = document.querySelector("[data-withdraw-local-amount]");
+  const withdrawLocalSummary = document.querySelector("[data-withdraw-local-summary]");
   const withdrawFee = document.querySelector("[data-withdraw-fee]");
   const withdrawNet = document.querySelector("[data-withdraw-net]");
   const withdrawTotal = document.querySelector("[data-withdraw-total]");
@@ -718,6 +719,7 @@ function renderWallet(user) {
 
   function updateWithdrawConversion() {
     const amount = Number(withdrawAmount?.value || 0);
+    const isMtn = withdrawMethod?.value === "mtn_cg";
     const fee = Number((amount * MTN_WITHDRAW_FEE_RATE).toFixed(2));
     const feeGrs = grsCoinPerUsdt ? Number((fee * grsCoinPerUsdt).toFixed(2)) : 0;
     if (withdrawConversion) withdrawConversion.hidden = false;
@@ -725,6 +727,7 @@ function renderWallet(user) {
     if (withdrawNet) withdrawNet.textContent = formatUsdt(amount);
     if (withdrawTotal) withdrawTotal.textContent = formatUsdt(amount);
     if (withdrawLocalAmount) withdrawLocalAmount.textContent = formatXaf(amount * WITHDRAW_MOBILE_RATE);
+    if (withdrawLocalSummary) withdrawLocalSummary.hidden = !isMtn;
   }
 
   function updateDepositTarget() {

@@ -81,7 +81,11 @@
             <label>Nom qui apparaît<input name="beneficiary" placeholder="Nom du compte MTN" data-withdraw-beneficiary></label>
           </div>
           <label>Montant à retirer<input name="amount" type="number" min="10" step="0.01" value="10" required data-withdraw-amount></label>
-          <p class="muted" data-withdraw-conversion hidden>Frais retrait 10% payables en GRSC: <strong data-withdraw-fee>0.00 GRSC</strong>. Montant reçu: <strong data-withdraw-net>10.00 USDT</strong>. Solde USDT débité: <strong data-withdraw-total>10.00 USDT</strong>.</p>
+          <p class="muted" data-withdraw-conversion hidden>
+            Frais retrait 10% payables en GRSC: <strong data-withdraw-fee>0.00 GRSC</strong>.
+            Montant reçu: <strong data-withdraw-net>10.00 USDT</strong><span data-withdraw-local-summary hidden> / <strong data-withdraw-local-amount>5 500 XAF</strong></span>.
+            Solde USDT débité: <strong data-withdraw-total>10.00 USDT</strong>.
+          </p>
           <button class="btn primary full" type="submit">Soumettre le retrait</button>
         </form>
         <section class="panel">
