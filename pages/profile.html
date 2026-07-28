@@ -20,6 +20,10 @@
     <section class="grid two">
       <article class="panel">
         <div class="panel-head"><h1>Profil</h1><span class="badge" data-profile-role>Utilisateur</span></div>
+        <div class="profile-avatar-block">
+          <img data-profile-avatar alt="Photo de profil AFRIX" hidden>
+          <div data-profile-avatar-fallback>AF</div>
+        </div>
         <div class="list">
           <div><span>Email</span><strong data-profile-email>-</strong></div>
           <div><span>Pays</span><strong data-profile-country>-</strong></div>
@@ -27,6 +31,19 @@
           <div><span>Activite</span><strong data-profile-activity>0 USDT</strong></div>
         </div>
       </article>
+      <form class="panel" data-profile-form enctype="multipart/form-data">
+        <div class="panel-head"><h1>Informations</h1><span class="badge">Compte</span></div>
+        <label>Pays
+          <select name="country" autocomplete="country-name" required data-profile-country-input>
+            <option value="">Choisir un pays</option>
+          </select>
+        </label>
+        <label>Photo de profil
+          <input name="avatar" type="file" accept="image/*" data-profile-avatar-input>
+        </label>
+        <p class="muted">Image JPG, PNG ou WebP. Taille maximale: 1 Mo.</p>
+        <button class="btn primary full" type="submit">Mettre à jour le profil</button>
+      </form>
       <form class="panel" data-change-password-form>
         <div class="panel-head"><h1>Mot de passe</h1><span class="badge">Sécurité</span></div>
         <label>Mot de passe actuel

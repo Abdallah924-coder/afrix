@@ -18,7 +18,14 @@
   <main class="app">
     <header class="topbar" data-topbar></header>
     <section class="panel">
-      <div class="panel-head"><h1>Historique</h1><button class="btn secondary" data-export>Exporter CSV</button></div>
+      <div class="panel-head">
+        <h1>Historique</h1>
+        <div class="panel-actions">
+          <button class="btn secondary" data-export>CSV</button>
+          <button class="btn secondary" data-export-pdf>PDF</button>
+          <button class="btn primary" data-export-email>Email</button>
+        </div>
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Date et heure</th><th>Type</th><th>Description</th><th>Montant</th><th>Statut</th></tr></thead>

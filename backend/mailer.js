@@ -59,7 +59,7 @@ function buildMailHtml({ title, intro, rows = [], actionLabel, actionUrl }) {
   `;
 }
 
-export async function sendBrevoMail({ to, subject, title, intro, rows, actionLabel, actionUrl }) {
+export async function sendBrevoMail({ to, subject, title, intro, rows, actionLabel, actionUrl, attachments = [] }) {
   if (!BREVO_API_KEY || !BREVO_SENDER_EMAIL || !to) {
     logger.warn({ to: maskEmail(to), subject }, "Brevo email skipped: provider not configured");
     return { delivered: false };
@@ -78,7 +78,8 @@ export async function sendBrevoMail({ to, subject, title, intro, rows, actionLab
         to: [{ email: to }],
         ...(SUPPORT_EMAIL ? { replyTo: { name: "Support AFRIX", email: SUPPORT_EMAIL } } : {}),
         subject,
-        htmlContent: buildMailHtml({ title, intro, rows, actionLabel, actionUrl })
+        htmlContent: buildMailHtml({ title, intro, rows, actionLabel, actionUrl }),
+        ...(attachments.length ? { attachment: attachments } : {})
       })
     });
 

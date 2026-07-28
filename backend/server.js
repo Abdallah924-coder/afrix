@@ -127,6 +127,7 @@ function normalizeUserRecord(user = {}) {
   if (!user) return null;
   return {
     ...user,
+    ausdBalance: money(user.ausdBalance),
     balance: money(user.balance),
     grsBalance: money(user.grsBalance),
     reservedBalance: money(user.reservedBalance),
@@ -251,13 +252,32 @@ async function readUserViewDb(user) {
   const [
     directPartners,
     userTransactions,
-    issuedGrsTotals
+    issuedGrsTotals,
+    grsTradeStats
   ] = await Promise.all([
     directPartnerQuery.$or.length ? UserModel.find(directPartnerQuery).lean() : [],
-    TransactionModel.find({ userId: user.id }, transactionListProjection).sort({ createdAt: -1 }).limit(300).lean(),
+    TransactionModel.find({ userId: user.id }, transactionListProjection).sort({ createdAt: -1 }).lean(),
     TransactionModel.aggregate([
       { $match: issuedGrsQuery },
       { $group: { _id: null, issuedSupply: { $sum: { $toDouble: { $ifNull: ["$metadata.grsAmount", 0] } } } } }
+    ]),
+    TransactionModel.aggregate([
+      { $match: issuedGrsQuery },
+      {
+        $group: {
+          _id: null,
+          totalTrades: { $sum: 1 },
+          todayTrades: {
+            $sum: {
+              $cond: [
+                { $eq: [{ $substr: [{ $ifNull: ["$createdAt", ""] }, 0, 10] }, nowIso().slice(0, 10)] },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      }
     ])
   ]);
 
@@ -274,7 +294,9 @@ async function readUserViewDb(user) {
     users: Array.from(userMap.values()),
     transactions: Array.from(transactionMap.values()),
     marketStats: {
-      issuedGrsSupply: money(issuedGrsTotals[0]?.issuedSupply || 0)
+      issuedGrsSupply: money(issuedGrsTotals[0]?.issuedSupply || 0),
+      totalTrades: Number(grsTradeStats[0]?.totalTrades || 0),
+      todayTrades: Number(grsTradeStats[0]?.todayTrades || 0)
     },
     cicoRequests: [],
     exchangeAds: [],
@@ -754,6 +776,150 @@ function csvEscape(value) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
 
+function transactionExportRows(user, db) {
+  return (db.transactions || [])
+    .filter((tx) => canViewTransaction(user, tx))
+    .slice()
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+}
+
+function transactionExportSummary(rows = []) {
+  return {
+    total: rows.length,
+    completed: rows.filter((tx) => tx.status === "Completed").length,
+    pending: rows.filter((tx) => tx.status === "Pending").length,
+    rejected: rows.filter((tx) => tx.status === "Rejected").length,
+    volume: money(rows.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0))
+  };
+}
+
+function pdfSafe(value = "") {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pdfEscape(value = "") {
+  return pdfSafe(value).replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+}
+
+function truncatePdfText(value, maxLength) {
+  const text = pdfSafe(value);
+  return text.length > maxLength ? `${text.slice(0, Math.max(0, maxLength - 3))}...` : text;
+}
+
+function pdfText(x, y, text, size = 10) {
+  return `BT /F1 ${size} Tf ${x} ${y} Td (${pdfEscape(text)}) Tj ET\n`;
+}
+
+function buildTransactionsPdf({ user, rows }) {
+  const summary = transactionExportSummary(rows);
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const margin = 42;
+  const rowHeight = 18;
+  const rowsPerPage = 31;
+  const pages = [];
+  const chunks = [];
+  for (let i = 0; i < rows.length || i === 0; i += rowsPerPage) {
+    chunks.push(rows.slice(i, i + rowsPerPage));
+  }
+
+  chunks.forEach((chunk, pageIndex) => {
+    let y = pageHeight - margin;
+    let content = "";
+    content += "0.058 0.365 0.263 rg\n";
+    content += `0 ${pageHeight - 94} ${pageWidth} 94 re f\n`;
+    content += "1 1 1 rg\n";
+    content += pdfText(margin, pageHeight - 48, "AFRIX CAPITAL INVESTMENT", 18);
+    content += pdfText(margin, pageHeight - 72, "Releve des transactions", 12);
+    content += "0 0 0 rg\n";
+    y -= 118;
+
+    if (pageIndex === 0) {
+      content += pdfText(margin, y, `Compte: ${user.email || "-"}`, 10);
+      content += pdfText(330, y, `Generation: ${formatTransactionDateTime(nowIso())}`, 10);
+      y -= 24;
+      content += "0.94 0.97 0.95 rg\n";
+      content += `${margin} ${y - 10} 512 38 re f\n`;
+      content += "0 0 0 rg\n";
+      content += pdfText(margin + 10, y + 10, `Total: ${summary.total}`, 10);
+      content += pdfText(margin + 120, y + 10, `Completes: ${summary.completed}`, 10);
+      content += pdfText(margin + 250, y + 10, `En attente: ${summary.pending}`, 10);
+      content += pdfText(margin + 390, y + 10, `Volume: ${formatAmount(summary.volume)}`, 10);
+      y -= 54;
+    }
+
+    content += "0.08 0.13 0.11 rg\n";
+    content += `${margin} ${y - 6} 512 22 re f\n`;
+    content += "1 1 1 rg\n";
+    content += pdfText(margin + 6, y, "Date", 9);
+    content += pdfText(margin + 84, y, "Type", 9);
+    content += pdfText(margin + 150, y, "Description", 9);
+    content += pdfText(margin + 352, y, "Montant", 9);
+    content += pdfText(margin + 450, y, "Statut", 9);
+    y -= 26;
+    content += "0 0 0 rg\n";
+
+    chunk.forEach((tx, index) => {
+      if (index % 2 === 0) {
+        content += "0.985 0.995 0.99 rg\n";
+        content += `${margin} ${y - 6} 512 18 re f\n`;
+        content += "0 0 0 rg\n";
+      }
+      content += pdfText(margin + 6, y, String(tx.createdAt || "").slice(0, 10), 8);
+      content += pdfText(margin + 84, y, truncatePdfText(tx.type || "", 12), 8);
+      content += pdfText(margin + 150, y, truncatePdfText(tx.description || "", 38), 8);
+      content += pdfText(margin + 352, y, truncatePdfText(tx.displayAmount || formatAmount(tx.amount || 0), 18), 8);
+      content += pdfText(margin + 450, y, truncatePdfText(tx.status || "", 14), 8);
+      y -= rowHeight;
+    });
+
+    content += "0.4 0.48 0.44 rg\n";
+    content += pdfText(margin, 28, `Page ${pageIndex + 1} / ${chunks.length}`, 8);
+    content += pdfText(365, 28, "Document genere automatiquement par AFRIX", 8);
+    pages.push(content);
+  });
+
+  const objects = [];
+  const addObject = (body) => {
+    objects.push(body);
+    return objects.length;
+  };
+  const catalogId = addObject("<< /Type /Catalog /Pages 2 0 R >>");
+  const pagesId = addObject("");
+  const fontId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const pageIds = [];
+  const contentIds = [];
+
+  pages.forEach((content) => {
+    const stream = Buffer.from(content, "latin1");
+    const contentId = addObject(`<< /Length ${stream.length} >>\nstream\n${content}endstream`);
+    const pageId = addObject(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`);
+    contentIds.push(contentId);
+    pageIds.push(pageId);
+  });
+  objects[pagesId - 1] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`;
+
+  const header = "%PDF-1.4\n";
+  const parts = [header];
+  const offsets = [0];
+  objects.forEach((body, index) => {
+    offsets.push(Buffer.byteLength(parts.join(""), "latin1"));
+    parts.push(`${index + 1} 0 obj\n${body}\nendobj\n`);
+  });
+  const xrefOffset = Buffer.byteLength(parts.join(""), "latin1");
+  parts.push(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`);
+  offsets.slice(1).forEach((offset) => {
+    parts.push(`${String(offset).padStart(10, "0")} 00000 n \n`);
+  });
+  parts.push(`trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+  return Buffer.from(parts.join(""), "latin1");
+}
+
 function adminTransactionsCsv(rows = [], ownerMap = new Map()) {
   return [
     "date,user_email,user_name,type,program,status,amount,description,reference,method,network,address,phone,tx_ref",
@@ -999,6 +1165,25 @@ function grsIssuedSupply(db = {}) {
   }, 0));
 }
 
+function grsMarketStats(db = {}) {
+  if (db.marketStats?.totalTrades !== undefined || db.marketStats?.todayTrades !== undefined) {
+    return {
+      totalTrades: Number(db.marketStats?.totalTrades || 0),
+      todayTrades: Number(db.marketStats?.todayTrades || 0)
+    };
+  }
+  const todayPrefix = nowIso().slice(0, 10);
+  const rows = (db.transactions || []).filter((tx) => {
+    const isCompleted = tx.status === "Completed" || tx.status === "Active";
+    const isGrsTrade = tx.type === "Swap" || tx.metadata?.asset === "GRSC_PURCHASE";
+    return isCompleted && isGrsTrade;
+  });
+  return {
+    totalTrades: rows.length,
+    todayTrades: rows.filter((tx) => String(tx.createdAt || "").startsWith(todayPrefix)).length
+  };
+}
+
 function validateExchangeRate(type, rate) {
   const numericRate = Number(rate);
   if (!Number.isFinite(numericRate)) return "Taux invalide.";
@@ -1126,6 +1311,7 @@ function composeUser(db, user) {
     .filter((candidate) => candidate.merchantProfile?.status === "approved")
     .map((candidate) => candidate.merchantProfile);
   const issuedGrsSupply = grsIssuedSupply(db);
+  const marketStats = grsMarketStats(db);
   const remainingGrsSupply = Math.max(0, money(GRSCOIN_TOTAL_SUPPLY - issuedGrsSupply));
 
   const ownCicoRequests = canUseBackoffice(user)
@@ -1140,6 +1326,7 @@ function composeUser(db, user) {
 
   return {
     ...sanitizeUser(user),
+    ausdBalance: money(user.ausdBalance),
     balance: money(user.balance),
     grsBalance: money(user.grsBalance),
     reservedBalance: money(user.reservedBalance),
@@ -1165,7 +1352,9 @@ function composeUser(db, user) {
         totalSupply: GRSCOIN_TOTAL_SUPPLY,
         issuedSupply: issuedGrsSupply,
         remainingSupply: remainingGrsSupply,
-        issuedPercent: GRSCOIN_TOTAL_SUPPLY ? Math.min(100, Math.max(0, (issuedGrsSupply / GRSCOIN_TOTAL_SUPPLY) * 100)) : 0
+        issuedPercent: GRSCOIN_TOTAL_SUPPLY ? Math.min(100, Math.max(0, (issuedGrsSupply / GRSCOIN_TOTAL_SUPPLY) * 100)) : 0,
+        totalTrades: marketStats.totalTrades,
+        todayTrades: marketStats.todayTrades
       }
     },
     refLink: `${process.env.APP_URL || "http://localhost:" + PORT}/register?ref=${user.refCode}`,
@@ -2183,6 +2372,42 @@ app.post("/api/auth/change-password", authenticate, validate(z.object({
   res.json({ ok: true });
 });
 
+app.patch("/api/profile", authenticate, upload.single("avatar"), async (req, res) => {
+  const country = String(req.body.country || "").trim();
+  if (country.length < 2) {
+    return res.status(400).json({ message: "Pays requis." });
+  }
+
+  const updates = {
+    country,
+    profileUpdatedAt: nowIso()
+  };
+
+  if (req.file?.buffer?.length) {
+    if (!String(req.file.mimetype || "").startsWith("image/")) {
+      return res.status(400).json({ message: "La photo de profil doit être une image." });
+    }
+    if (req.file.size > 1024 * 1024) {
+      return res.status(400).json({ message: "Photo trop lourde. Taille maximale: 1 Mo." });
+    }
+    updates.avatar = {
+      originalName: req.file.originalname || "photo-profil",
+      mimeType: req.file.mimetype || "image/jpeg",
+      size: req.file.size || req.file.buffer.length,
+      dataBase64: req.file.buffer.toString("base64"),
+      updatedAt: nowIso()
+    };
+  }
+
+  const user = normalizeUserRecord(await UserModel.findOneAndUpdate(
+    { id: req.user.id },
+    { $set: updates },
+    { new: true, lean: true }
+  ));
+  if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
+  res.json({ user: sanitizeUser(user) });
+});
+
 app.post("/api/auth/forgot-password", validate(z.object({
   email: z.string().email()
 })), async (req, res) => {
@@ -2656,10 +2881,13 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
   const platformCommission = money(usdtAmount * GRSCOIN_SWAP_PLATFORM_RATE);
   const platformFee = money(adminCommission + developerCommission + platformCommission);
   const bonusPool = money(GRSCOIN_SWAP_BONUS_RATES.reduce((total, rate) => total + usdtAmount * rate, 0));
-  const netUsdt = money(usdtAmount - platformFee);
-  if (netUsdt <= 0) return res.status(400).json({ message: "Montant swap trop faible apres frais." });
-
-  const grsAmount = grsFromUsdt(netUsdt);
+  const grossGrsAmount = grsFromUsdt(usdtAmount);
+  const adminCommissionGrs = grsFromUsdt(adminCommission);
+  const developerCommissionGrs = grsFromUsdt(developerCommission);
+  const platformCommissionGrs = grsFromUsdt(platformCommission);
+  const feeGrsAmount = money(adminCommissionGrs + developerCommissionGrs + platformCommissionGrs);
+  const grsAmount = money(grossGrsAmount - feeGrsAmount);
+  if (grsAmount <= 0) return res.status(400).json({ message: "Montant swap trop faible apres frais." });
   const session = await mongoose.startSession();
   try {
     let result;
@@ -2694,36 +2922,33 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
 
       const platform = await PlatformAccountModel.findOneAndUpdate(
         { id: "platform" },
-        { $inc: { balance: usdtAmount, fees: platformFee }, $setOnInsert: { createdAt: nowIso() } },
+        { $inc: { balance: usdtAmount }, $setOnInsert: { createdAt: nowIso() } },
         { upsert: true, new: true, session, lean: true }
       );
       const referenceId = nanoid();
-      const adminAccount = ADMIN_EMAIL && adminCommission > 0 ? await UserModel.findOneAndUpdate(
+      const adminAccount = ADMIN_EMAIL && adminCommissionGrs > 0 ? await UserModel.findOneAndUpdate(
         { email: ADMIN_EMAIL },
         [{
           $set: {
-            balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, adminCommission] }, 2] },
-            bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, adminCommission] }, 2] }
+            grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, adminCommissionGrs] }, 2] }
           }
         }],
         { new: true, session, lean: true }
       ) : null;
-      const developerAccount = COMMISSION_DEVELOPER_EMAIL && developerCommission > 0 ? await UserModel.findOneAndUpdate(
+      const developerAccount = COMMISSION_DEVELOPER_EMAIL && developerCommissionGrs > 0 ? await UserModel.findOneAndUpdate(
         { email: COMMISSION_DEVELOPER_EMAIL },
         [{
           $set: {
-            balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, developerCommission] }, 2] },
-            bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, developerCommission] }, 2] }
+            grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, developerCommissionGrs] }, 2] }
           }
         }],
         { new: true, session, lean: true }
       ) : null;
-      const platformUserAccount = PLATFORM_EMAIL && platformCommission > 0 ? await UserModel.findOneAndUpdate(
+      const platformUserAccount = PLATFORM_EMAIL && platformCommissionGrs > 0 ? await UserModel.findOneAndUpdate(
         { email: PLATFORM_EMAIL },
         [{
           $set: {
-            balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, platformCommission] }, 2] },
-            bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, platformCommission] }, 2] }
+            grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, platformCommissionGrs] }, 2] }
           }
         }],
         { new: true, session, lean: true }
@@ -2731,91 +2956,67 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
       let platformBalanceAfterDebits = money(platform.balance);
       const commissionRows = [];
       const commissionTransactions = [];
-      if (adminAccount && adminCommission > 0) {
-        platformBalanceAfterDebits = money(platformBalanceAfterDebits - adminCommission);
+      if (adminAccount && adminCommissionGrs > 0) {
         commissionRows.push({
-          accountType: "platform",
-          accountId: "platform",
-          direction: "debit",
-          amount: adminCommission,
-          balanceAfter: platformBalanceAfterDebits,
-          description: "Commission admin AFRIX Swap"
-        }, {
-          accountType: "admin",
+          accountType: "admin_grs",
           accountId: adminAccount.id,
           direction: "credit",
-          amount: adminCommission,
-          balanceAfter: adminAccount.balance,
-          description: "Commission admin AFRIX Swap"
+          amount: adminCommissionGrs,
+          balanceAfter: adminAccount.grsBalance,
+          description: "Commission admin AFRIX Swap en GRSC"
         });
         commissionTransactions.push({
           id: nanoid(),
           userId: adminAccount.id,
           type: "Commission",
-          description: "Commission AFRIX Swap",
-          amount: adminCommission,
-          displayAmount: formatAmount(adminCommission, "+"),
+          description: "Commission AFRIX Swap en GRSC",
+          amount: adminCommissionGrs,
+          displayAmount: `+${adminCommissionGrs.toFixed(2)} GRSC`,
           status: "Completed",
           createdAt: nowIso(),
-          metadata: { source: "afrix_swap_commission", swapId: referenceId, rate: GRSCOIN_SWAP_ADMIN_RATE }
+          metadata: { source: "afrix_swap_commission", swapId: referenceId, rate: GRSCOIN_SWAP_ADMIN_RATE, feeAsset: "GRSC", usdtEquivalent: adminCommission }
         });
       }
-      if (developerAccount && developerCommission > 0) {
-        platformBalanceAfterDebits = money(platformBalanceAfterDebits - developerCommission);
+      if (developerAccount && developerCommissionGrs > 0) {
         commissionRows.push({
-          accountType: "platform",
-          accountId: "platform",
-          direction: "debit",
-          amount: developerCommission,
-          balanceAfter: platformBalanceAfterDebits,
-          description: "Commission developpeur AFRIX Swap"
-        }, {
-          accountType: "developer",
+          accountType: "developer_grs",
           accountId: developerAccount.id,
           direction: "credit",
-          amount: developerCommission,
-          balanceAfter: developerAccount.balance,
-          description: "Commission developpeur AFRIX Swap"
+          amount: developerCommissionGrs,
+          balanceAfter: developerAccount.grsBalance,
+          description: "Commission developpeur AFRIX Swap en GRSC"
         });
         commissionTransactions.push({
           id: nanoid(),
           userId: developerAccount.id,
           type: "Commission",
-          description: "Commission AFRIX Swap",
-          amount: developerCommission,
-          displayAmount: formatAmount(developerCommission, "+"),
+          description: "Commission AFRIX Swap en GRSC",
+          amount: developerCommissionGrs,
+          displayAmount: `+${developerCommissionGrs.toFixed(2)} GRSC`,
           status: "Completed",
           createdAt: nowIso(),
-          metadata: { source: "afrix_swap_commission", swapId: referenceId, rate: GRSCOIN_SWAP_DEVELOPER_RATE }
+          metadata: { source: "afrix_swap_commission", swapId: referenceId, rate: GRSCOIN_SWAP_DEVELOPER_RATE, feeAsset: "GRSC", usdtEquivalent: developerCommission }
         });
       }
-      if (platformUserAccount && platformCommission > 0) {
-        platformBalanceAfterDebits = money(platformBalanceAfterDebits - platformCommission);
+      if (platformUserAccount && platformCommissionGrs > 0) {
         commissionRows.push({
-          accountType: "platform",
-          accountId: "platform",
-          direction: "debit",
-          amount: platformCommission,
-          balanceAfter: platformBalanceAfterDebits,
-          description: "Commission plateforme AFRIX Swap"
-        }, {
-          accountType: "platform_user",
+          accountType: "platform_user_grs",
           accountId: platformUserAccount.id,
           direction: "credit",
-          amount: platformCommission,
-          balanceAfter: platformUserAccount.balance,
-          description: "Commission plateforme AFRIX Swap"
+          amount: platformCommissionGrs,
+          balanceAfter: platformUserAccount.grsBalance,
+          description: "Commission plateforme AFRIX Swap en GRSC"
         });
         commissionTransactions.push({
           id: nanoid(),
           userId: platformUserAccount.id,
           type: "Commission",
-          description: "Commission AFRIX Swap",
-          amount: platformCommission,
-          displayAmount: formatAmount(platformCommission, "+"),
+          description: "Commission AFRIX Swap en GRSC",
+          amount: platformCommissionGrs,
+          displayAmount: `+${platformCommissionGrs.toFixed(2)} GRSC`,
           status: "Completed",
           createdAt: nowIso(),
-          metadata: { source: "afrix_swap_commission", swapId: referenceId, rate: GRSCOIN_SWAP_PLATFORM_RATE }
+          metadata: { source: "afrix_swap_commission", swapId: referenceId, rate: GRSCOIN_SWAP_PLATFORM_RATE, feeAsset: "GRSC", usdtEquivalent: platformCommission }
         });
       }
 
@@ -2903,7 +3104,22 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
       }, ...commissionRows, ...referralRows], {
         source: "afrix_swap",
         referenceId,
-        extra: { priceUsdt: GRSCOIN_PRICE_USDT, usdtAmount, netUsdt, platformFee, adminCommission, developerCommission, platformCommission, bonusPool, grsAmount }
+        extra: {
+          priceUsdt: GRSCOIN_PRICE_USDT,
+          usdtAmount,
+          grossGrsAmount,
+          feeAsset: "GRSC",
+          feeGrsAmount,
+          platformFee,
+          adminCommission,
+          developerCommission,
+          platformCommission,
+          adminCommissionGrs,
+          developerCommissionGrs,
+          platformCommissionGrs,
+          bonusPool,
+          grsAmount
+        }
       });
       if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
       if (commissionTransactions.length) await TransactionModel.insertMany(commissionTransactions, { session });
@@ -2918,10 +3134,43 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
         displayAmount: `-${usdtAmount.toFixed(2)} USDT -> +${grsAmount.toFixed(2)} GRSC`,
         status: "Completed",
         createdAt: nowIso(),
-        metadata: { priceUsdt: GRSCOIN_PRICE_USDT, usdtAmount, netUsdt, platformFee, adminCommission, developerCommission, platformCommission, bonusPool, grsAmount, direction: "USDT_GRSC" }
+        metadata: {
+          priceUsdt: GRSCOIN_PRICE_USDT,
+          usdtAmount,
+          grossGrsAmount,
+          feeAsset: "GRSC",
+          feeGrsAmount,
+          platformFee,
+          adminCommission,
+          developerCommission,
+          platformCommission,
+          adminCommissionGrs,
+          developerCommissionGrs,
+          platformCommissionGrs,
+          bonusPool,
+          grsAmount,
+          direction: "USDT_GRSC"
+        }
       };
       await TransactionModel.create([tx], { session });
-      result = { transaction: tx, user: normalizeUserRecord(updatedUser), usdtAmount, netUsdt, grsAmount, platformFee, adminCommission, developerCommission, platformCommission, bonusPool, priceUsdt: GRSCOIN_PRICE_USDT };
+      result = {
+        transaction: tx,
+        user: normalizeUserRecord(updatedUser),
+        usdtAmount,
+        grossGrsAmount,
+        feeAsset: "GRSC",
+        feeGrsAmount,
+        grsAmount,
+        platformFee,
+        adminCommission,
+        developerCommission,
+        platformCommission,
+        adminCommissionGrs,
+        developerCommissionGrs,
+        platformCommissionGrs,
+        bonusPool,
+        priceUsdt: GRSCOIN_PRICE_USDT
+      };
     }));
 
     if (result?.error) return res.status(400).json({ message: result.error });
@@ -3790,12 +4039,10 @@ app.post("/api/disputes", authenticate, validate(z.object({
 });
 
 app.get("/api/transactions/export", authenticate, attachDb, (req, res) => {
-  const rows = req.db.transactions.filter((tx) => canViewTransaction(req.user, tx));
+  const rows = transactionExportRows(req.user, req.db);
   const csv = [
     "date,type,description,amount,status,reference",
     ...rows
-      .slice()
-      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       .map((tx) => [String(tx.createdAt || "").slice(0, 10), tx.type, tx.description, tx.displayAmount, tx.status, tx.metadata?.reference || tx.id]
       .map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))
   ].join("\n");
@@ -3804,6 +4051,48 @@ app.get("/api/transactions/export", authenticate, attachDb, (req, res) => {
     .set("Content-Disposition", `attachment; filename="afrix-transactions-${today()}.csv"`)
     .send(csv);
 });
+
+function sendTransactionsPdf(req, res) {
+  const rows = transactionExportRows(req.user, req.db);
+  const pdf = buildTransactionsPdf({ user: req.user, rows });
+  res
+    .type("application/pdf")
+    .set("Content-Disposition", `attachment; filename="afrix-transactions-${today()}.pdf"`)
+    .send(pdf);
+}
+
+async function emailTransactionsPdf(req, res) {
+  const rows = transactionExportRows(req.user, req.db);
+  const summary = transactionExportSummary(rows);
+  const pdf = buildTransactionsPdf({ user: req.user, rows });
+  const result = await sendBrevoMail({
+    to: req.user.email,
+    subject: "AFRIX - Relevé de transactions",
+    title: "Votre relevé de transactions",
+    intro: "Votre relevé PDF est joint à cet email.",
+    rows: [
+      { label: "Compte", value: req.user.email },
+      { label: "Transactions", value: summary.total },
+      { label: "Transactions validées", value: summary.completed },
+      { label: "Volume total", value: formatAmount(summary.volume) },
+      { label: "Date", value: formatTransactionDateTime(nowIso()) }
+    ],
+    attachments: [{
+      name: `afrix-transactions-${today()}.pdf`,
+      content: pdf.toString("base64")
+    }]
+  });
+
+  if (!result.delivered) {
+    return res.status(503).json({ message: "Envoi email indisponible pour le moment. Vérifiez la configuration Brevo." });
+  }
+  res.json({ ok: true, message: "Relevé envoyé par email." });
+}
+
+app.get("/api/transactions/export-pdf", authenticate, attachDb, sendTransactionsPdf);
+app.get("/api/transactions/export.pdf", authenticate, attachDb, sendTransactionsPdf);
+app.post("/api/transactions/export-email", authenticate, attachDb, emailTransactionsPdf);
+app.post("/api/transactions/export/email", authenticate, attachDb, emailTransactionsPdf);
 
 app.get("/api/admin/summary", authenticate, requireAdmin, async (_req, res, next) => {
   try {

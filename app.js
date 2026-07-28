@@ -3,6 +3,7 @@ const APP_VERSION = "20260706-1";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
 const API_TIMEOUT_MS = 120_000;
 const MAX_PROOF_FILE_BYTES = 5 * 1024 * 1024;
+let registerCountryOptionsHtml = null;
 
 const pageTitles = {
   dashboard: "Tableau de bord",
@@ -123,6 +124,7 @@ const emptyUser = {
   activePlans: [],
   activeStakes: [],
   bonusLevelsOverride: 0,
+  ausdBalance: 0,
   platformControls: {},
     swap: {
       grsCoinPriceUsdt: 0.0725,
@@ -141,6 +143,7 @@ const emptyUser = {
 
 const formatUsdt = (value) => `${Number(value || 0).toFixed(2)} USDT`;
 const formatGrsc = (value) => `${Number(value || 0).toFixed(2)} GRSC`;
+const formatAusd = (value) => `${Number(value || 0).toFixed(2)} AUSD`;
 const formatTokenPrice = (value) => `${Number(value || 0).toFixed(4)} USDT`;
 const getGrsCoinPerUsdt = (user = {}) => {
   const price = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
@@ -189,6 +192,36 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+async function hydrateProfileCountrySelect(select, selectedCountry = "") {
+  if (!select || select.dataset.countriesLoaded === "true") {
+    if (select) select.value = selectedCountry || "";
+    return;
+  }
+
+  try {
+    if (!registerCountryOptionsHtml) {
+      const response = await fetch("/register", { cache: "force-cache" });
+      const html = await response.text();
+      const documentFragment = new DOMParser().parseFromString(html, "text/html");
+      const registerCountrySelect = documentFragment.querySelector('select[name="country"]');
+      registerCountryOptionsHtml = registerCountrySelect?.innerHTML || "";
+    }
+
+    if (registerCountryOptionsHtml) {
+      select.innerHTML = registerCountryOptionsHtml;
+    }
+  } catch (error) {
+    console.warn("Chargement de la liste des pays impossible:", error);
+  }
+
+  const hasSelectedCountry = selectedCountry && Array.from(select.options).some((option) => option.value === selectedCountry);
+  if (selectedCountry && !hasSelectedCountry) {
+    select.appendChild(new Option(selectedCountry, selectedCountry));
+  }
+  select.value = selectedCountry || "";
+  select.dataset.countriesLoaded = "true";
 }
 
 function getAuthToken() {
@@ -597,6 +630,7 @@ function renderSupportWidget() {
 
 function renderDashboard(user) {
   const balance = document.querySelector("[data-balance]");
+  const ausdBalance = document.querySelector("[data-ausd-balance]");
   const grsBalance = document.querySelector("[data-grs-balance]");
   const activity = document.querySelector("[data-activity]");
   const levelNote = document.querySelector("[data-level-note]");
@@ -613,6 +647,7 @@ function renderDashboard(user) {
   );
 
   if (balance) balance.textContent = formatUsdt(user.balance);
+  if (ausdBalance) ausdBalance.textContent = formatAusd(user.ausdBalance);
   if (grsBalance) grsBalance.textContent = formatGrsc(user.grsBalance);
   if (activity) activity.textContent = `${Number(user.activity || 0).toFixed(0)} USDT`;
   if (levelNote) levelNote.textContent = `${activeLevels} niveau${activeLevels > 1 ? "x" : ""} actif${activeLevels > 1 ? "s" : ""}`;
@@ -756,8 +791,10 @@ function renderSwap(user) {
   const estimatedValues = document.querySelectorAll("[data-grs-estimated-value]");
   const marketTotalSupply = document.querySelector("[data-market-total-supply]");
   const marketIssuedSupply = document.querySelector("[data-market-issued-supply]");
-  const marketRemainingSupply = document.querySelector("[data-market-remaining-supply]");
+  const marketRemainingSupply = document.querySelectorAll("[data-market-remaining-supply]");
   const marketSupplyProgress = document.querySelector("[data-market-supply-progress]");
+  const marketTrades = document.querySelector("[data-market-trades]");
+  const marketToday = document.querySelector("[data-market-today]");
   const contractAddress = document.querySelector("[data-grs-contract-address]");
   const grsDepositAddress = document.querySelector("[data-grs-deposit-address]");
   const usdtBep20Address = document.querySelector("[data-grs-usdt-bep20-address]");
@@ -784,9 +821,12 @@ function renderSwap(user) {
   estimatedValues.forEach((element) => { element.textContent = formatUsdt(Number(user.grsBalance || 0) * grsCoinPriceUsdt); });
   if (marketTotalSupply) marketTotalSupply.textContent = formatGrsc(market.totalSupply);
   if (marketIssuedSupply) marketIssuedSupply.textContent = formatGrsc(market.issuedSupply);
-  if (marketRemainingSupply) marketRemainingSupply.textContent = formatGrsc(market.remainingSupply);
+  marketRemainingSupply.forEach((element) => { element.textContent = formatGrsc(market.remainingSupply); });
+  if (marketTrades) marketTrades.textContent = Number(market.totalTrades || 0).toLocaleString("fr-FR");
+  if (marketToday) marketToday.textContent = Number(market.todayTrades || 0).toLocaleString("fr-FR");
   if (marketSupplyProgress) {
     marketSupplyProgress.style.width = `${issuedPercent}%`;
+    marketSupplyProgress.textContent = issuedPercent >= 8 ? `${issuedPercent.toFixed(2)}%` : "";
     marketSupplyProgress.setAttribute("aria-label", `${issuedPercent.toFixed(2)}% de l'offre GRSCOIN emise`);
   }
   if (contractAddress) contractAddress.textContent = user.swap?.contractAddress || "Adresse non configuree";
@@ -797,7 +837,7 @@ function renderSwap(user) {
     const amount = Number(amountInput?.value || 0);
     const netAmount = amount > 0 ? amount * (1 - totalFeeRate) : 0;
     const grsAmount = netAmount > 0 && grsCoinPriceUsdt ? netAmount / grsCoinPriceUsdt : 0;
-    if (preview) preview.textContent = grsAmount ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres 5% de frais de swap` : "Saisissez un montant USDT.";
+    if (preview) preview.textContent = grsAmount ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres 5% de frais payes en GRSC` : "Saisissez un montant USDT.";
   };
   const updateDepositPreview = () => {
     const amount = Number(depositAmountInput?.value || 0);
@@ -1024,11 +1064,25 @@ function renderNetwork(user) {
 function renderProfile(user) {
   const email = document.querySelector("[data-profile-email]");
   const country = document.querySelector("[data-profile-country]");
+  const countryInput = document.querySelector("[data-profile-country-input]");
+  const avatar = document.querySelector("[data-profile-avatar]");
+  const avatarFallback = document.querySelector("[data-profile-avatar-fallback]");
   const balance = document.querySelector("[data-profile-balance]");
   const activity = document.querySelector("[data-profile-activity]");
   const role = document.querySelector("[data-profile-role]");
   if (email) email.textContent = user.email || "-";
   if (country) country.textContent = user.country || "-";
+  hydrateProfileCountrySelect(countryInput, user.country || "");
+  const avatarData = user.avatar?.dataBase64 ? `data:${user.avatar.mimeType || "image/jpeg"};base64,${user.avatar.dataBase64}` : "";
+  if (avatar) {
+    avatar.src = avatarData;
+    avatar.hidden = !avatarData;
+  }
+  if (avatarFallback) {
+    const initials = String(user.fullName || user.email || "AF").slice(0, 2).toUpperCase();
+    avatarFallback.textContent = initials;
+    avatarFallback.hidden = Boolean(avatarData);
+  }
   if (balance) balance.textContent = formatUsdt(user.balance);
   if (activity) activity.textContent = formatUsdt(user.activity);
   if (role) role.textContent = user.role || "user";
@@ -2153,21 +2207,63 @@ function setupActions(user) {
     });
   });
 
+  const downloadExport = async ({ path, filename, type, successMessage }) => {
+    const response = await fetch(`${API_BASE}${path}`, {
+      headers: authHeaders()
+    });
+    if (!response.ok) {
+      const message = response.headers.get("content-type")?.includes("application/json")
+        ? (await response.json()).message
+        : await response.text();
+      throw new Error(message || "Export impossible pour le moment.");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast(successMessage);
+  };
+
   document.querySelector("[data-export]")?.addEventListener("click", async () => {
     try {
-      const csv = await apiRequest("/transactions/export");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `afrix-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      showToast("Export CSV telecharge.");
+      await downloadExport({
+        path: "/transactions/export",
+        filename: `afrix-transactions-${new Date().toISOString().slice(0, 10)}.csv`,
+        type: "text/csv;charset=utf-8",
+        successMessage: "Export CSV telecharge."
+      });
     } catch (error) {
       showToast(error.message, "error");
+    }
+  });
+
+  document.querySelector("[data-export-pdf]")?.addEventListener("click", async () => {
+    try {
+      await downloadExport({
+        path: "/transactions/export-pdf",
+        filename: `afrix-transactions-${new Date().toISOString().slice(0, 10)}.pdf`,
+        type: "application/pdf",
+        successMessage: "Releve PDF telecharge."
+      });
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  document.querySelector("[data-export-email]")?.addEventListener("click", async (event) => {
+    const restoreButton = setButtonLoading(event.currentTarget, "Envoi...");
+    try {
+      const response = await apiJson("/transactions/export-email", {}, { timeoutMs: 30_000 });
+      showToast(response.message || "Releve envoye par email.");
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
     }
   });
 
@@ -2569,6 +2665,35 @@ function setupActions(user) {
     }
   });
   if (p2pForm) p2pForm.dataset.boundSubmit = "true";
+
+  const profileForm = document.querySelector("[data-profile-form]");
+  if (profileForm && !profileForm.dataset.boundSubmit) profileForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const avatarInput = form.querySelector("[data-profile-avatar-input]");
+    const avatarFile = avatarInput?.files?.[0];
+    if (avatarFile && avatarFile.size > 1024 * 1024) {
+      showToast("Photo trop lourde. Taille maximale: 1 Mo.", "error");
+      return;
+    }
+    const submitButton = form.querySelector('button[type="submit"]');
+    const restoreButton = setButtonLoading(submitButton, "Mise à jour...");
+    try {
+      const response = await apiRequest("/profile", {
+        method: "PATCH",
+        body: new FormData(form),
+        timeoutMs: 20_000
+      });
+      const freshUser = normalizeUser(response.user || response);
+      renderProtectedShell(document.body.dataset.page, freshUser);
+      showToast("Profil mis à jour.");
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
+  if (profileForm) profileForm.dataset.boundSubmit = "true";
 
   const changePasswordForm = document.querySelector("[data-change-password-form]");
   if (changePasswordForm && !changePasswordForm.dataset.boundSubmit) changePasswordForm.addEventListener("submit", async (event) => {

@@ -940,8 +940,32 @@ body[data-page="dashboard"] .panel,
 body[data-page="dashboard"] .stats article {
   padding: 26px;
 }
+body[data-page="dashboard"] .dashboard-balance-card {
+  grid-column: span 2;
+}
+.dashboard-token-balances {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 12px;
+}
+.dashboard-token-balances div {
+  min-width: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(20, 43, 38, .78);
+}
+.dashboard-token-balances small,
+.dashboard-token-balances strong {
+  display: block;
+}
+.dashboard-token-balances strong {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
 body[data-page="merchant"] .stats { grid-template-columns: repeat(5, 1fr); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.panel-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
 .admin-panel-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .icon-btn { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; color: var(--cyan); background: var(--panel2); }
 .list { display: grid; gap: 10px; }
@@ -975,6 +999,32 @@ body[data-page="wallet"] select {
 .admin-stat-grid span { display: block; color: var(--muted); font-size: 12px; }
 .admin-stat-grid strong { display: block; margin-top: 6px; color: var(--gold); overflow-wrap: anywhere; }
 .contact-card h1 { font-size: 24px; }
+.profile-avatar-block {
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 112px;
+  margin: 4px 0 18px;
+  border: 1px solid rgba(55, 217, 209, .28);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(37, 211, 102, .18), rgba(55, 217, 209, .16));
+  overflow: hidden;
+}
+.profile-avatar-block img,
+.profile-avatar-block div {
+  width: 100%;
+  height: 100%;
+}
+.profile-avatar-block img {
+  object-fit: cover;
+}
+.profile-avatar-block div {
+  display: grid;
+  place-items: center;
+  color: var(--gold);
+  font-size: 34px;
+  font-weight: 900;
+}
 .support-widget {
   position: fixed;
   left: 20px;
@@ -1934,6 +1984,12 @@ th { color: var(--muted); font-size: 12px; }
   .stats,
   body[data-page="merchant"] .stats {
     grid-template-columns: 1fr 1fr;
+  }
+  body[data-page="dashboard"] .dashboard-balance-card {
+    grid-column: 1 / -1;
+  }
+  .dashboard-token-balances {
+    grid-template-columns: 1fr;
   }
 }
 
