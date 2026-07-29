@@ -647,6 +647,7 @@ function compactAdminUser(user = {}) {
     wallet: user.wallet || "",
     role: user.role || "user",
     status: user.status || "active",
+    ausdBalance: money(user.ausdBalance),
     balance: money(user.balance),
     grsBalance: money(user.grsBalance),
     reservedBalance: money(user.reservedBalance),

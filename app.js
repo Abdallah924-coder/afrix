@@ -2166,6 +2166,7 @@ async function lookupAdminActivity(emailOverride = "") {
   target.innerHTML = `
     <div class="admin-activity-card admin-activity-card-wide">
       <span><strong>${escapeHtml(user.fullName || user.email)}</strong><small>${escapeHtml(user.email || "")}</small></span>
+      <div><span>Solde AUSD</span><strong>${formatAusd(user.ausdBalance)}</strong></div>
       <div><span>Solde USDT</span><strong>${formatUsdt(user.balance)}</strong></div>
       <div><span>Solde GRSC</span><strong>${formatGrsc(user.grsBalance)}</strong></div>
       <div><span>Réservé</span><strong>${formatUsdt(user.reservedBalance)}</strong></div>
