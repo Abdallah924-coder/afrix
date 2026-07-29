@@ -494,7 +494,7 @@ function renderTopbar(page, user = emptyUser) {
     </div>
     <div class="user-box">
       <span>${escapeHtml(user.email || "Compte AFRIX")}</span>
-      <strong>USDT</strong>
+      <strong>AUSD</strong>
     </div>
   `;
 
@@ -858,9 +858,12 @@ function renderWallet(user) {
 
 function renderSwap(user) {
   const usdtBalances = document.querySelectorAll("[data-swap-usdt-balance]");
+  const ausdBalances = document.querySelectorAll("[data-swap-ausd-balance]");
   const grsBalances = document.querySelectorAll("[data-swap-grs-balance]");
   const rates = document.querySelectorAll("[data-swap-rate]");
+  const ausdRates = document.querySelectorAll("[data-ausd-rate]");
   const estimatedValues = document.querySelectorAll("[data-grs-estimated-value]");
+  const ausdEstimatedValues = document.querySelectorAll("[data-ausd-estimated-value]");
   const marketTotalSupply = document.querySelector("[data-market-total-supply]");
   const marketIssuedSupply = document.querySelector("[data-market-issued-supply]");
   const marketRemainingSupply = document.querySelectorAll("[data-market-remaining-supply]");
@@ -892,9 +895,14 @@ function renderSwap(user) {
   const market = { ...emptyUser.swap.market, ...(user.swap?.market || {}) };
   const issuedPercent = Math.max(0, Math.min(100, Number(market.issuedPercent || 0)));
   usdtBalances.forEach((element) => { element.textContent = formatUsdt(user.balance); });
+  ausdBalances.forEach((element) => { element.textContent = formatAusd(user.ausdBalance); });
   grsBalances.forEach((element) => { element.textContent = formatGrsc(user.grsBalance); });
   rates.forEach((element) => { element.textContent = grsCoinPriceUsdt ? `1 GRSC = ${formatTokenPrice(grsCoinPriceUsdt)}` : "Prix indisponible"; });
+  ausdRates.forEach((element) => { element.textContent = `1 AUSD = ${formatTokenPrice(AUSD_PRICE_USDT)}`; });
   estimatedValues.forEach((element) => { element.textContent = formatUsdt(Number(user.grsBalance || 0) * grsCoinPriceUsdt); });
+  ausdEstimatedValues.forEach((element) => {
+    element.textContent = formatAusd((Number(user.grsBalance || 0) * grsCoinPriceUsdt) / AUSD_PRICE_USDT);
+  });
   if (marketTotalSupply) marketTotalSupply.textContent = formatGrsc(market.totalSupply);
   if (marketIssuedSupply) marketIssuedSupply.textContent = formatGrsc(market.issuedSupply);
   marketRemainingSupply.forEach((element) => { element.textContent = formatGrsc(market.remainingSupply); });
