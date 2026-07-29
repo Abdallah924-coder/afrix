@@ -45,6 +45,7 @@ const DEPOSIT_MOBILE_RATE = 650;
 const WITHDRAW_MOBILE_RATE = 550;
 const MTN_WITHDRAW_FEE_RATE = 0.10;
 const P2P_FEE_RATE = 0.01;
+const AUSD_PRICE_USDT = 3.25;
 const contactLinks = {
   telegramSupport: "https://t.me/Assistant_grs_core",
   telegramChannel: "https://t.me/ecosysteme_grs",
@@ -132,7 +133,7 @@ const emptyUser = {
       contractAddress: "",
       grsDepositAddress: "",
       usdtBep20DepositAddress: "",
-      swapFeeRate: 0.05,
+      swapFeeRate: 0.025,
       bonusRate: 0.10,
       bonusLevelsCount: 5,
       direction: "USDT_GRSC",
@@ -144,6 +145,17 @@ const emptyUser = {
 const formatUsdt = (value) => `${Number(value || 0).toFixed(2)} USDT`;
 const formatGrsc = (value) => `${Number(value || 0).toFixed(2)} GRSC`;
 const formatAusd = (value) => `${Number(value || 0).toFixed(2)} AUSD`;
+const formatAssetAmount = (value, asset = "USDT") => {
+  if (asset === "AUSD") return formatAusd(value);
+  if (asset === "GRSC") return formatGrsc(value);
+  return formatUsdt(value);
+};
+const assetBalance = (user = {}, asset = "USDT") => {
+  if (asset === "AUSD") return Number(user.ausdBalance || 0);
+  if (asset === "GRSC") return Number(user.grsBalance || 0);
+  return Number(user.balance || 0);
+};
+const usdtToAusd = (value) => Number(value || 0) / AUSD_PRICE_USDT;
 const formatTokenPrice = (value) => `${Number(value || 0).toFixed(4)} USDT`;
 const getGrsCoinPerUsdt = (user = {}) => {
   const price = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
@@ -649,10 +661,10 @@ function renderDashboard(user) {
   if (balance) balance.textContent = formatUsdt(user.balance);
   if (ausdBalance) ausdBalance.textContent = formatAusd(user.ausdBalance);
   if (grsBalance) grsBalance.textContent = formatGrsc(user.grsBalance);
-  if (activity) activity.textContent = `${Number(user.activity || 0).toFixed(0)} USDT`;
+  if (activity) activity.textContent = formatAusd(usdtToAusd(user.activity));
   if (levelNote) levelNote.textContent = `${activeLevels} niveau${activeLevels > 1 ? "x" : ""} actif${activeLevels > 1 ? "s" : ""}`;
   if (team) team.textContent = Number(user.team || 0);
-  if (bonus) bonus.textContent = formatUsdt(user.bonus);
+  if (bonus) bonus.textContent = formatAusd(usdtToAusd(user.bonus));
   if (rank) rank.textContent = user.rank || "Niveau 0";
   if (progress) progress.style.width = `${Math.max(0, Math.min(100, Number(user.progress || 0)))}%`;
   if (progressText) progressText.textContent = user.progressText || "Progression calculee selon votre activite validee.";
@@ -801,11 +813,15 @@ function renderSwap(user) {
   const contractAddress = document.querySelector("[data-grs-contract-address]");
   const grsDepositAddress = document.querySelector("[data-grs-deposit-address]");
   const usdtBep20Address = document.querySelector("[data-grs-usdt-bep20-address]");
+  const directionInput = document.querySelector("[data-swap-direction]");
   const amountInput = document.querySelector("[data-swap-amount]");
+  const amountLabel = document.querySelector("[data-swap-amount-label]");
+  const swapSubmit = document.querySelector("[data-swap-submit]");
   const preview = document.querySelector("[data-swap-preview]");
   const depositAmountInput = document.querySelector("[data-grs-deposit-amount]");
   const depositPreview = document.querySelector("[data-grs-deposit-preview]");
   const usdtDepositAmountInput = document.querySelector("[data-grs-usdt-deposit-amount]");
+  const usdtDepositAssetInput = document.querySelector("[data-grs-usdt-deposit-asset]");
   const usdtDepositPreview = document.querySelector("[data-grs-usdt-deposit-preview]");
   if (!usdtBalances.length && !grsBalances.length && !rates.length && !amountInput && !depositAmountInput) return;
 
@@ -838,9 +854,45 @@ function renderSwap(user) {
 
   const updatePreview = () => {
     const amount = Number(amountInput?.value || 0);
-    const netAmount = amount > 0 ? amount * (1 - totalFeeRate) : 0;
-    const grsAmount = netAmount > 0 && grsCoinPriceUsdt ? netAmount / grsCoinPriceUsdt : 0;
-    if (preview) preview.textContent = grsAmount ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres 5% de frais payes en GRSC` : "Saisissez un montant USDT.";
+    const direction = directionInput?.value || "USDT_GRSC";
+    const sourceAsset = direction.split("_")[0] || "USDT";
+    if (amountLabel?.firstChild) amountLabel.firstChild.textContent = `Montant ${sourceAsset} a convertir`;
+    const unavailable = direction === "GRSC_USDT" || direction === "GRSC_AUSD";
+    if (swapSubmit) {
+      swapSubmit.disabled = unavailable;
+      swapSubmit.textContent = unavailable ? "Indisponible" : "Échanger";
+    }
+    if (unavailable) {
+      if (preview) preview.textContent = "Indisponible pour le moment.";
+      return;
+    }
+    if (!amount || amount <= 0) {
+      if (preview) preview.textContent = `Saisissez un montant ${sourceAsset}.`;
+      return;
+    }
+    if (direction === "USDT_AUSD") {
+      const fee = amount * totalFeeRate;
+      const ausdAmount = (amount - fee) / AUSD_PRICE_USDT;
+      if (preview) preview.textContent = `${formatUsdt(amount)} -> ${formatAusd(ausdAmount)} apres 2.5% de frais.`;
+      return;
+    }
+    if (direction === "AUSD_USDT") {
+      const grossUsdtAmount = amount * AUSD_PRICE_USDT;
+      const fee = grossUsdtAmount * totalFeeRate;
+      if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatUsdt(grossUsdtAmount - fee)} apres 2.5% de frais.`;
+      return;
+    }
+    if (direction === "AUSD_GRSC") {
+      const grossUsdt = amount * AUSD_PRICE_USDT;
+      const feeGrs = grsCoinPriceUsdt ? (grossUsdt * totalFeeRate) / grsCoinPriceUsdt : 0;
+      const grsAmount = grsCoinPriceUsdt ? (grossUsdt / grsCoinPriceUsdt) - feeGrs : 0;
+      if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatGrsc(grsAmount)} apres 2.5% de frais payes en GRSC.`;
+      return;
+    }
+    const grossGrsAmount = amount > 0 && grsCoinPriceUsdt ? amount / grsCoinPriceUsdt : 0;
+    const feeGrs = grossGrsAmount * totalFeeRate;
+    const grsAmount = Math.max(0, grossGrsAmount - feeGrs);
+    if (preview) preview.textContent = grsAmount ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres 2.5% de frais payes en GRSC` : "Saisissez un montant USDT.";
   };
   const updateDepositPreview = () => {
     const amount = Number(depositAmountInput?.value || 0);
@@ -848,10 +900,22 @@ function renderSwap(user) {
   };
   const updateUsdtDepositPreview = () => {
     const amount = Number(usdtDepositAmountInput?.value || 0);
+    const creditAsset = usdtDepositAssetInput?.value || "GRSC";
     const grsAmount = amount > 0 && grsCoinPriceUsdt ? amount / grsCoinPriceUsdt : 0;
-    if (usdtDepositPreview) usdtDepositPreview.textContent = amount > 0 ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres validation admin. Commissions et bonus separes.` : "Saisissez le montant USDT a convertir.";
+    const ausdAmount = amount > 0 ? amount / AUSD_PRICE_USDT : 0;
+    if (usdtDepositPreview) {
+      usdtDepositPreview.textContent = amount > 0
+        ? creditAsset === "AUSD"
+          ? `${formatUsdt(amount)} -> ${formatAusd(ausdAmount)} apres validation admin.`
+          : `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres validation admin. Commissions et bonus separes.`
+        : "Saisissez le montant USDT a convertir.";
+    }
   };
 
+  if (directionInput && !directionInput.dataset.boundSwapDirection) {
+    directionInput.dataset.boundSwapDirection = "true";
+    directionInput.addEventListener("change", updatePreview);
+  }
   if (amountInput && !amountInput.dataset.boundSwapPreview) {
     amountInput.dataset.boundSwapPreview = "true";
     amountInput.addEventListener("input", updatePreview);
@@ -863,6 +927,10 @@ function renderSwap(user) {
   if (usdtDepositAmountInput && !usdtDepositAmountInput.dataset.boundGrsUsdtDepositPreview) {
     usdtDepositAmountInput.dataset.boundGrsUsdtDepositPreview = "true";
     usdtDepositAmountInput.addEventListener("input", updateUsdtDepositPreview);
+  }
+  if (usdtDepositAssetInput && !usdtDepositAssetInput.dataset.boundGrsUsdtDepositAsset) {
+    usdtDepositAssetInput.dataset.boundGrsUsdtDepositAsset = "true";
+    usdtDepositAssetInput.addEventListener("change", updateUsdtDepositPreview);
   }
   updatePreview();
   updateDepositPreview();
@@ -1319,10 +1387,13 @@ function renderP2pRecipientPreview(recipient) {
 
 function updateP2pFeePreview() {
   const amount = Number(document.querySelector("[data-p2p-amount]")?.value || 0);
+  const asset = document.querySelector("[data-p2p-asset]")?.value || "USDT";
+  const label = document.querySelector("[data-p2p-amount-label]");
   const preview = document.querySelector("[data-p2p-fee-preview]");
+  if (label?.firstChild) label.firstChild.textContent = `Montant minimum 1 ${asset}`;
   if (!preview) return;
   const fee = Number((Math.max(0, amount) * P2P_FEE_RATE).toFixed(2));
-  preview.textContent = `Frais 1%: ${formatUsdt(fee)}. Total debite: ${formatUsdt(amount + fee)}.`;
+  preview.textContent = `Frais 1%: ${formatAssetAmount(fee, asset)}. Total debite: ${formatAssetAmount(amount + fee, asset)}.`;
 }
 
 function renderAdmin(user) {
@@ -2356,19 +2427,33 @@ function setupActions(user) {
       event.preventDefault();
       const form = event.currentTarget;
       const amount = Number(form.querySelector("[name='amount']")?.value || 0);
-      if (!Number.isFinite(amount) || amount < 1) {
-        showToast("Montant minimum swap: 1 USDT.", "error");
+      const direction = form.querySelector("[name='direction']")?.value || "USDT_GRSC";
+      const sourceAsset = direction.split("_")[0] || "USDT";
+      if (direction === "GRSC_USDT" || direction === "GRSC_AUSD") {
+        showToast("Indisponible pour le moment.", "error");
         return;
       }
-      if (amount > Number(user.balance || 0)) {
-        showToast(`Solde USDT insuffisant. Disponible: ${formatUsdt(user.balance)}.`, "error");
+      if (!Number.isFinite(amount) || amount < 1) {
+        showToast(`Montant minimum swap: 1 ${sourceAsset}.`, "error");
+        return;
+      }
+      if (amount > assetBalance(user, sourceAsset)) {
+        showToast(`Solde ${sourceAsset} insuffisant. Disponible: ${formatAssetAmount(assetBalance(user, sourceAsset), sourceAsset)}.`, "error");
         return;
       }
       const submitButton = form.querySelector('button[type="submit"]');
       const restoreButton = setButtonLoading(submitButton, "Conversion...");
       try {
-        const response = await apiJson("/swap/usdt-to-grsc", { amount }, { timeoutMs: 20_000 });
-        showToast(`Swap effectue: ${formatGrsc(response.grsAmount)} credites.`);
+        const response = direction === "USDT_GRSC"
+          ? await apiJson("/swap/usdt-to-grsc", { amount }, { timeoutMs: 20_000 })
+          : await apiJson("/swap/convert", { amount, direction }, { timeoutMs: 20_000 });
+        const targetAsset = direction.split("_")[1] || "GRSC";
+        const credited = targetAsset === "AUSD"
+          ? formatAusd(response.ausdAmount)
+          : targetAsset === "GRSC"
+          ? formatGrsc(response.grsAmount)
+          : formatUsdt(response.usdtAmount);
+        showToast(`Swap effectue: ${credited}.`);
         form.reset();
         const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((payload) => normalizeUser(payload.user || payload));
         renderProtectedShell(document.body.dataset.page, freshUser);
@@ -2442,7 +2527,8 @@ function setupActions(user) {
           body: new FormData(form),
           timeoutMs: 30_000
         });
-        showToast(`Depot USDT envoye: ${formatUsdt(response.usdtAmount)} -> ${formatGrsc(response.grsAmount)}.`);
+        const credited = response.creditAsset === "AUSD" ? formatAusd(response.ausdAmount) : formatGrsc(response.grsAmount);
+        showToast(`Depot USDT envoye: ${formatUsdt(response.usdtAmount)} -> ${credited}.`);
         form.reset();
         const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((payload) => normalizeUser(payload.user || payload));
         renderProtectedShell(document.body.dataset.page, freshUser);
@@ -2583,6 +2669,7 @@ function setupActions(user) {
   const p2pLookup = document.querySelector("[data-p2p-lookup]");
   const p2pRecipientInput = document.querySelector("[data-p2p-recipient]");
   const p2pAmountInput = document.querySelector("[data-p2p-amount]");
+  const p2pAssetInput = document.querySelector("[data-p2p-asset]");
   let p2pRecipient = null;
 
   const lookupP2pRecipient = async () => {
@@ -2624,27 +2711,32 @@ function setupActions(user) {
     p2pAmountInput.addEventListener("input", updateP2pFeePreview);
     updateP2pFeePreview();
   }
+  if (p2pAssetInput && !p2pAssetInput.dataset.boundP2pAsset) {
+    p2pAssetInput.dataset.boundP2pAsset = "true";
+    p2pAssetInput.addEventListener("change", updateP2pFeePreview);
+  }
 
   if (p2pForm && !p2pForm.dataset.boundSubmit) p2pForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const data = formToObject(form);
     const amount = Number(data.amount || 0);
+    const asset = String(data.asset || "USDT").toUpperCase();
     const fee = Number((amount * P2P_FEE_RATE).toFixed(2));
     const total = Number((amount + fee).toFixed(2));
     if (!Number.isFinite(amount) || amount < 1) {
-      showToast("Montant minimum transfert: 1 USDT.", "error");
+      showToast(`Montant minimum transfert: 1 ${asset}.`, "error");
       return;
     }
-    if (total > Number(user.balance || 0)) {
-      showToast(`Solde insuffisant. Total requis: ${formatUsdt(total)}.`, "error");
+    if (total > assetBalance(user, asset)) {
+      showToast(`Solde ${asset} insuffisant. Total requis: ${formatAssetAmount(total, asset)}.`, "error");
       return;
     }
     if (!p2pRecipient || p2pRecipient.email !== String(data.recipient || "").trim().toLowerCase()) {
       const recipient = await lookupP2pRecipient();
       if (!recipient) return;
     }
-    const confirmed = window.confirm(`Confirmer l'envoi de ${formatUsdt(amount)} a ${p2pRecipient.displayName || p2pRecipient.email} ? Frais: ${formatUsdt(fee)}. Total debite: ${formatUsdt(total)}.`);
+    const confirmed = window.confirm(`Confirmer l'envoi de ${formatAssetAmount(amount, asset)} a ${p2pRecipient.displayName || p2pRecipient.email} ? Frais: ${formatAssetAmount(fee, asset)}. Total debite: ${formatAssetAmount(total, asset)}.`);
     if (!confirmed) return;
     const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Envoi...");

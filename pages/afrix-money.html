@@ -65,7 +65,14 @@
         <label>Email du destinataire<input name="recipient" type="email" required data-p2p-recipient></label>
         <button class="btn secondary full" type="button" data-p2p-lookup>Vérifier le destinataire</button>
         <div class="wallet-address" data-p2p-recipient-preview hidden></div>
-        <label>Montant minimum 1 USDT<input name="amount" type="number" min="1" step="0.01" value="1" data-p2p-amount></label>
+        <label>Actif a transferer
+          <select name="asset" data-p2p-asset>
+            <option value="USDT">USDT</option>
+            <option value="AUSD">AUSD</option>
+            <option value="GRSC">GRSCOIN</option>
+          </select>
+        </label>
+        <label data-p2p-amount-label>Montant minimum 1 USDT<input name="amount" type="number" min="1" step="0.01" value="1" data-p2p-amount></label>
         <label>Note optionnelle<input name="note" maxlength="180" placeholder="Ex: transfert interne AFRIX Money"></label>
         <p class="muted" data-p2p-fee-preview>Frais 1%: 0.01 USDT. Total débité: 1.01 USDT.</p>
         <button class="btn primary full" type="submit">Envoyer</button>

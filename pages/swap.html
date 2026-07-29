@@ -60,14 +60,24 @@
 
     <section class="grid two">
       <article class="panel swap-card">
-        <div class="panel-head"><h1>Swap GRSCOIN</h1><span class="badge">USDT vers GRSC</span></div>
-        <p class="muted">Convertissez votre solde USDT disponible en GRSCOIN. Les frais de swap sont de 5%; les bonus reseau sont payes separement et ne reduisent pas le GRSCOIN recu.</p>
+        <div class="panel-head"><h1>AFRIX Swap</h1><span class="badge">USDT • AUSD • GRSC</span></div>
+        <p class="muted">Convertissez vos soldes disponibles selon les paires ouvertes. AUSD vaut 3.25 USDT; les paires GRSCOIN vers USDT/AUSD sont indisponibles pour le moment.</p>
         <form data-swap-form>
-          <label>Montant USDT à convertir
+          <label>Paire de conversion
+            <select name="direction" data-swap-direction>
+              <option value="USDT_GRSC">USDT vers GRSCOIN</option>
+              <option value="USDT_AUSD">USDT vers AUSD</option>
+              <option value="AUSD_USDT">AUSD vers USDT</option>
+              <option value="AUSD_GRSC">AUSD vers GRSCOIN</option>
+              <option value="GRSC_USDT">GRSCOIN vers USDT</option>
+              <option value="GRSC_AUSD">GRSCOIN vers AUSD</option>
+            </select>
+          </label>
+          <label data-swap-amount-label>Montant USDT à convertir
             <input name="amount" type="number" min="1" step="0.01" required data-swap-amount>
           </label>
           <div class="swap-preview" data-swap-preview>Saisissez un montant USDT.</div>
-          <button class="btn primary full" type="submit">Convertir en GRSCOIN</button>
+          <button class="btn primary full" type="submit" data-swap-submit>Échanger</button>
         </form>
       </article>
 
@@ -98,8 +108,8 @@
 
     <section class="grid two">
       <article class="panel swap-card" id="deposit-usdt-grs">
-        <div class="panel-head"><h1>Depot USDT BEP20</h1><span class="badge">Conversion GRSC</span></div>
-        <p class="muted">Envoyez vos USDT BEP20 vers l'adresse indiquee. La conversion applique 5% de frais; les commissions et bonus reseau sont payes separement sans reduire le GRSCOIN credite.</p>
+        <div class="panel-head"><h1>Depot USDT BEP20</h1><span class="badge">Conversion</span></div>
+        <p class="muted">Envoyez vos USDT BEP20 vers l'adresse indiquee, puis choisissez le token a crediter apres validation admin.</p>
         <div class="wallet-address swap-address">
           <span>Adresse depot USDT BEP20</span>
           <strong data-grs-usdt-bep20-address>Adresse non configuree</strong>
@@ -110,6 +120,12 @@
             <input name="amount" type="number" min="1" step="0.01" required data-grs-usdt-deposit-amount>
           </label>
           <input name="method" type="hidden" value="usdt_bep20">
+          <label>Token a crediter
+            <select name="creditAsset" data-grs-usdt-deposit-asset>
+              <option value="GRSC">GRSCOIN</option>
+              <option value="AUSD">AUSD</option>
+            </select>
+          </label>
           <label>Reference transaction
             <input name="txRef" type="text" placeholder="Hash transaction BEP20" required>
           </label>
@@ -159,7 +175,7 @@
           <a class="btn secondary" href="#withdraw-grs">Retirer GRSCOIN</a>
           <a class="btn secondary" href="/staking">Staker GRSCOIN</a>
         </div>
-        <p class="muted">Le sens actif est USDT vers GRSCOIN. Les GRSCOIN obtenus peuvent ensuite etre retires ou places en staking.</p>
+        <p class="muted">Les paires ouvertes appliquent 2.5% de frais. Les conversions depuis GRSCOIN restent indisponibles pour le moment.</p>
       </article>
     </section>
 
@@ -167,9 +183,9 @@
       <article class="panel swap-info">
         <h1>Programme Partenaire</h1>
         <div class="list">
-          <div><span>Frais de conversion : 5%</span></div>
+          <div><span>Frais de conversion : 2.5%</span></div>
           <div><span>Bonus reseau : 10% distribues separement sur 5 niveaux</span></div>
-          <div><span>Montant net converti : 95% du montant USDT</span></div>
+          <div><span>Montant net converti : 97.5% du montant source</span></div>
           <div><span>Le swap n'applique pas de frais cache</span></div>
         </div>
       </article>
@@ -211,9 +227,9 @@
       <article class="panel swap-info">
         <h1>Regles de Swap</h1>
         <div class="list">
-          <div><span>Frais de conversion : 5%</span></div>
+          <div><span>Frais de conversion : 2.5%</span></div>
           <div><span>Bonus reseau : 10% distribues sur 5 niveaux debloques</span></div>
-          <div><span>Montant net converti : 95% du montant USDT</span></div>
+          <div><span>Montant net converti : 97.5% du montant source</span></div>
         </div>
         <p class="muted">AFRIX Swap GRSCOIN • Swap • Trade • Stake • Earn</p>
       </article>

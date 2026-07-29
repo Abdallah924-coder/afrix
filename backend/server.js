@@ -83,14 +83,18 @@ let dailyEarningsPromise = null;
 const transactionListProjection = { "metadata.proof.dataBase64": 0 };
 const PLAN_EARNINGS_INTERVAL_MS = 60 * 1000;
 const PLAN_PAYOUT_INTERVAL_MS = 86_400_000;
-const GRSCOIN_SWAP_FEE_RATE = 0.05;
+const GRSCOIN_SWAP_FEE_RATE = 0.025;
 const GRSCOIN_WITHDRAWAL_FEE_RATE = 0.10;
 const USDT_WITHDRAWAL_FEE_RATE = 0.10;
-const GRSCOIN_SWAP_ADMIN_RATE = 0.02;
-const GRSCOIN_SWAP_DEVELOPER_RATE = 0.02;
-const GRSCOIN_SWAP_PLATFORM_RATE = 0.01;
+const GRSCOIN_SWAP_ADMIN_RATE = 0.0025;
+const GRSCOIN_SWAP_DEVELOPER_RATE = 0.0025;
+const GRSCOIN_SWAP_PLATFORM_RATE = 0.02;
 const GRSCOIN_SWAP_BONUS_RATES = [0.05, 0.02, 0.01, 0.01, 0.01];
 const GRSCOIN_REFERRAL_RATES = [0.05, 0.02, 0.01, 0.01, 0.01];
+const AUSD_PRICE_USDT = 3.25;
+const AUSD_SWAP_FEE_RATE = 0.025;
+const AUSD_SWAP_ADMIN_SHARE = 0.10;
+const AUSD_SWAP_DEVELOPER_SHARE = 0.10;
 const STAKING_ADMIN_COMMISSION_RATE = 0.03;
 const STAKING_DEVELOPER_COMMISSION_RATE = 0.03;
 const STAKING_PLATFORM_COMMISSION_RATE = 0.04;
@@ -2577,15 +2581,20 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
 app.post("/api/swap/grscoin-deposits", authenticate, requirePlatformAccess(), upload.single("proof"), async (req, res) => {
   const rawAmount = money(req.body.amount || 0);
   const method = String(req.body.method || "grscoin");
+  const creditAsset = String(req.body.creditAsset || "GRSC").toUpperCase();
   const txRef = String(req.body.txRef || "").trim();
   if (rawAmount < 1) return res.status(400).json({ message: "Montant minimum depot: 1." });
   if (!GRSCOIN_PRICE_USDT) return res.status(503).json({ message: "Prix GRSCOIN indisponible." });
   if (!["grscoin", "usdt_bep20"].includes(method)) return res.status(400).json({ message: "Methode de depot invalide." });
+  if (method === "grscoin" && creditAsset !== "GRSC") return res.status(400).json({ message: "Un depot GRSCOIN credite uniquement le portefeuille GRSCOIN." });
+  if (method === "usdt_bep20" && !["GRSC", "AUSD"].includes(creditAsset)) return res.status(400).json({ message: "Token a crediter invalide." });
   if (!txRef) return res.status(400).json({ message: "Reference transaction requise." });
   if (!req.file?.buffer?.length) return res.status(400).json({ message: "Preuve de paiement requise." });
 
-  const grsAmount = method === "usdt_bep20" ? grsFromUsdt(rawAmount) : rawAmount;
+  const grsAmount = method === "usdt_bep20" && creditAsset === "GRSC" ? grsFromUsdt(rawAmount) : method === "grscoin" ? rawAmount : 0;
+  const ausdAmount = method === "usdt_bep20" && creditAsset === "AUSD" ? money(rawAmount / AUSD_PRICE_USDT) : 0;
   const usdtAmount = method === "usdt_bep20" ? rawAmount : money(grsAmount * GRSCOIN_PRICE_USDT);
+  const displayAmount = creditAsset === "AUSD" ? `+${ausdAmount.toFixed(2)} AUSD` : `+${grsAmount.toFixed(2)} GRSC`;
   const proof = {
     originalName: req.file.originalname || "preuve-paiement",
     mimeType: req.file.mimetype || "application/octet-stream",
@@ -2596,28 +2605,31 @@ app.post("/api/swap/grscoin-deposits", authenticate, requirePlatformAccess(), up
     id: nanoid(),
     userId: req.user.id,
     type: "Depot",
-    description: method === "usdt_bep20" ? "Depot USDT BEP20 converti en GRSCOIN" : "Depot GRSCOIN",
-    amount: grsAmount,
-    displayAmount: `+${grsAmount.toFixed(2)} GRSC`,
+    description: method === "usdt_bep20" ? `Depot USDT BEP20 converti en ${creditAsset}` : "Depot GRSCOIN",
+    amount: creditAsset === "AUSD" ? ausdAmount : grsAmount,
+    displayAmount,
     status: "Pending",
     createdAt: nowIso(),
     metadata: {
-      asset: "GRSC_PURCHASE",
+      asset: creditAsset === "AUSD" ? "AUSD_PURCHASE" : "GRSC_PURCHASE",
       method,
+      creditAsset,
       ...(txRef ? { txRef } : {}),
       originalAmount: rawAmount,
       usdtAmount,
       grsAmount,
+      ausdAmount,
+      ausdPriceUsdt: AUSD_PRICE_USDT,
       priceUsdt: GRSCOIN_PRICE_USDT,
       proof
     }
   };
   await TransactionModel.create(tx);
-  res.status(201).json({ reference: tx.id, amount: grsAmount, grsAmount, usdtAmount, status: tx.status });
+  res.status(201).json({ reference: tx.id, amount: tx.amount, grsAmount, ausdAmount, usdtAmount, creditAsset, status: tx.status });
 
-  notifyAdmin("AFRIX - Depot GRSCOIN a valider", "Depot GRSCOIN a valider", "Une demande de depot GRSCOIN est en attente.", [
+  notifyAdmin("AFRIX - Depot swap a valider", "Depot swap a valider", "Une demande de depot swap est en attente.", [
     { label: "Client", value: req.user.email },
-    { label: "GRSCOIN", value: `${grsAmount.toFixed(2)} GRSC` },
+    { label: "Token credite", value: creditAsset === "AUSD" ? `${ausdAmount.toFixed(2)} AUSD` : `${grsAmount.toFixed(2)} GRSC` },
     { label: "Valeur", value: formatAmount(usdtAmount) }
   ]).catch((error) => logger.error({ err: error }, "GRSCOIN purchase notification failed"));
 });
@@ -2636,8 +2648,8 @@ app.post("/api/swap/grscoin-withdrawals", authenticate, requirePlatformAccess(),
   if (netAmount <= 0) return res.status(400).json({ message: "Le montant apres frais doit rester positif." });
 
   const session = await mongoose.startSession();
+  let result;
   try {
-    let result;
     await session.withTransaction(async () => {
       const updatedUser = await UserModel.findOneAndUpdate(
         {
@@ -3180,6 +3192,215 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
   }
 });
 
+app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.object({
+  direction: z.enum(["USDT_AUSD", "AUSD_USDT", "AUSD_GRSC", "USDT_GRSC", "GRSC_USDT", "GRSC_AUSD"]),
+  amount: z.coerce.number().positive()
+})), async (req, res) => {
+  const direction = String(req.body.direction || "");
+  const amount = money(req.body.amount);
+  if (["GRSC_USDT", "GRSC_AUSD"].includes(direction)) {
+    return res.status(400).json({ message: "Indisponible pour le moment." });
+  }
+  if (direction === "USDT_GRSC") {
+    return res.status(400).json({ message: "Veuillez utiliser la conversion USDT vers GRSCOIN." });
+  }
+  if (amount < 1) return res.status(400).json({ message: "Montant minimum swap: 1." });
+  if (!GRSCOIN_PRICE_USDT || !AUSD_PRICE_USDT) return res.status(503).json({ message: "Prix AFRIX Swap indisponible." });
+
+  const session = await mongoose.startSession();
+  let result;
+  try {
+    await session.withTransaction(async () => {
+      const user = normalizeUserRecord(await UserModel.findOne({ id: req.user.id }, null, { session }).lean());
+      if (!user) {
+        result = { error: "Utilisateur introuvable." };
+        return;
+      }
+      const referenceId = nanoid();
+
+      if (direction === "USDT_AUSD") {
+        const fee = money(amount * AUSD_SWAP_FEE_RATE);
+        const adminCommission = money(fee * AUSD_SWAP_ADMIN_SHARE);
+        const developerCommission = money(fee * AUSD_SWAP_DEVELOPER_SHARE);
+        const platformCommission = money(fee - adminCommission - developerCommission);
+        const netUsdt = money(amount - fee);
+        const ausdAmount = money(netUsdt / AUSD_PRICE_USDT);
+        const updatedUser = await UserModel.findOneAndUpdate(
+          { id: user.id, $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, amount] } },
+          [{
+            $set: {
+              balance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$balance", 0] } }, amount] }, 2] },
+              ausdBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, ausdAmount] }, 2] }
+            }
+          }],
+          { new: true, session, lean: true }
+        );
+        if (!updatedUser) {
+          result = { error: "Solde USDT insuffisant." };
+          return;
+        }
+        const platformCredit = money(amount - adminCommission - developerCommission);
+        const platform = await PlatformAccountModel.findOneAndUpdate(
+          { id: "platform" },
+          { $inc: { balance: platformCredit, fees: fee }, $setOnInsert: { createdAt: nowIso() } },
+          { upsert: true, new: true, session, lean: true }
+        );
+        const commissionRows = [];
+        const commissionTransactions = [];
+        for (const target of [
+          { email: ADMIN_EMAIL, amount: adminCommission, rate: AUSD_SWAP_ADMIN_SHARE, accountType: "admin", description: "Commission admin swap AUSD" },
+          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommission, rate: AUSD_SWAP_DEVELOPER_SHARE, accountType: "developer", description: "Commission developpeur swap AUSD" }
+        ]) {
+          if (!target.email || target.amount <= 0) continue;
+          const creditedUser = await UserModel.findOneAndUpdate(
+            { email: target.email },
+            [{ $set: { balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, target.amount] }, 2] } } }],
+            { new: true, session, lean: true }
+          );
+          if (!creditedUser) continue;
+          commissionRows.push({ accountType: target.accountType, accountId: creditedUser.id, direction: "credit", amount: target.amount, balanceAfter: creditedUser.balance, description: target.description });
+          commissionTransactions.push({ id: nanoid(), userId: creditedUser.id, type: "Commission", description: target.description, amount: target.amount, displayAmount: formatAmount(target.amount, "+"), status: "Completed", createdAt: nowIso(), metadata: { source: "ausd_swap_commission", swapId: referenceId, rate: target.rate, feeAsset: "USDT" } });
+        }
+        const metadata = { direction, priceUsdt: AUSD_PRICE_USDT, usdtAmount: amount, netUsdt, ausdAmount, fee, feeAsset: "USDT", adminCommission, developerCommission, platformCommission };
+        const tx = { id: referenceId, userId: user.id, type: "Swap", description: "AFRIX Swap USDT vers AUSD", amount, displayAmount: `-${amount.toFixed(2)} USDT -> +${ausdAmount.toFixed(2)} AUSD`, status: "Completed", createdAt: nowIso(), metadata };
+        const entries = buildLedgerEntries([
+          { accountType: "user", accountId: user.id, direction: "debit", amount, balanceAfter: updatedUser.balance, description: "AFRIX Swap USDT vers AUSD" },
+          { accountType: "user_ausd", accountId: user.id, direction: "credit", amount: ausdAmount, balanceAfter: updatedUser.ausdBalance, description: "AUSD credite" },
+          { accountType: "platform", accountId: "platform", direction: "credit", amount: platformCredit, balanceAfter: platform.balance, description: "Swap AUSD - USDT recu" },
+          ...commissionRows
+        ], { source: "ausd_swap", referenceId, extra: metadata });
+        if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+        if (commissionTransactions.length) await TransactionModel.insertMany(commissionTransactions, { session });
+        await TransactionModel.create([tx], { session });
+        result = { direction, transaction: tx, user: normalizeUserRecord(updatedUser), usdtAmount: amount, ausdAmount, fee };
+        return;
+      }
+
+      if (direction === "AUSD_USDT") {
+        const grossUsdtAmount = money(amount * AUSD_PRICE_USDT);
+        const fee = money(grossUsdtAmount * AUSD_SWAP_FEE_RATE);
+        const adminCommission = money(fee * AUSD_SWAP_ADMIN_SHARE);
+        const developerCommission = money(fee * AUSD_SWAP_DEVELOPER_SHARE);
+        const platformCommission = money(fee - adminCommission - developerCommission);
+        const usdtAmount = money(grossUsdtAmount - fee);
+        const updatedUser = await UserModel.findOneAndUpdate(
+          { id: user.id, $expr: { $gte: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, amount] } },
+          [{
+            $set: {
+              ausdBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, amount] }, 2] },
+              balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, usdtAmount] }, 2] }
+            }
+          }],
+          { new: true, session, lean: true }
+        );
+        if (!updatedUser) {
+          result = { error: "Solde AUSD insuffisant." };
+          return;
+        }
+        const platformDebit = money(usdtAmount + adminCommission + developerCommission);
+        const platform = await PlatformAccountModel.findOneAndUpdate(
+          { id: "platform", $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, platformDebit] } },
+          { $inc: { balance: -platformDebit, fees: platformCommission }, $setOnInsert: { createdAt: nowIso() } },
+          { new: true, session, lean: true }
+        );
+        if (!platform) {
+          result = { error: "Liquidite USDT plateforme insuffisante pour ce swap." };
+          throw new Error("AUSD_USDT_PLATFORM_LIQUIDITY");
+        }
+        const commissionRows = [];
+        const commissionTransactions = [];
+        for (const target of [
+          { email: ADMIN_EMAIL, amount: adminCommission, rate: AUSD_SWAP_ADMIN_SHARE, accountType: "admin", description: "Commission admin swap AUSD vers USDT" },
+          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommission, rate: AUSD_SWAP_DEVELOPER_SHARE, accountType: "developer", description: "Commission developpeur swap AUSD vers USDT" }
+        ]) {
+          if (!target.email || target.amount <= 0) continue;
+          const creditedUser = await UserModel.findOneAndUpdate(
+            { email: target.email },
+            [{ $set: { balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, target.amount] }, 2] } } }],
+            { new: true, session, lean: true }
+          );
+          if (!creditedUser) continue;
+          commissionRows.push({ accountType: target.accountType, accountId: creditedUser.id, direction: "credit", amount: target.amount, balanceAfter: creditedUser.balance, description: target.description });
+          commissionTransactions.push({ id: nanoid(), userId: creditedUser.id, type: "Commission", description: target.description, amount: target.amount, displayAmount: formatAmount(target.amount, "+"), status: "Completed", createdAt: nowIso(), metadata: { source: "ausd_swap_commission", swapId: referenceId, rate: target.rate, feeAsset: "USDT" } });
+        }
+        const metadata = { direction, priceUsdt: AUSD_PRICE_USDT, ausdAmount: amount, grossUsdtAmount, usdtAmount, fee, feeAsset: "USDT", adminCommission, developerCommission, platformCommission };
+        const tx = { id: referenceId, userId: user.id, type: "Swap", description: "AFRIX Swap AUSD vers USDT", amount, displayAmount: `-${amount.toFixed(2)} AUSD -> +${usdtAmount.toFixed(2)} USDT`, status: "Completed", createdAt: nowIso(), metadata };
+        const entries = buildLedgerEntries([
+          { accountType: "user_ausd", accountId: user.id, direction: "debit", amount, balanceAfter: updatedUser.ausdBalance, description: "AFRIX Swap AUSD vers USDT" },
+          { accountType: "user", accountId: user.id, direction: "credit", amount: usdtAmount, balanceAfter: updatedUser.balance, description: "USDT credite" },
+          { accountType: "platform", accountId: "platform", direction: "debit", amount: platformDebit, balanceAfter: platform.balance, description: "Swap AUSD - USDT envoye" },
+          ...commissionRows
+        ], { source: "ausd_swap", referenceId, extra: metadata });
+        if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+        if (commissionTransactions.length) await TransactionModel.insertMany(commissionTransactions, { session });
+        await TransactionModel.create([tx], { session });
+        result = { direction, transaction: tx, user: normalizeUserRecord(updatedUser), ausdAmount: amount, grossUsdtAmount, usdtAmount, fee };
+        return;
+      }
+
+      if (direction === "AUSD_GRSC") {
+        const usdtEquivalent = money(amount * AUSD_PRICE_USDT);
+        const grossGrsAmount = grsFromUsdt(usdtEquivalent);
+        const adminCommissionGrs = grsFromUsdt(usdtEquivalent * GRSCOIN_SWAP_ADMIN_RATE);
+        const developerCommissionGrs = grsFromUsdt(usdtEquivalent * GRSCOIN_SWAP_DEVELOPER_RATE);
+        const platformCommissionGrs = grsFromUsdt(usdtEquivalent * GRSCOIN_SWAP_PLATFORM_RATE);
+        const feeGrsAmount = money(adminCommissionGrs + developerCommissionGrs + platformCommissionGrs);
+        const grsAmount = money(grossGrsAmount - feeGrsAmount);
+        const updatedUser = await UserModel.findOneAndUpdate(
+          { id: user.id, $expr: { $gte: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, amount] } },
+          [{
+            $set: {
+              ausdBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, amount] }, 2] },
+              grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, grsAmount] }, 2] }
+            }
+          }],
+          { new: true, session, lean: true }
+        );
+        if (!updatedUser) {
+          result = { error: "Solde AUSD insuffisant." };
+          return;
+        }
+        const commissionRows = [];
+        const commissionTransactions = [];
+        for (const target of [
+          { email: ADMIN_EMAIL, amount: adminCommissionGrs, rate: GRSCOIN_SWAP_ADMIN_RATE, accountType: "admin_grs", description: "Commission admin swap AUSD vers GRSC" },
+          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommissionGrs, rate: GRSCOIN_SWAP_DEVELOPER_RATE, accountType: "developer_grs", description: "Commission developpeur swap AUSD vers GRSC" },
+          { email: PLATFORM_EMAIL, amount: platformCommissionGrs, rate: GRSCOIN_SWAP_PLATFORM_RATE, accountType: "platform_user_grs", description: "Commission plateforme swap AUSD vers GRSC" }
+        ]) {
+          if (!target.email || target.amount <= 0) continue;
+          const creditedUser = await UserModel.findOneAndUpdate(
+            { email: target.email },
+            [{ $set: { grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, target.amount] }, 2] } } }],
+            { new: true, session, lean: true }
+          );
+          if (!creditedUser) continue;
+          commissionRows.push({ accountType: target.accountType, accountId: creditedUser.id, direction: "credit", amount: target.amount, balanceAfter: creditedUser.grsBalance, description: target.description });
+          commissionTransactions.push({ id: nanoid(), userId: creditedUser.id, type: "Commission", description: target.description, amount: target.amount, displayAmount: `+${target.amount.toFixed(2)} GRSC`, status: "Completed", createdAt: nowIso(), metadata: { source: "ausd_grs_swap_commission", swapId: referenceId, rate: target.rate, feeAsset: "GRSC" } });
+        }
+        const metadata = { direction, ausdPriceUsdt: AUSD_PRICE_USDT, grsPriceUsdt: GRSCOIN_PRICE_USDT, ausdAmount: amount, usdtEquivalent, grossGrsAmount, grsAmount, feeAsset: "GRSC", feeGrsAmount };
+        const tx = { id: referenceId, userId: user.id, type: "Swap", description: "AFRIX Swap AUSD vers GRSCOIN", amount, displayAmount: `-${amount.toFixed(2)} AUSD -> +${grsAmount.toFixed(2)} GRSC`, status: "Completed", createdAt: nowIso(), metadata };
+        const entries = buildLedgerEntries([
+          { accountType: "user_ausd", accountId: user.id, direction: "debit", amount, balanceAfter: updatedUser.ausdBalance, description: "AFRIX Swap AUSD vers GRSCOIN" },
+          { accountType: "user_grs", accountId: user.id, direction: "credit", amount: grsAmount, balanceAfter: updatedUser.grsBalance, description: "GRSCOIN credite" },
+          ...commissionRows
+        ], { source: "ausd_grs_swap", referenceId, extra: metadata });
+        if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+        if (commissionTransactions.length) await TransactionModel.insertMany(commissionTransactions, { session });
+        await TransactionModel.create([tx], { session });
+        result = { direction, transaction: tx, user: normalizeUserRecord(updatedUser), ausdAmount: amount, grsAmount, feeGrsAmount };
+      }
+    });
+
+    if (result?.error) return res.status(400).json({ message: result.error });
+    return res.status(201).json(result);
+  } catch (error) {
+    if (result?.error) return res.status(400).json({ message: result.error });
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+});
+
 app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(z.object({
   amount: z.coerce.number().optional(),
   plan: z.string().optional()
@@ -3481,101 +3702,144 @@ app.get("/api/p2p-recipient/:email", authenticate, requirePlatformAccess(), atta
 app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z.object({
   recipient: z.string().email(),
   amount: z.coerce.number().positive(),
+  asset: z.enum(["USDT", "AUSD", "GRSC"]).optional(),
   note: z.string().max(180).optional()
 })), async (req, res) => {
   const amount = money(req.body.amount);
+  const asset = String(req.body.asset || "USDT").toUpperCase();
   const fee = money(amount * 0.01);
   const total = money(amount + fee);
   const note = String(req.body.note || "").trim().slice(0, 180);
   const recipientEmail = req.body.recipient.trim().toLowerCase();
-  const sender = await UserModel.findOne({ id: req.user.id }).lean();
-  const recipient = await UserModel.findOne({ email: recipientEmail }).lean();
-  if (!sender) return res.status(404).json({ message: "Expediteur introuvable." });
-  if (!recipient) return res.status(404).json({ message: "Destinataire introuvable." });
-  if (recipient.id === sender.id) {
-    return res.status(400).json({ message: "Vous ne pouvez pas vous envoyer des fonds a vous-meme." });
-  }
-  if (recipient.status && recipient.status !== "active") {
-    return res.status(400).json({ message: "Ce compte ne peut pas recevoir de transfert." });
-  }
-
+  const assetConfig = {
+    USDT: { field: "balance", accountType: "user", platformAccountType: "platform", format: formatAmount, label: "USDT" },
+    AUSD: { field: "ausdBalance", accountType: "user_ausd", platformAccountType: "platform_user_ausd", format: (value, sign = "") => `${sign}${money(value).toFixed(2)} AUSD`, label: "AUSD" },
+    GRSC: { field: "grsBalance", accountType: "user_grs", platformAccountType: "platform_user_grs", format: (value, sign = "") => `${sign}${money(value).toFixed(2)} GRSC`, label: "GRSC" }
+  }[asset];
   const reference = makeReference("P2P", amount);
-  const updatedSender = await UserModel.findOneAndUpdate(
-    { id: sender.id, $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, total] } },
-    [{ $set: { balance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$balance", 0] } }, total] }, 2] } } }],
-    { new: true, lean: true }
-  );
-  if (!updatedSender) return res.status(400).json({ message: "Solde insuffisant." });
-
-  const updatedRecipient = await UserModel.findOneAndUpdate(
-    { id: recipient.id },
-    [{ $set: { balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, amount] }, 2] } } }],
-    { new: true, lean: true }
-  );
-  if (!updatedRecipient) return res.status(404).json({ message: "Destinataire introuvable." });
-
-  const platform = await PlatformAccountModel.findOneAndUpdate(
-    { id: "platform" },
-    { $inc: { balance: fee, fees: fee }, $setOnInsert: { createdAt: nowIso() } },
-    { upsert: true, new: true, lean: true }
-  );
-  await creditPlatformUserFee({
-    amount: fee,
-    description: "Frais transfert AFRIX Money",
-    source: "p2p_fee",
-    referenceId: reference,
-    extra: { senderId: sender.id, recipientId: recipient.id }
-  });
-  const ledgerEntries = buildLedgerEntries([{
-    accountType: "user",
-    accountId: sender.id,
-    direction: "debit",
-    amount: total,
-    balanceAfter: updatedSender.balance,
-    description: `Transfert vers ${recipient.email}`
-  }, {
-    accountType: "user",
-    accountId: recipient.id,
-    direction: "credit",
-    amount,
-    balanceAfter: updatedRecipient.balance,
-    description: `Reception depuis ${sender.email}`
-  }, {
-    accountType: "platform",
-    accountId: "platform",
-    direction: "credit",
-    amount: fee,
-    balanceAfter: platform.balance,
-    description: "Frais P2P"
-  }], { source: "p2p_transfer", referenceId: reference, extra: { senderId: sender.id, recipientId: recipient.id, amount, fee, note } });
-  if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries);
-  await TransactionModel.insertMany([{
-    id: nanoid(),
-    userId: sender.id,
-    type: "P2P",
-    description: `Transfert vers ${recipient.email}`,
-    amount: total,
-    displayAmount: formatAmount(total, "-"),
-    status: "Completed",
-    createdAt: nowIso(),
-    metadata: { reference, amount, fee, total, recipientEmail: recipient.email, note }
-  }, {
-    id: nanoid(),
-    userId: recipient.id,
-    type: "P2P",
-    description: `Reception depuis ${sender.email}`,
-    amount,
-    displayAmount: formatAmount(amount, "+"),
-    status: "Completed",
-    createdAt: nowIso(),
-    metadata: { reference, amount, senderEmail: sender.email, note }
-  }]);
+  let sender;
+  let recipient;
+  let updatedSender;
+  let updatedRecipient;
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      sender = await UserModel.findOne({ id: req.user.id }, null, { session }).lean();
+      recipient = await UserModel.findOne({ email: recipientEmail }, null, { session }).lean();
+      if (!sender) {
+        result = { error: "Expediteur introuvable.", status: 404 };
+        return;
+      }
+      if (!recipient) {
+        result = { error: "Destinataire introuvable.", status: 404 };
+        return;
+      }
+      if (recipient.id === sender.id) {
+        result = { error: "Vous ne pouvez pas vous envoyer des fonds a vous-meme." };
+        return;
+      }
+      if (recipient.status && recipient.status !== "active") {
+        result = { error: "Ce compte ne peut pas recevoir de transfert." };
+        return;
+      }
+      const balanceField = assetConfig.field;
+      updatedSender = await UserModel.findOneAndUpdate(
+        { id: sender.id, $expr: { $gte: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, total] } },
+        [{ $set: { [balanceField]: { $round: [{ $subtract: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, total] }, 2] } } }],
+        { new: true, session, lean: true }
+      );
+      if (!updatedSender) {
+        result = { error: `Solde ${assetConfig.label} insuffisant.` };
+        return;
+      }
+      updatedRecipient = await UserModel.findOneAndUpdate(
+        { id: recipient.id },
+        [{ $set: { [balanceField]: { $round: [{ $add: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, amount] }, 2] } } }],
+        { new: true, session, lean: true }
+      );
+      if (!updatedRecipient) {
+        result = { error: "Destinataire introuvable.", status: 404 };
+        return;
+      }
+      let platform = null;
+      let platformUser = null;
+      if (asset === "USDT") {
+        platform = await PlatformAccountModel.findOneAndUpdate(
+          { id: "platform" },
+          { $inc: { balance: fee, fees: fee }, $setOnInsert: { createdAt: nowIso() } },
+          { upsert: true, new: true, session, lean: true }
+        );
+        await creditPlatformUserFee({
+          amount: fee,
+          description: "Frais transfert AFRIX Money",
+          source: "p2p_fee",
+          referenceId: reference,
+          extra: { senderId: sender.id, recipientId: recipient.id, asset }
+        });
+      } else if (PLATFORM_EMAIL && fee > 0) {
+        platformUser = await UserModel.findOneAndUpdate(
+          { email: PLATFORM_EMAIL },
+          [{ $set: { [balanceField]: { $round: [{ $add: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, fee] }, 2] } } }],
+          { new: true, session, lean: true }
+        );
+      }
+      const ledgerRows = [{
+        accountType: assetConfig.accountType,
+        accountId: sender.id,
+        direction: "debit",
+        amount: total,
+        balanceAfter: updatedSender[balanceField],
+        description: `Transfert ${asset} vers ${recipient.email}`
+      }, {
+        accountType: assetConfig.accountType,
+        accountId: recipient.id,
+        direction: "credit",
+        amount,
+        balanceAfter: updatedRecipient[balanceField],
+        description: `Reception ${asset} depuis ${sender.email}`
+      }];
+      if (asset === "USDT" && platform) {
+        ledgerRows.push({ accountType: "platform", accountId: "platform", direction: "credit", amount: fee, balanceAfter: platform.balance, description: "Frais P2P" });
+      } else if (platformUser) {
+        ledgerRows.push({ accountType: assetConfig.platformAccountType, accountId: platformUser.id, direction: "credit", amount: fee, balanceAfter: platformUser[balanceField], description: `Frais P2P ${asset}` });
+      }
+      const ledgerEntries = buildLedgerEntries(ledgerRows, { source: "p2p_transfer", referenceId: reference, extra: { senderId: sender.id, recipientId: recipient.id, amount, fee, total, asset, note } });
+      if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+      await TransactionModel.insertMany([{
+        id: nanoid(),
+        userId: sender.id,
+        type: "P2P",
+        description: `Transfert ${asset} vers ${recipient.email}`,
+        amount: total,
+        displayAmount: assetConfig.format(total, "-"),
+        status: "Completed",
+        createdAt: nowIso(),
+        metadata: { reference, amount, fee, total, asset, recipientEmail: recipient.email, note }
+      }, {
+        id: nanoid(),
+        userId: recipient.id,
+        type: "P2P",
+        description: `Reception ${asset} depuis ${sender.email}`,
+        amount,
+        displayAmount: assetConfig.format(amount, "+"),
+        status: "Completed",
+        createdAt: nowIso(),
+        metadata: { reference, amount, asset, senderEmail: sender.email, note }
+      }], { session });
+      result = { ok: true };
+    });
+    if (result?.error) return res.status(result.status || 400).json({ message: result.error });
+  } finally {
+    await session.endSession();
+  }
 
   const result = {
     reference,
     amount,
     fee,
     total,
+    asset,
     recipient: { email: recipient.email, displayName: maskDisplayName(recipient.fullName || recipient.email) }
   };
   res.status(201).json(result);
@@ -3587,9 +3851,9 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
       intro: "Votre transfert AFRIX Money a ete execute avec succes.",
       rows: [
         { label: "Destinataire", value: recipient.email },
-        { label: "Montant envoye", value: formatAmount(amount) },
-        { label: "Frais", value: formatAmount(fee) },
-        { label: "Total debite", value: formatAmount(total) },
+        { label: "Montant envoye", value: assetConfig.format(amount) },
+        { label: "Frais", value: assetConfig.format(fee) },
+        { label: "Total debite", value: assetConfig.format(total) },
         { label: "Reference", value: reference }
       ]
     }),
@@ -3600,7 +3864,7 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
       intro: "Un transfert AFRIX Money vient d'etre credite sur votre compte.",
       rows: [
         { label: "Expediteur", value: sender.email },
-        { label: "Montant recu", value: formatAmount(amount) },
+        { label: "Montant recu", value: assetConfig.format(amount) },
         { label: "Reference", value: reference }
       ]
     })
@@ -4903,13 +5167,17 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
 
       if (tx.type === "Depot" && action === "approve") {
         const isGrsPurchase = tx.metadata?.asset === "GRSC_PURCHASE";
+        const isAusdPurchase = tx.metadata?.asset === "AUSD_PURCHASE";
         const isUsdtConvertedGrsPurchase = isGrsPurchase && tx.metadata?.method === "usdt_bep20";
         const grsAmount = money(tx.metadata?.grsAmount || tx.amount);
+        const ausdAmount = money(tx.metadata?.ausdAmount || tx.amount);
         const grsValueUsdt = money(tx.metadata?.usdtAmount || (grsAmount * GRSCOIN_PRICE_USDT));
         const updatedUser = await UserModel.findOneAndUpdate(
           { id: tx.userId },
           [{
-            $set: isGrsPurchase
+            $set: isAusdPurchase
+              ? { ausdBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, ausdAmount] }, 2] } }
+              : isGrsPurchase
               ? { grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, grsAmount] }, 2] } }
               : { balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, money(tx.amount)] }, 2] } }
           }],
@@ -4919,27 +5187,27 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
           result = { error: "Utilisateur introuvable." };
           return;
         }
-        const platform = isGrsPurchase ? await PlatformAccountModel.findOneAndUpdate(
+        const platform = isGrsPurchase || isAusdPurchase ? await PlatformAccountModel.findOneAndUpdate(
           { id: "platform" },
           { $inc: { balance: grsValueUsdt }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
           { upsert: true, new: true, session, lean: true }
         ) : null;
         const depositLedgerRows = [{
-          accountType: isGrsPurchase ? "user_grs" : "user",
+          accountType: isAusdPurchase ? "user_ausd" : isGrsPurchase ? "user_grs" : "user",
           accountId: tx.userId,
           direction: "credit",
-          amount: isGrsPurchase ? grsAmount : tx.amount,
-          balanceAfter: isGrsPurchase ? updatedUser.grsBalance : updatedUser.balance,
+          amount: isAusdPurchase ? ausdAmount : isGrsPurchase ? grsAmount : tx.amount,
+          balanceAfter: isAusdPurchase ? updatedUser.ausdBalance : isGrsPurchase ? updatedUser.grsBalance : updatedUser.balance,
           description: tx.description || "Depot approuve"
         }];
-        if (isGrsPurchase) {
+        if (isGrsPurchase || isAusdPurchase) {
           depositLedgerRows.push({
             accountType: "platform",
             accountId: "platform",
             direction: "credit",
             amount: grsValueUsdt,
             balanceAfter: platform?.balance || grsValueUsdt,
-            description: "Depot GRSCOIN - valeur recue"
+            description: isAusdPurchase ? "Depot AUSD - valeur recue" : "Depot GRSCOIN - valeur recue"
           });
         }
         const commissionRows = [];
