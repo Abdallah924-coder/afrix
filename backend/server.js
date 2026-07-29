@@ -95,6 +95,8 @@ const AUSD_PRICE_USDT = 3.25;
 const AUSD_SWAP_FEE_RATE = 0.025;
 const AUSD_SWAP_ADMIN_SHARE = 0.10;
 const AUSD_SWAP_DEVELOPER_SHARE = 0.10;
+const CDF_DEPOSIT_RATE_USDT = 2800;
+const CDF_WITHDRAWAL_RATE_USDT = 2365;
 const STAKING_ADMIN_COMMISSION_RATE = 0.03;
 const STAKING_DEVELOPER_COMMISSION_RATE = 0.03;
 const STAKING_PLATFORM_COMMISSION_RATE = 0.04;
@@ -1223,6 +1225,16 @@ function isCongoBrazzaville(value) {
     country === "congo" ||
     country === "cg" ||
     country.includes("republique du congo");
+}
+
+function isCongoKinshasa(value) {
+  const country = normalizeCountry(value);
+  return country === "rdc" ||
+    country === "cd" ||
+    country === "congo kinshasa" ||
+    country === "republique democratique du congo" ||
+    country.includes("democratic republic of congo") ||
+    country.includes("republique democratique du congo");
 }
 
 function publicExchangeAd(ad, merchant) {
@@ -2508,16 +2520,22 @@ app.get("/api/merchants", authenticate, attachDb, (req, res) => {
 app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("proof"), async (req, res) => {
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || "bep20");
+  const creditAsset = String(req.body.asset || "USDT").toUpperCase();
   const txRef = String(req.body.txRef || "").trim();
   const isMtnCongoDeposit = method === "mtn_cg";
+  const isCongoRdcDeposit = method === "airtel_cd" || method === "orange_cd";
   if (amount < 10) return res.status(400).json({ message: "Montant minimum depot: 10 USDT." });
-  if (!["bep20", "trc20", "mtn_cg"].includes(method)) {
-    return res.status(400).json({ message: "Seuls les depots USDT BEP20, TRC20 et MTN Congo Brazzaville sont disponibles." });
+  if (!["bep20", "trc20", "mtn_cg", "airtel_cd", "orange_cd"].includes(method)) {
+    return res.status(400).json({ message: "Methode de depot indisponible." });
   }
+  if (creditAsset !== "USDT") return res.status(400).json({ message: "Les depots Wallet sont disponibles uniquement en USDT. Veuillez utiliser le swap pour obtenir des AUSD." });
   if (isMtnCongoDeposit && !isCongoBrazzaville(req.user.country)) {
     return res.status(403).json({ message: "Le depot MTN Mobile Money est reserve aux comptes Congo Brazzaville." });
   }
-  if (!isMtnCongoDeposit && !txRef) {
+  if (isCongoRdcDeposit && !isCongoKinshasa(req.user.country)) {
+    return res.status(403).json({ message: "Le depot Airtel/Orange Money est reserve aux comptes RDC." });
+  }
+  if (!isMtnCongoDeposit && !isCongoRdcDeposit && !txRef) {
     return res.status(400).json({ message: "Reference transaction crypto requise." });
   }
   if (!req.file?.buffer?.length) {
@@ -2530,18 +2548,33 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
     dataBase64: req.file.buffer.toString("base64")
   };
 
+  const localRate = isCongoRdcDeposit ? CDF_DEPOSIT_RATE_USDT : isMtnCongoDeposit ? 650 : null;
+  const localCurrency = isCongoRdcDeposit ? "CDF" : isMtnCongoDeposit ? "XAF" : null;
+  const localAmount = localRate ? money(amount * localRate) : null;
+  const displayAmount = formatAmount(amount, "+");
+  const methodLabels = {
+    bep20: "Depot wallet BEP20",
+    trc20: "Depot wallet TRC20",
+    mtn_cg: "Depot MTN Mobile Money Congo Brazzaville",
+    airtel_cd: "Depot Airtel Money RDC",
+    orange_cd: "Depot Orange Money RDC"
+  };
+
   const result = await withMongoRetry(async () => {
     const tx = {
       id: nanoid(),
       userId: req.user.id,
       type: "Depot",
-      description: isMtnCongoDeposit ? "Depot MTN Mobile Money Congo Brazzaville" : `Depot wallet ${method.toUpperCase()}`,
+      description: methodLabels[method],
       amount: money(amount),
-      displayAmount: formatAmount(amount, "+"),
+      displayAmount,
       status: "Pending",
       createdAt: nowIso(),
       metadata: {
         method,
+        asset: "USDT_DEPOSIT",
+        creditAsset: "USDT",
+        ...(localCurrency ? { localCurrency, localRate, localAmount } : {}),
         ...(txRef ? { txRef } : {}),
         proof
       }
@@ -2553,6 +2586,8 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
   res.status(201).json({
     reference: result.request?.reference || result.transaction?.id,
     amount,
+    asset: "USDT",
+    ...(localAmount ? { localAmount, localCurrency, localRate } : {}),
     fee: result.request?.fee || 0,
     status: result.request?.status || result.transaction?.status
   });
@@ -2566,6 +2601,7 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
     rows: [
       { label: "Methode", value: method.toUpperCase() },
       { label: "Montant", value: formatAmount(amount) },
+      ...(localAmount ? [{ label: "Montant local", value: `${Math.round(localAmount).toLocaleString("fr-FR")} ${localCurrency}` }] : []),
       { label: "Reference", value: result.request?.reference || result.transaction?.id },
       { label: "Statut", value: result.request?.status || result.transaction?.status }
     ]
@@ -2573,7 +2609,8 @@ app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("
     notifyAdmin("AFRIX - Depot a traiter", "Depot a traiter", "Une demande de depot est en attente.", [
     { label: "Client", value: req.user.email },
     { label: "Methode", value: method.toUpperCase() },
-    { label: "Montant", value: formatAmount(amount) }
+    { label: "Montant", value: formatAmount(amount) },
+    ...(localAmount ? [{ label: "Montant local", value: `${Math.round(localAmount).toLocaleString("fr-FR")} ${localCurrency}` }] : [])
     ])
   ]).catch((error) => logger.error({ err: error }, "Deposit notification failed"));
 });
@@ -2707,40 +2744,61 @@ app.post("/api/swap/grscoin-withdrawals", authenticate, requirePlatformAccess(),
 });
 
 app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.object({
-  method: z.enum(["bep20", "mtn_cg"]),
+  method: z.enum(["bep20", "mtn_cg", "airtel_cd", "orange_cd"]),
+  asset: z.enum(["USDT", "AUSD"]).optional(),
   amount: z.coerce.number().positive(),
   address: z.string().optional(),
   phone: z.string().optional(),
   beneficiary: z.string().optional()
 })), async (req, res) => {
   const { amount, method } = req.body;
+  const asset = String(req.body.asset || "USDT").toUpperCase();
   const address = String(req.body.address || "").trim();
   const phone = String(req.body.phone || "").trim();
   const beneficiary = String(req.body.beneficiary || "").trim();
   const isMtnCongoWithdrawal = method === "mtn_cg";
+  const isCongoRdcWithdrawal = method === "airtel_cd" || method === "orange_cd";
+  const isMobileWithdrawal = isMtnCongoWithdrawal || isCongoRdcWithdrawal;
   if (amount < 10) return res.status(400).json({ message: "Montant minimum retrait: 10 USDT." });
+  if (asset !== "USDT") {
+    return res.status(400).json({ message: "Les retraits Wallet sont disponibles uniquement en USDT. Veuillez convertir vos AUSD en USDT avant le retrait." });
+  }
   if (method === "bep20" && !address) {
     return res.status(400).json({ message: "Adresse wallet BEP20 requise." });
   }
   if (isMtnCongoWithdrawal && !isCongoBrazzaville(req.user.country)) {
     return res.status(403).json({ message: "Le retrait MTN Mobile Money est reserve aux comptes Congo Brazzaville." });
   }
-  if (isMtnCongoWithdrawal && (!phone || !beneficiary)) {
-    return res.status(400).json({ message: "Numero MTN et nom beneficiaire requis." });
+  if (isCongoRdcWithdrawal && !isCongoKinshasa(req.user.country)) {
+    return res.status(403).json({ message: "Le retrait Airtel/Orange Money est reserve aux comptes RDC." });
+  }
+  if (isMobileWithdrawal && (!phone || !beneficiary)) {
+    return res.status(400).json({ message: "Numero mobile money et nom beneficiaire requis." });
   }
   if (!GRSCOIN_PRICE_USDT) {
     return res.status(503).json({ message: "Prix GRSCOIN indisponible. Retrait impossible pour le moment." });
   }
-  const fee = money(amount * USDT_WITHDRAWAL_FEE_RATE);
+  const usdtEquivalent = money(amount);
+  const fee = money(usdtEquivalent * USDT_WITHDRAWAL_FEE_RATE);
   const feeGrsAmount = grsFromUsdt(fee);
   const netAmount = money(amount);
   const reservedAmount = money(amount);
-  if (money(req.user.balance) < reservedAmount) {
-    return res.status(400).json({ message: "Solde insuffisant." });
+  const balanceField = "balance";
+  if (money(req.user[balanceField]) < reservedAmount) {
+    return res.status(400).json({ message: `Solde ${asset} insuffisant.` });
   }
   if (money(req.user.grsBalance) < feeGrsAmount) {
     return res.status(400).json({ message: "Solde GRSCOIN insuffisant. Les frais de retrait sont payables exclusivement en GRSC. Veuillez recharger votre portefeuille GRSCOIN pour poursuivre cette opération." });
   }
+  const localRate = isCongoRdcWithdrawal ? CDF_WITHDRAWAL_RATE_USDT : isMtnCongoWithdrawal ? 550 : null;
+  const localCurrency = isCongoRdcWithdrawal ? "CDF" : isMtnCongoWithdrawal ? "XAF" : null;
+  const localAmount = localRate ? money(amount * localRate) : null;
+  const methodLabels = {
+    bep20: "Retrait wallet BEP20",
+    mtn_cg: "Retrait MTN Mobile Money Congo Brazzaville",
+    airtel_cd: "Retrait Airtel Money RDC",
+    orange_cd: "Retrait Orange Money RDC"
+  };
 
   let result;
   try {
@@ -2749,20 +2807,24 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
         id: nanoid(),
         userId: req.user.id,
         type: "Retrait",
-        description: isMtnCongoWithdrawal ? "Retrait MTN Mobile Money Congo Brazzaville" : `Retrait wallet ${method.toUpperCase()}`,
+        description: asset === "AUSD" ? `${methodLabels[method]} AUSD` : methodLabels[method],
         amount: money(amount),
-        displayAmount: formatAmount(amount, "-"),
+        displayAmount: asset === "AUSD" ? `-${money(amount).toFixed(2)} AUSD` : formatAmount(amount, "-"),
         status: "Pending",
         createdAt: nowIso(),
         metadata: {
           method,
+          asset: "USDT_WITHDRAWAL",
+          debitAsset: "USDT",
           fee,
           feeAsset: "GRSC",
           feeUsdtEquivalent: fee,
           feeGrsAmount,
           grsCoinPriceUsdt: GRSCOIN_PRICE_USDT,
+          usdtEquivalent,
           netAmount,
           reservedAmount,
+          ...(localCurrency ? { localCurrency, localRate, localAmount } : {}),
           ...(address ? { address } : {}),
           ...(phone ? { phone } : {}),
           ...(beneficiary ? { beneficiary } : {})
@@ -2778,17 +2840,22 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
               id: req.user.id,
               $expr: {
                 $and: [
-                  { $gte: [{ $toDouble: "$balance" }, reservedAmount] },
+                  { $gte: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, reservedAmount] },
                   { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }
                 ]
               }
             },
             [{
-              $set: {
-                balance: { $round: [{ $subtract: [{ $toDouble: "$balance" }, reservedAmount] }, 2] },
-                reservedBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$reservedBalance", 0] } }, reservedAmount] }, 2] },
-                grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }, 2] }
-              }
+              $set: asset === "AUSD"
+                ? {
+                    ausdBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, reservedAmount] }, 2] },
+                    grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }, 2] }
+                  }
+                : {
+                    balance: { $round: [{ $subtract: [{ $toDouble: "$balance" }, reservedAmount] }, 2] },
+                    reservedBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$reservedBalance", 0] } }, reservedAmount] }, 2] },
+                    grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }, 2] }
+                  }
             }],
             { new: true, session, lean: true }
           );
@@ -2797,20 +2864,20 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
           }
 
           const ledgerRows = [{
-            accountType: "user",
+            accountType: asset === "AUSD" ? "user_ausd" : "user",
             accountId: req.user.id,
             direction: "debit",
             amount: reservedAmount,
-            balanceAfter: updatedUser.balance,
+            balanceAfter: asset === "AUSD" ? updatedUser.ausdBalance : updatedUser.balance,
             description: `${tx.description} - reserve`
-          }, {
+          }, ...(asset === "AUSD" ? [] : [{
             accountType: "user_reserved",
             accountId: req.user.id,
             direction: "credit",
             amount: reservedAmount,
             balanceAfter: updatedUser.reservedBalance,
             description: tx.description
-          }];
+          }])];
           if (feeGrsAmount > 0) {
             ledgerRows.push({
               accountType: "user_grs",
@@ -2824,7 +2891,7 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
           const ledgerEntries = buildLedgerEntries(ledgerRows, {
             source: "withdrawal_request",
             referenceId: tx.id,
-            extra: { feeAsset: "GRSC", feeUsdtEquivalent: fee, feeGrsAmount, grsCoinPriceUsdt: GRSCOIN_PRICE_USDT }
+            extra: { feeAsset: "GRSC", feeUsdtEquivalent: fee, feeGrsAmount, grsCoinPriceUsdt: GRSCOIN_PRICE_USDT, debitAsset: asset }
           });
 
           await TransactionModel.create([tx], { session });
@@ -2847,10 +2914,12 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
   res.status(201).json({
     reference: result.request?.reference || result.transaction?.id,
     amount,
+    asset,
     fee: result.request?.fee || result.transaction?.metadata?.fee || 0,
     feeAsset: result.transaction?.metadata?.feeAsset || "GRSC",
     feeGrsAmount: result.transaction?.metadata?.feeGrsAmount || feeGrsAmount,
     netAmount: result.request?.netAmount || result.transaction?.metadata?.netAmount || amount,
+    ...(localAmount ? { localAmount, localCurrency, localRate } : {}),
     status: result.request?.status || result.transaction?.status
   });
 
@@ -2862,9 +2931,10 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     intro: "Votre demande de retrait a ete soumise.",
     rows: [
       { label: "Methode", value: method.toUpperCase() },
-      { label: "Montant", value: formatAmount(amount) },
+      { label: "Montant", value: asset === "AUSD" ? `${money(amount).toFixed(2)} AUSD` : formatAmount(amount) },
       { label: "Frais", value: `${(result.transaction?.metadata?.feeGrsAmount || feeGrsAmount).toFixed(2)} GRSC (${formatAmount(result.transaction?.metadata?.feeUsdtEquivalent || fee)} equivalent)` },
-      { label: "Net a recevoir", value: formatAmount(result.transaction?.metadata?.netAmount || amount) },
+      { label: "Net a recevoir", value: asset === "AUSD" ? `${money(result.transaction?.metadata?.netAmount || amount).toFixed(2)} AUSD` : formatAmount(result.transaction?.metadata?.netAmount || amount) },
+      ...(localAmount ? [{ label: "Montant local", value: `${Math.round(localAmount).toLocaleString("fr-FR")} ${localCurrency}` }] : []),
       { label: "Reference", value: result.request?.reference || result.transaction?.id },
       { label: "Statut", value: result.request?.status || result.transaction?.status }
     ]
@@ -2872,10 +2942,11 @@ app.post("/api/withdrawals", authenticate, requirePlatformAccess(), validate(z.o
     notifyAdmin("AFRIX - Retrait a traiter", "Retrait a traiter", "Une demande de retrait est en attente.", [
     { label: "Client", value: req.user.email },
     { label: "Methode", value: method.toUpperCase() },
-    { label: "Montant", value: formatAmount(amount) },
+    { label: "Montant", value: asset === "AUSD" ? `${money(amount).toFixed(2)} AUSD` : formatAmount(amount) },
     { label: "Frais", value: `${(result.transaction?.metadata?.feeGrsAmount || feeGrsAmount).toFixed(2)} GRSC (${formatAmount(result.transaction?.metadata?.feeUsdtEquivalent || fee)} equivalent)` },
-    { label: "Net a recevoir", value: formatAmount(result.transaction?.metadata?.netAmount || amount) },
-    ...(phone ? [{ label: "Numero MTN", value: phone }] : []),
+    { label: "Net a recevoir", value: asset === "AUSD" ? `${money(result.transaction?.metadata?.netAmount || amount).toFixed(2)} AUSD` : formatAmount(result.transaction?.metadata?.netAmount || amount) },
+    ...(localAmount ? [{ label: "Montant local", value: `${Math.round(localAmount).toLocaleString("fr-FR")} ${localCurrency}` }] : []),
+    ...(phone ? [{ label: "Numero Mobile Money", value: phone }] : []),
     ...(beneficiary ? [{ label: "Beneficiaire", value: beneficiary }] : [])
     ])
   ]).catch((error) => logger.error({ err: error }, "Withdrawal notification failed"));
@@ -5168,6 +5239,7 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
       if (tx.type === "Depot" && action === "approve") {
         const isGrsPurchase = tx.metadata?.asset === "GRSC_PURCHASE";
         const isAusdPurchase = tx.metadata?.asset === "AUSD_PURCHASE";
+        const isAusdCredit = isAusdPurchase;
         const isUsdtConvertedGrsPurchase = isGrsPurchase && tx.metadata?.method === "usdt_bep20";
         const grsAmount = money(tx.metadata?.grsAmount || tx.amount);
         const ausdAmount = money(tx.metadata?.ausdAmount || tx.amount);
@@ -5175,7 +5247,7 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
         const updatedUser = await UserModel.findOneAndUpdate(
           { id: tx.userId },
           [{
-            $set: isAusdPurchase
+            $set: isAusdCredit
               ? { ausdBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, ausdAmount] }, 2] } }
               : isGrsPurchase
               ? { grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, grsAmount] }, 2] } }
@@ -5193,11 +5265,11 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
           { upsert: true, new: true, session, lean: true }
         ) : null;
         const depositLedgerRows = [{
-          accountType: isAusdPurchase ? "user_ausd" : isGrsPurchase ? "user_grs" : "user",
+          accountType: isAusdCredit ? "user_ausd" : isGrsPurchase ? "user_grs" : "user",
           accountId: tx.userId,
           direction: "credit",
-          amount: isAusdPurchase ? ausdAmount : isGrsPurchase ? grsAmount : tx.amount,
-          balanceAfter: isAusdPurchase ? updatedUser.ausdBalance : isGrsPurchase ? updatedUser.grsBalance : updatedUser.balance,
+          amount: isAusdCredit ? ausdAmount : isGrsPurchase ? grsAmount : tx.amount,
+          balanceAfter: isAusdCredit ? updatedUser.ausdBalance : isGrsPurchase ? updatedUser.grsBalance : updatedUser.balance,
           description: tx.description || "Depot approuve"
         }];
         if (isGrsPurchase || isAusdPurchase) {
@@ -5363,6 +5435,7 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
 
       if (tx.type === "Retrait") {
         const isGrsWithdrawal = tx.metadata?.asset === "GRSC_WITHDRAWAL";
+        const isAusdWithdrawal = tx.metadata?.asset === "AUSD_WITHDRAWAL";
         if (isGrsWithdrawal) {
           const grsAmount = money(tx.metadata?.grsAmount || tx.amount);
           const feeGrsAmount = money(tx.metadata?.fee || 0);
@@ -5432,6 +5505,85 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
               balanceAfter: updatedUser.grsBalance,
               description: "Retrait GRSCOIN rejete"
             }], { source: "admin_grs_withdrawal_rejection", referenceId: tx.id, extra: { reviewedBy: adminId } });
+            if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+          }
+        } else if (isAusdWithdrawal) {
+          const ausdAmount = money(tx.metadata?.reservedAmount || tx.metadata?.netAmount || tx.amount);
+          const feeAmount = money(tx.metadata?.fee || 0);
+          const feeGrsAmount = money(tx.metadata?.feeGrsAmount || 0);
+          if (action === "approve") {
+            const withdrawalRows = [{
+              accountType: "external_ausd",
+              accountId: tx.metadata?.phone || tx.metadata?.address || "external",
+              direction: "credit",
+              amount: ausdAmount,
+              balanceAfter: 0,
+              description: "Retrait AUSD approuve"
+            }];
+            if (feeGrsAmount > 0 && PLATFORM_EMAIL) {
+              const platformUser = await UserModel.findOneAndUpdate(
+                { email: PLATFORM_EMAIL },
+                [{
+                  $set: {
+                    grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }, 2] }
+                  }
+                }],
+                { new: true, session, lean: true }
+              );
+              if (platformUser) {
+                withdrawalRows.push({
+                  accountType: "platform_user_grs",
+                  accountId: platformUser.id,
+                  direction: "credit",
+                  amount: feeGrsAmount,
+                  balanceAfter: platformUser.grsBalance,
+                  description: "Frais retrait AUSD"
+                });
+                await TransactionModel.create([{
+                  id: nanoid(),
+                  userId: platformUser.id,
+                  type: "Frais",
+                  description: "Frais retrait AUSD",
+                  amount: feeGrsAmount,
+                  displayAmount: `+${feeGrsAmount.toFixed(2)} GRSC`,
+                  status: "Completed",
+                  createdAt: nowIso(),
+                  metadata: { source: "ausd_withdrawal_fee", withdrawalId: tx.id, sourceUserId: tx.userId, feeUsdtEquivalent: feeAmount }
+                }], { session });
+              }
+            }
+            const entries = buildLedgerEntries(withdrawalRows, { source: "admin_ausd_withdrawal_approval", referenceId: tx.id, extra: { reviewedBy: adminId, userId: tx.userId } });
+            if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+          } else {
+            const updatedUser = await UserModel.findOneAndUpdate(
+              { id: tx.userId },
+              [{
+                $set: {
+                  ausdBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, ausdAmount] }, 2] },
+                  grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }, 2] }
+                }
+              }],
+              { new: true, session, lean: true }
+            );
+            if (!updatedUser) {
+              result = { error: "Utilisateur introuvable." };
+              return;
+            }
+            const entries = buildLedgerEntries([{
+              accountType: "user_ausd",
+              accountId: tx.userId,
+              direction: "credit",
+              amount: ausdAmount,
+              balanceAfter: updatedUser.ausdBalance,
+              description: "Retrait AUSD rejete"
+            }, ...(feeGrsAmount > 0 ? [{
+              accountType: "user_grs",
+              accountId: tx.userId,
+              direction: "credit",
+              amount: feeGrsAmount,
+              balanceAfter: updatedUser.grsBalance,
+              description: "Retrait AUSD rejete - retour frais GRSC"
+            }] : [])], { source: "admin_ausd_withdrawal_rejection", referenceId: tx.id, extra: { reviewedBy: adminId } });
             if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
           }
         } else {

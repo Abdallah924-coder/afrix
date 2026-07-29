@@ -41,27 +41,33 @@
         </section>
         <form class="panel" data-deposit-form>
           <h1>Dépôt USDT</h1>
-          <label>Montant minimum 10 USDT<input name="amount" type="number" min="10" step="0.01" value="10" required data-deposit-amount></label>
+          <label data-deposit-amount-label>Montant minimum 10 USDT<input name="amount" type="number" min="10" step="0.01" value="10" required data-deposit-amount></label>
           <label>Réseau
             <select name="method" required data-deposit-method>
               <option value="bep20">USDT BEP20</option>
               <option value="trc20">USDT TRC20</option>
               <option value="mtn_cg" data-mtn-cg-option hidden>MTN Mobile Money Congo Brazzaville</option>
+              <option value="airtel_cd" data-rdc-option hidden>Airtel Money RDC</option>
+              <option value="orange_cd" data-rdc-option hidden>Orange Money RDC</option>
             </select>
           </label>
+          <input name="asset" type="hidden" value="USDT">
           <label data-deposit-txref-label>Référence transaction crypto<input name="txRef" placeholder="Hash de transaction" required data-deposit-txref></label>
           <label>Preuve de paiement<input name="proof" type="file" accept="image/png,image/jpeg,image/webp" required></label>
-          <button class="btn primary full" type="submit">Soumettre le dépôt USDT</button>
+          <p class="muted" data-deposit-conversion hidden>Montant a payer: <strong data-deposit-local-amount>0 CDF</strong>.</p>
+          <button class="btn primary full" type="submit">Soumettre le dépôt</button>
         </form>
         <section class="panel">
           <h2>Instructions dépôt</h2>
           <div class="info-grid">
             <div><span>Minimum</span><strong>10 USDT</strong></div>
-            <div><span>Réseaux</span><strong>BEP20 / TRC20 / MTN</strong></div>
+            <div><span>Réseaux</span><strong>BEP20 / TRC20 / Mobile Money</strong></div>
             <div><span>Devise</span><strong>USDT</strong></div>
             <div><span>Validation</span><strong>Admin</strong></div>
           </div>
-          <p class="muted">Pour MTN Congo Brazzaville, 1 USDT = 650 FCFA. Envoyez les fonds au numéro affiché, puis ajoutez uniquement la capture du paiement.</p>
+          <p class="muted">Pour les dépôts crypto, envoyez uniquement sur le réseau choisi puis ajoutez le hash et la preuve.</p>
+          <p class="muted" data-deposit-mtn-instruction hidden>Pour MTN Congo Brazzaville, 1 USDT = 650 FCFA. Envoyez les fonds au numéro affiché, puis ajoutez uniquement la capture du paiement.</p>
+          <p class="muted" data-deposit-rdc-instruction hidden>Pour la RDC, Airtel Money et Orange Money utilisent un Cash Out agent. Taux dépôt: 1 USDT = 2 800 CDF.</p>
         </section>
       </div>
       <div class="wallet-tab-panel wallet-withdraw-panel">
@@ -71,20 +77,23 @@
             <select name="method" required data-withdraw-method>
               <option value="bep20">USDT BEP20</option>
               <option value="mtn_cg" data-withdraw-mtn-cg-option>MTN Mobile Money Congo Brazzaville</option>
+              <option value="airtel_cd" data-withdraw-rdc-option hidden>Airtel Money RDC</option>
+              <option value="orange_cd" data-withdraw-rdc-option hidden>Orange Money RDC</option>
             </select>
           </label>
+          <input name="asset" type="hidden" value="USDT" data-withdraw-asset>
           <div class="wallet-receive-fields" data-receive-crypto>
             <label>Adresse wallet<input name="address" placeholder="Adresse USDT" required data-withdraw-address></label>
           </div>
           <div class="wallet-receive-fields" data-receive-mobile hidden>
-            <label>Numéro MTN<input name="phone" placeholder="+242..." autocomplete="tel" data-withdraw-phone></label>
-            <label>Nom qui apparaît<input name="beneficiary" placeholder="Nom du compte MTN" data-withdraw-beneficiary></label>
+            <label data-withdraw-phone-label>Numéro Mobile Money<input name="phone" placeholder="+243..." autocomplete="tel" data-withdraw-phone></label>
+            <label>Nom qui apparaît<input name="beneficiary" placeholder="Nom du compte Mobile Money" data-withdraw-beneficiary></label>
           </div>
           <label>Montant à retirer<input name="amount" type="number" min="10" step="0.01" value="10" required data-withdraw-amount></label>
           <p class="muted" data-withdraw-conversion hidden>
             Frais retrait 10% payables en GRSC: <strong data-withdraw-fee>0.00 GRSC</strong>.
             Montant reçu: <strong data-withdraw-net>10.00 USDT</strong><span data-withdraw-local-summary hidden> / <strong data-withdraw-local-amount>5 500 XAF</strong></span>.
-            Solde USDT débité: <strong data-withdraw-total>10.00 USDT</strong>.
+            Solde débité: <strong data-withdraw-total>10.00 USDT</strong>.
           </p>
           <button class="btn primary full" type="submit">Soumettre le retrait</button>
         </form>
@@ -92,12 +101,14 @@
           <h2>Conditions de retrait</h2>
           <div class="info-grid">
             <div><span>Minimum</span><strong>10 USDT</strong></div>
-            <div><span>Réseau</span><strong>BEP20 / MTN</strong></div>
+            <div><span>Réseau</span><strong>BEP20 / Mobile Money</strong></div>
             <div><span>Frais BEP20</span><strong>10% en GRSC</strong></div>
             <div><span>Frais retrait</span><strong>GRSC uniquement</strong></div>
             <div><span>Traitement</span><strong>Admin</strong></div>
           </div>
-          <p class="muted">Pour MTN, indiquez le numéro et le nom exact qui apparaît sur le compte. 1 USDT = 550 FCFA. Les frais de 10% sont convertis et débités exclusivement en GRSCOIN; le solde GRSC doit être suffisant avant la soumission.</p>
+          <p class="muted">Pour BEP20, indiquez l'adresse USDT de réception. Les frais de 10% sont convertis et débités exclusivement en GRSCOIN.</p>
+          <p class="muted" data-withdraw-mtn-instruction hidden>Pour MTN Congo Brazzaville, indiquez le numéro et le nom exact qui apparaît sur le compte. 1 USDT = 550 FCFA.</p>
+          <p class="muted" data-withdraw-rdc-instruction hidden>Pour la RDC, les retraits Mobile Money sont uniquement en USDT. Taux retrait: 1 USDT = 2 365 CDF. Convertissez d'abord vos AUSD en USDT avant de demander un retrait.</p>
         </section>
       </div>
     </section>

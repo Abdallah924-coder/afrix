@@ -134,6 +134,16 @@ export const defaultDb = {
       label: "Depot MTN Mobile Money Congo Brazzaville",
       value: process.env.MTN_CG_DEPOSIT_PHONE || "",
       note: "Nom beneficiaire: Estelle Larissa HONGANGA ODJILIE. Taux: 10 USDT = 6500 FCFA. Ajoutez uniquement la capture du paiement."
+    },
+    airtel_cd: {
+      label: "Depot Airtel Money RDC",
+      value: process.env.AIRTEL_CD_DEPOSIT_PHONE || "0972416764",
+      note: "Agent: BOLENKANDA NZENSEKA Jose. Effectuez un Cash Out aupres de l'agent. Taux depot: 1 USDT = 2800 CDF, 1 AUSD = 9100 CDF."
+    },
+    orange_cd: {
+      label: "Depot Orange Money RDC",
+      value: process.env.ORANGE_CD_DEPOSIT_PHONE || "0848210074",
+      note: "Agent: ZALA ZOA. Effectuez un Cash Out aupres de l'agent. Taux depot: 1 USDT = 2800 CDF, 1 AUSD = 9100 CDF."
     }
   }
 };

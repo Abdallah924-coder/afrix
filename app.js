@@ -46,6 +46,8 @@ const WITHDRAW_MOBILE_RATE = 550;
 const MTN_WITHDRAW_FEE_RATE = 0.10;
 const P2P_FEE_RATE = 0.01;
 const AUSD_PRICE_USDT = 3.25;
+const CDF_DEPOSIT_RATE_USDT = 2800;
+const CDF_WITHDRAWAL_RATE_USDT = 2365;
 const contactLinks = {
   telegramSupport: "https://t.me/Assistant_grs_core",
   telegramChannel: "https://t.me/ecosysteme_grs",
@@ -145,6 +147,7 @@ const emptyUser = {
 const formatUsdt = (value) => `${Number(value || 0).toFixed(2)} USDT`;
 const formatGrsc = (value) => `${Number(value || 0).toFixed(2)} GRSC`;
 const formatAusd = (value) => `${Number(value || 0).toFixed(2)} AUSD`;
+const formatCdf = (value) => `${Math.round(Number(value || 0)).toLocaleString("fr-FR")} CDF`;
 const formatAssetAmount = (value, asset = "USDT") => {
   if (asset === "AUSD") return formatAusd(value);
   if (asset === "GRSC") return formatGrsc(value);
@@ -190,6 +193,16 @@ function isCongoBrazzaville(value) {
     country === "congo" ||
     country === "cg" ||
     country.includes("republique du congo");
+}
+
+function isCongoKinshasa(value) {
+  const country = normalizeCountry(value);
+  return country === "rdc" ||
+    country === "cd" ||
+    country === "congo kinshasa" ||
+    country === "republique democratique du congo" ||
+    country.includes("democratic republic of congo") ||
+    country.includes("republique democratique du congo");
 }
 
 function normalizePaymentMethods(value) {
@@ -705,13 +718,22 @@ function renderWallet(user) {
   const targetValue = document.querySelector("[data-deposit-target]");
   const targetNote = document.querySelector("[data-deposit-target-note]");
   const depositAmount = document.querySelector("[data-deposit-amount]");
+  const depositAmountLabel = document.querySelector("[data-deposit-amount-label]");
   const mtnDepositOption = document.querySelector("[data-mtn-cg-option]");
+  const rdcDepositOptions = document.querySelectorAll("[data-rdc-option]");
+  const depositMtnInstruction = document.querySelector("[data-deposit-mtn-instruction]");
+  const depositRdcInstruction = document.querySelector("[data-deposit-rdc-instruction]");
   const txRefLabel = document.querySelector("[data-deposit-txref-label]");
   const txRefInput = document.querySelector("[data-deposit-txref]");
   const withdrawAmount = document.querySelector("[data-withdraw-amount]");
   const mtnWithdrawOption = document.querySelector("[data-withdraw-mtn-cg-option]");
+  const rdcWithdrawOptions = document.querySelectorAll("[data-withdraw-rdc-option]");
+  const withdrawAssetInput = document.querySelector("[data-withdraw-asset]");
+  const withdrawMtnInstruction = document.querySelector("[data-withdraw-mtn-instruction]");
+  const withdrawRdcInstruction = document.querySelector("[data-withdraw-rdc-instruction]");
   const withdrawAddress = document.querySelector("[data-withdraw-address]");
   const withdrawPhone = document.querySelector("[data-withdraw-phone]");
+  const withdrawPhoneLabel = document.querySelector("[data-withdraw-phone-label]");
   const withdrawBeneficiary = document.querySelector("[data-withdraw-beneficiary]");
   const depositConversion = document.querySelector("[data-deposit-conversion]");
   const withdrawConversion = document.querySelector("[data-withdraw-conversion]");
@@ -724,75 +746,110 @@ function renderWallet(user) {
   const grsCoinPerUsdt = getGrsCoinPerUsdt(user);
 
   function updateDepositConversion() {
-    if (depositConversion) depositConversion.hidden = true;
+    const method = depositMethod?.value || "bep20";
+    const isRdcMethod = method === "airtel_cd" || method === "orange_cd";
+    const isMtn = method === "mtn_cg";
     const amount = Number(depositAmount?.value || 0);
-    if (depositLocalAmount) depositLocalAmount.textContent = formatXaf(amount * DEPOSIT_MOBILE_RATE);
+    if (depositConversion) depositConversion.hidden = !(isRdcMethod || isMtn);
+    if (depositLocalAmount) {
+      depositLocalAmount.textContent = isRdcMethod
+        ? formatCdf(amount * CDF_DEPOSIT_RATE_USDT)
+        : formatXaf(amount * DEPOSIT_MOBILE_RATE);
+    }
   }
 
   function updateWithdrawConversion() {
     const amount = Number(withdrawAmount?.value || 0);
-    const isMtn = withdrawMethod?.value === "mtn_cg";
+    const method = withdrawMethod?.value || "bep20";
+    const asset = "USDT";
+    const isMtn = method === "mtn_cg";
+    const isRdcMethod = method === "airtel_cd" || method === "orange_cd";
     const fee = Number((amount * MTN_WITHDRAW_FEE_RATE).toFixed(2));
     const feeGrs = grsCoinPerUsdt ? Number((fee * grsCoinPerUsdt).toFixed(2)) : 0;
     if (withdrawConversion) withdrawConversion.hidden = false;
     if (withdrawFee) withdrawFee.textContent = grsCoinPerUsdt ? `${formatGrsc(feeGrs)} (${formatUsdt(fee)} equivalent)` : "Prix GRSC indisponible";
-    if (withdrawNet) withdrawNet.textContent = formatUsdt(amount);
-    if (withdrawTotal) withdrawTotal.textContent = formatUsdt(amount);
-    if (withdrawLocalAmount) withdrawLocalAmount.textContent = formatXaf(amount * WITHDRAW_MOBILE_RATE);
-    if (withdrawLocalSummary) withdrawLocalSummary.hidden = !isMtn;
+    if (withdrawNet) withdrawNet.textContent = formatAssetAmount(amount, asset);
+    if (withdrawTotal) withdrawTotal.textContent = formatAssetAmount(amount, asset);
+    if (withdrawLocalAmount) {
+      withdrawLocalAmount.textContent = isRdcMethod
+        ? formatCdf(amount * CDF_WITHDRAWAL_RATE_USDT)
+        : formatXaf(amount * WITHDRAW_MOBILE_RATE);
+    }
+    if (withdrawLocalSummary) withdrawLocalSummary.hidden = !(isMtn || isRdcMethod);
   }
 
   function updateDepositTarget() {
     const canUseMtnCongo = isCongoBrazzaville(user.country);
+    const canUseRdc = isCongoKinshasa(user.country);
     if (mtnDepositOption) mtnDepositOption.hidden = !canUseMtnCongo;
+    rdcDepositOptions.forEach((option) => { option.hidden = !canUseRdc; });
     if (!canUseMtnCongo && depositMethod?.value === "mtn_cg") depositMethod.value = "bep20";
+    if (!canUseRdc && ["airtel_cd", "orange_cd"].includes(depositMethod?.value)) depositMethod.value = "bep20";
     const method = depositMethod?.value || "bep20";
     const target = user.paymentTargets?.[method];
+    const isMobileMethod = method === "mtn_cg" || method === "airtel_cd" || method === "orange_cd";
+    const isRdcMethod = method === "airtel_cd" || method === "orange_cd";
+
+    if (depositAmountLabel?.firstChild) depositAmountLabel.firstChild.textContent = "Montant minimum 10 USDT";
+    if (depositMtnInstruction) depositMtnInstruction.hidden = method !== "mtn_cg";
+    if (depositRdcInstruction) depositRdcInstruction.hidden = !isRdcMethod;
 
     if (targetLabel) targetLabel.textContent = target?.label || "Coordonnees de depot indisponibles";
     if (targetValue) targetValue.textContent = target?.value || "Indisponible";
     if (targetNote) targetNote.textContent = target?.note || "Connectez le backend pour charger les coordonnees officielles.";
     if (txRefLabel) {
-      txRefLabel.hidden = method === "mtn_cg";
+      txRefLabel.hidden = isMobileMethod;
       txRefLabel.firstChild.textContent = "Référence transaction crypto";
     }
     if (txRefInput) {
-      txRefInput.required = method !== "mtn_cg";
-      txRefInput.disabled = method === "mtn_cg";
+      txRefInput.required = !isMobileMethod;
+      txRefInput.disabled = isMobileMethod;
       txRefInput.placeholder = "Hash de transaction";
-      if (method === "mtn_cg") txRefInput.value = "";
+      if (isMobileMethod) txRefInput.value = "";
     }
     updateDepositConversion();
   }
 
   function updateWithdrawFields() {
     const canUseMtn = isCongoBrazzaville(user.country);
+    const canUseRdc = isCongoKinshasa(user.country);
     if (mtnWithdrawOption) mtnWithdrawOption.hidden = !canUseMtn;
+    rdcWithdrawOptions.forEach((option) => { option.hidden = !canUseRdc; });
     if (!canUseMtn && withdrawMethod?.value === "mtn_cg") withdrawMethod.value = "bep20";
+    if (!canUseRdc && ["airtel_cd", "orange_cd"].includes(withdrawMethod?.value)) withdrawMethod.value = "bep20";
     const method = withdrawMethod?.value || "bep20";
-    const isMtn = method === "mtn_cg";
-    if (receiveCrypto) receiveCrypto.hidden = isMtn;
-    if (receiveMobile) receiveMobile.hidden = !isMtn;
+    const isMobileMethod = method === "mtn_cg" || method === "airtel_cd" || method === "orange_cd";
+    const isRdcMethod = method === "airtel_cd" || method === "orange_cd";
+    if (withdrawAssetInput) {
+      withdrawAssetInput.value = "USDT";
+    }
+    if (withdrawMtnInstruction) withdrawMtnInstruction.hidden = method !== "mtn_cg";
+    if (withdrawRdcInstruction) withdrawRdcInstruction.hidden = !isRdcMethod;
+    if (receiveCrypto) receiveCrypto.hidden = isMobileMethod;
+    if (receiveMobile) receiveMobile.hidden = !isMobileMethod;
     if (withdrawAddress) {
-      withdrawAddress.required = !isMtn;
-      withdrawAddress.disabled = isMtn;
-      if (isMtn) withdrawAddress.value = "";
+      withdrawAddress.required = !isMobileMethod;
+      withdrawAddress.disabled = isMobileMethod;
+      if (isMobileMethod) withdrawAddress.value = "";
     }
     if (withdrawPhone) {
-      withdrawPhone.required = isMtn;
-      withdrawPhone.disabled = !isMtn;
-      if (!isMtn) withdrawPhone.value = "";
+      withdrawPhone.required = isMobileMethod;
+      withdrawPhone.disabled = !isMobileMethod;
+      withdrawPhone.placeholder = isRdcMethod ? "+243..." : "+242...";
+      if (!isMobileMethod) withdrawPhone.value = "";
     }
+    if (withdrawPhoneLabel?.firstChild) withdrawPhoneLabel.firstChild.textContent = isRdcMethod ? "Numéro Airtel/Orange Money" : "Numéro Mobile Money";
     if (withdrawBeneficiary) {
-      withdrawBeneficiary.required = isMtn;
-      withdrawBeneficiary.disabled = !isMtn;
-      if (!isMtn) withdrawBeneficiary.value = "";
+      withdrawBeneficiary.required = isMobileMethod;
+      withdrawBeneficiary.disabled = !isMobileMethod;
+      if (!isMobileMethod) withdrawBeneficiary.value = "";
     }
     updateWithdrawConversion();
   }
 
   depositMethod?.addEventListener("change", updateDepositTarget);
   withdrawMethod?.addEventListener("change", updateWithdrawFields);
+  withdrawAssetInput?.addEventListener("change", updateWithdrawConversion);
   depositAmount?.addEventListener("input", updateDepositConversion);
   withdrawAmount?.addEventListener("input", updateWithdrawConversion);
   updateDepositTarget();
@@ -2360,7 +2417,7 @@ function setupActions(user) {
         headers: authHeaders(),
         body: new FormData(form)
       });
-      if (response.reference) showCicoReference(response.reference, "Depot", response.amount, response.fee || 0);
+      if (response.reference) showCicoReference(response.reference, "Depot", response.amount, response.fee || 0, null, { asset: response.asset || "USDT" });
       showToast("Demande de depot enregistree. Elle est visible dans vos transactions.");
       form.reset();
       loadCurrentUser()
@@ -2390,10 +2447,11 @@ function setupActions(user) {
     try {
       const grsCoinPerUsdt = getGrsCoinPerUsdt(user);
       const amount = Number(form.querySelector("[name='amount']")?.value || 0);
+      const asset = "USDT";
       const fee = Number((amount * MTN_WITHDRAW_FEE_RATE).toFixed(2));
       const feeGrs = grsCoinPerUsdt ? Number((fee * grsCoinPerUsdt).toFixed(2)) : 0;
-      if (amount > Number(user.balance || 0)) {
-        showToast(`Solde USDT insuffisant. Disponible: ${formatUsdt(user.balance)}.`, "error");
+      if (amount > assetBalance(user, asset)) {
+        showToast(`Solde ${asset} insuffisant. Disponible: ${formatAssetAmount(assetBalance(user, asset), asset)}.`, "error");
         return;
       }
       if (!grsCoinPerUsdt || feeGrs > Number(user.grsBalance || 0)) {
@@ -2403,6 +2461,7 @@ function setupActions(user) {
       const response = await apiJson("/withdrawals", formToObject(form));
       if (response.reference) {
         showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0, response.netAmount, {
+          asset: response.asset || "USDT",
           feeAsset: response.feeAsset,
           feeGrsAmount: response.feeGrsAmount
         });
@@ -3173,16 +3232,17 @@ function showCicoReference(reference, operation, amount, fee, netAmount = null, 
   const feeLabel = options.feeAsset === "GRSC"
     ? `${formatGrsc(options.feeGrsAmount || 0)} de frais GRSC`
     : `${formatUsdt(fee)} de frais`;
+  const asset = options.asset || "USDT";
   if (netAmount !== null && Number.isFinite(Number(netAmount))) {
-    refSummary.textContent = `${operation}: ${formatUsdt(amount)} - ${feeLabel}. Montant reçu: ${formatUsdt(netAmount)}.`;
+    refSummary.textContent = `${operation}: ${formatAssetAmount(amount, asset)} - ${feeLabel}. Montant reçu: ${formatAssetAmount(netAmount, asset)}.`;
   } else {
-    refSummary.textContent = `${operation}: ${formatUsdt(amount)}${fee || options.feeGrsAmount ? ` + ${feeLabel}` : " sans frais"}.`;
+    refSummary.textContent = `${operation}: ${formatAssetAmount(amount, asset)}${fee || options.feeGrsAmount ? ` + ${feeLabel}` : " sans frais"}.`;
   }
   output.hidden = false;
 
   document.querySelectorAll(".merchant-card a[href^='https://wa.me/']").forEach((link) => {
     const phone = link.href.split("?")[0];
-    const text = encodeURIComponent(`Bonjour, voici ma reference AFRIX Money: ${reference}. Operation: ${operation} ${formatUsdt(amount)}.`);
+    const text = encodeURIComponent(`Bonjour, voici ma reference AFRIX Money: ${reference}. Operation: ${operation} ${formatAssetAmount(amount, asset)}.`);
     link.href = `${phone}?text=${text}`;
   });
 }
