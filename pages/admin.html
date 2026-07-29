@@ -36,6 +36,7 @@
       <button class="admin-section-tab" type="button" data-admin-section-trigger="withdrawals">Retraits <span class="admin-tab-badge" data-pending-withdrawals-count>0</span></button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="trading">Trading</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="staking">Staking</button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="founders">Founders</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="swap">Swap GRSCOIN</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="money">AFRIX Money</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="operations">Opérations</button>
@@ -66,6 +67,7 @@
             <button class="btn secondary" type="button" data-admin-section-trigger="withdrawals">Traiter les retraits</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="trading">Trading Program</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="staking">Staking Program</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="founders">GRS CORE FOUNDERS CLUB</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="swap">Swap GRSCOIN</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="money">AFRIX Money</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="tools">Outils admin</button>
@@ -109,6 +111,8 @@
           <div><span>Capital trading actif</span><strong data-admin-summary-usdt="programStats.trading.activeCapital">0 USDT</strong></div>
           <div><span>Stakings actifs</span><strong data-admin-summary="programStats.staking.activeCount">0</strong></div>
           <div><span>GRSC verrouillés</span><strong data-admin-summary-grsc="programStats.staking.activeLocked">0 GRSC</strong></div>
+          <div><span>Founders actifs</span><strong data-admin-summary="programStats.founders.activeCount">0</strong></div>
+          <div><span>GRSC Founders</span><strong data-admin-summary-grsc="programStats.founders.activeLocked">0 GRSC</strong></div>
           <div><span>GRSC émis</span><strong data-admin-summary-grsc="swap.issuedSupply">0 GRSC</strong></div>
           <div><span>Volume AFRIX Money</span><strong data-admin-summary-usdt="money.volume">0 USDT</strong></div>
         </div>
@@ -317,6 +321,14 @@
         <div class="panel-head"><h1>AFRIX Staking Program</h1><button class="btn secondary" type="button" data-admin-export="staking">CSV</button></div>
         <div class="admin-program-summary" data-admin-program-summary="staking"></div>
         <div class="admin-detail-list" data-admin-program-list="staking"></div>
+      </article>
+    </section>
+
+    <section class="admin-section-panel" data-admin-section="founders" hidden>
+      <article class="panel">
+        <div class="panel-head"><h1>GRS CORE FOUNDERS CLUB</h1><button class="btn secondary" type="button" data-admin-export="founders">CSV</button></div>
+        <div class="admin-program-summary" data-admin-program-summary="founders"></div>
+        <div class="admin-detail-list" data-admin-program-list="founders"></div>
       </article>
     </section>
 

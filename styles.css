@@ -1685,6 +1685,40 @@ body[data-page="wallet"] select {
   overflow-wrap: anywhere;
 }
 .partner-program-notes { margin-bottom: 18px; }
+.founders-hero {
+  background:
+    radial-gradient(circle at 86% 18%, rgba(233, 189, 99, .18), transparent 31%),
+    linear-gradient(120deg, rgba(16, 31, 28, .98), rgba(20, 43, 38, .84));
+}
+.founders-intro,
+.founders-program-notes,
+.founders-security,
+.founders-risk-note {
+  margin-bottom: 18px;
+}
+.founders-intro p,
+.founders-risk-note p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+.founders-levels .partner-level-card {
+  min-height: 300px;
+}
+.founders-levels .partner-level-card p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.founders-levels .partner-requirements {
+  grid-template-columns: 1fr;
+}
+.founder-legend-card {
+  border-color: rgba(233, 189, 99, .72);
+}
+.founders-risk-note {
+  border-color: rgba(233, 189, 99, .36);
+  background:
+    linear-gradient(120deg, rgba(233, 189, 99, .1), rgba(16, 31, 28, .94));
+}
 .money-hero h1 { max-width: 980px; margin-bottom: 12px; font-size: 46px; }
 .money-hero p { max-width: 920px; line-height: 1.7; }
 .money-fees {

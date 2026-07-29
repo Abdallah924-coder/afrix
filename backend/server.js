@@ -32,6 +32,7 @@ import {
   TOKEN_TTL,
   bonusRates,
   defaultDb,
+  foundersPlans,
   isProduction,
   jwtSecret,
   legacyPageRoutes,
@@ -100,6 +101,9 @@ const CDF_WITHDRAWAL_RATE_USDT = 2365;
 const STAKING_ADMIN_COMMISSION_RATE = 0.03;
 const STAKING_DEVELOPER_COMMISSION_RATE = 0.03;
 const STAKING_PLATFORM_COMMISSION_RATE = 0.04;
+const FOUNDERS_ACTIVATION_FEE_RATE = 0.01;
+const FOUNDERS_ACTIVATION_ADMIN_SHARE = 0.10;
+const FOUNDERS_ACTIVATION_DEVELOPER_SHARE = 0.10;
 const GRSCOIN_TOTAL_SUPPLY = 4_200_000;
 const ADMIN_RECENT_TRANSACTIONS_LIMIT = 500;
 const ADMIN_RECENT_LEDGER_LIMIT = 500;
@@ -145,7 +149,8 @@ function normalizeUserRecord(user = {}) {
       bonus: money(user.merchantWallet?.bonus)
     },
     activePlans: Array.isArray(user.activePlans) ? user.activePlans : [],
-    activeStakes: Array.isArray(user.activeStakes) ? user.activeStakes : []
+    activeStakes: Array.isArray(user.activeStakes) ? user.activeStakes : [],
+    activeFounders: Array.isArray(user.activeFounders) ? user.activeFounders : []
   };
 }
 
@@ -465,21 +470,38 @@ function buildLedgerEntries(entries, metadata = {}) {
   const groupId = metadata.groupId || nanoid();
   const createdAt = nowIso();
   return entries
-    .filter((entry) => money(entry.amount) > 0)
-    .map((entry) => ({
+    .filter((entry) => roundedAmount(entry.amount, entry.precision || metadata.precision || 2) > 0)
+    .map((entry) => {
+      const precision = entry.precision || metadata.precision || 2;
+      const balancePrecision = entry.balancePrecision || precision;
+      return ({
       id: nanoid(),
       groupId,
       accountType: entry.accountType,
       accountId: entry.accountId,
       direction: entry.direction,
-      amount: money(entry.amount),
-      balanceAfter: money(entry.balanceAfter),
+      amount: roundedAmount(entry.amount, precision),
+      balanceAfter: roundedAmount(entry.balanceAfter, balancePrecision),
       description: entry.description,
       referenceId: metadata.referenceId || null,
       source: metadata.source || "system",
       createdAt,
       metadata: metadata.extra || {}
-    }));
+      });
+    });
+}
+
+function roundedAmount(value, precision = 2) {
+  return Number(Number(value || 0).toFixed(precision));
+}
+
+function networkBonusMoney(value) {
+  return roundedAmount(value, 4);
+}
+
+function formatNetworkBonusAmount(value, asset = "USDT") {
+  const amount = networkBonusMoney(value);
+  return `+${amount.toFixed(4)} ${asset}`;
 }
 
 function sanitizeUser(user) {
@@ -604,6 +626,7 @@ function transactionProgram(tx = {}) {
   const type = tx.type || "";
   const description = tx.description || "";
   if (type === "Swap" || asset.includes("GRSC") || source.includes("grscoin") || source.includes("afrix_swap")) return "swap";
+  if (source.includes("founders") || tx.metadata?.activeFounderId || description.toLowerCase().includes("founder")) return "founders";
   if (source.includes("staking") || tx.metadata?.stakeId || description.toLowerCase().includes("staking")) return "staking";
   if (type === "Plan" || type === "Gain" || tx.metadata?.activePlanId || tx.metadata?.planId) return "trading";
   if (type === "P2P" || type === "CICO" || type === "Merchant" || source.includes("cico") || source.includes("p2p")) return "money";
@@ -615,6 +638,7 @@ function transactionProgram(tx = {}) {
 function compactAdminUser(user = {}) {
   const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
   const activeStakes = Array.isArray(user.activeStakes) ? user.activeStakes : [];
+  const activeFounders = Array.isArray(user.activeFounders) ? user.activeFounders : [];
   return {
     id: user.id,
     fullName: user.fullName || user.email,
@@ -635,8 +659,10 @@ function compactAdminUser(user = {}) {
     bonusLevelsOverride: Number(user.bonusLevelsOverride || 0),
     activePlansCount: activePlans.filter((plan) => plan.status === "active").length,
     activeStakesCount: activeStakes.filter((stake) => stake.status === "active").length,
+    activeFoundersCount: activeFounders.filter((item) => item.status === "active").length,
     activeInvestmentAmount: money(activePlans.filter((plan) => plan.status === "active").reduce((total, plan) => total + Number(plan.amount || 0), 0)),
     activeStakeAmount: money(activeStakes.filter((stake) => stake.status === "active").reduce((total, stake) => total + Number(stake.amount || 0), 0)),
+    activeFounderAmount: money(activeFounders.filter((item) => item.status === "active").reduce((total, item) => total + Number(item.amount || 0), 0)),
     merchantStatus: user.merchantProfile?.status || "Aucun profil",
     createdAt: user.createdAt || ""
   };
@@ -676,6 +702,11 @@ function adminProgramStatsFromUsers(users = []) {
     .map((stake) => ({ ...stake, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
   const allStaking = users.flatMap((user) => (user.activeStakes || [])
     .map((stake) => ({ ...stake, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
+  const activeFounders = users.flatMap((user) => (user.activeFounders || [])
+    .filter((item) => item.status === "active")
+    .map((item) => ({ ...item, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
+  const allFounders = users.flatMap((user) => (user.activeFounders || [])
+    .map((item) => ({ ...item, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
 
   return {
     trading: {
@@ -689,6 +720,12 @@ function adminProgramStatsFromUsers(users = []) {
       totalCount: allStaking.length,
       activeLocked: money(activeStaking.reduce((total, stake) => total + Number(stake.amount || 0), 0)),
       totalEarned: money(allStaking.reduce((total, stake) => total + Number(stake.earnedAmount || 0), 0))
+    },
+    founders: {
+      activeCount: activeFounders.length,
+      totalCount: allFounders.length,
+      activeLocked: money(activeFounders.reduce((total, item) => total + Number(item.amount || 0), 0)),
+      totalReward: money(allFounders.reduce((total, item) => total + Number(item.rewardAmount || 0), 0))
     }
   };
 }
@@ -1122,6 +1159,11 @@ function parseStakingPlan(planName) {
   if (normalized.includes("premium")) return stakingPlans[2];
   if (normalized.includes("elite")) return stakingPlans[3];
   return stakingPlans.find((plan) => plan.id === normalized) || null;
+}
+
+function parseFoundersPlan(planName) {
+  const normalized = String(planName || "").toLowerCase();
+  return foundersPlans.find((plan) => plan.id === normalized || plan.name.toLowerCase() === normalized) || null;
 }
 
 function planForAmount(amount) {
@@ -1696,7 +1738,8 @@ async function processDailyPlanEarnings(options = {}) {
       ...(onlyUserId ? { id: onlyUserId } : {}),
       $or: [
         { activePlans: { $elemMatch: { status: "active" } } },
-        { activeStakes: { $elemMatch: { status: "active" } } }
+        { activeStakes: { $elemMatch: { status: "active" } } },
+        { activeFounders: { $elemMatch: { status: "active" } } }
       ]
     }
   ).lean();
@@ -1817,10 +1860,10 @@ async function processDailyPlanEarnings(options = {}) {
             if (!referrer) break;
 
             if (unlockedReferralLevels(referrer) > level) {
-              const bonus = money((payout * bonusRates[level]) / 100);
+              const bonus = networkBonusMoney((payout * bonusRates[level]) / 100);
               if (bonus > 0) {
-                const referrerBalance = money(Number(referrer.balance || 0) + bonus);
-                const referrerBonus = money(Number(referrer.bonus || 0) + bonus);
+                const referrerBalance = networkBonusMoney(Number(referrer.balance || 0) + bonus);
+                const referrerBonus = networkBonusMoney(Number(referrer.bonus || 0) + bonus);
                 await UserModel.updateOne(
                   { id: referrer.id },
                   { $set: { balance: referrerBalance, bonus: referrerBonus } },
@@ -1837,14 +1880,18 @@ async function processDailyPlanEarnings(options = {}) {
                   direction: "debit",
                   amount: bonus,
                   balanceAfter: bonusPlatform.balance,
-                  description: `Bonus reseau journalier niveau ${level + 1}`
+                  description: `Bonus reseau journalier niveau ${level + 1}`,
+                  precision: 4,
+                  balancePrecision: 4
                 }, {
                   accountType: "user",
                   accountId: referrer.id,
                   direction: "credit",
                   amount: bonus,
                   balanceAfter: referrerBalance,
-                  description: `Bonus reseau journalier niveau ${level + 1}`
+                  description: `Bonus reseau journalier niveau ${level + 1}`,
+                  precision: 4,
+                  balancePrecision: 4
                 }], {
                   source: "network_daily_bonus",
                   referenceId: plan.id,
@@ -1857,13 +1904,13 @@ async function processDailyPlanEarnings(options = {}) {
                   type: "Bonus",
                   description: `Bonus reseau journalier niveau ${level + 1} (${paidDayLabel})`,
                   amount: bonus,
-                  displayAmount: formatAmount(bonus, "+"),
+                  displayAmount: formatNetworkBonusAmount(bonus, "USDT"),
                   status: "Completed",
                   createdAt: nowIso(),
-                  metadata: { sourceUserId: user.id, level: level + 1, activePlanId: plan.id, planId: plan.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
+                  metadata: { sourceUserId: user.id, level: level + 1, rate: bonusRates[level], activePlanId: plan.id, planId: plan.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
                 }], { session });
                 result.creditedNetworkBonuses += 1;
-                result.creditedNetworkAmount = money(result.creditedNetworkAmount + bonus);
+                result.creditedNetworkAmount = networkBonusMoney(result.creditedNetworkAmount + bonus);
               }
             }
 
@@ -1964,9 +2011,9 @@ async function processDailyPlanEarnings(options = {}) {
             if (!referrer) break;
 
             if (unlockedReferralLevels(referrer) > level) {
-              const bonus = money((payout * bonusRates[level]) / 100);
+              const bonus = networkBonusMoney((payout * bonusRates[level]) / 100);
               if (bonus > 0) {
-                const referrerGrsBalance = money(Number(referrer.grsBalance || 0) + bonus);
+                const referrerGrsBalance = networkBonusMoney(Number(referrer.grsBalance || 0) + bonus);
                 await UserModel.updateOne(
                   { id: referrer.id },
                   { $set: { grsBalance: referrerGrsBalance } },
@@ -1978,7 +2025,9 @@ async function processDailyPlanEarnings(options = {}) {
                   direction: "credit",
                   amount: bonus,
                   balanceAfter: referrerGrsBalance,
-                  description: `Bonus staking journalier niveau ${level + 1}`
+                  description: `Bonus staking journalier niveau ${level + 1}`,
+                  precision: 4,
+                  balancePrecision: 4
                 }], {
                   source: "staking_daily_referral_bonus",
                   referenceId: stake.id,
@@ -1991,13 +2040,148 @@ async function processDailyPlanEarnings(options = {}) {
                   type: "Bonus",
                   description: `Bonus staking journalier niveau ${level + 1} (${paidDayLabel})`,
                   amount: bonus,
-                  displayAmount: `+${bonus.toFixed(2)} GRSC`,
+                  displayAmount: formatNetworkBonusAmount(bonus, "GRSC"),
                   status: "Completed",
                   createdAt: nowIso(),
-                  metadata: { sourceUserId: user.id, level: level + 1, stakeId: stake.id, planId: stake.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
+                  metadata: { sourceUserId: user.id, level: level + 1, rate: bonusRates[level], stakeId: stake.id, planId: stake.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
                 }], { session });
                 result.creditedNetworkBonuses += 1;
-                result.creditedNetworkAmount = money(result.creditedNetworkAmount + bonus);
+                result.creditedNetworkAmount = networkBonusMoney(result.creditedNetworkAmount + bonus);
+              }
+            }
+
+            currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
+          }
+
+          result.creditedUsers += 1;
+          result.creditedAmount = money(result.creditedAmount + payout);
+        }));
+      } finally {
+        await session.endSession();
+      }
+    }
+
+    const activeFounders = Array.isArray(userSnapshot.activeFounders) ? userSnapshot.activeFounders : [];
+    for (const founderSnapshot of activeFounders) {
+      if (founderSnapshot.status !== "active") continue;
+
+      const rewardAmount = positiveFiniteNumber(founderSnapshot.rewardAmount);
+      const durationDays = positiveFiniteNumber(founderSnapshot.durationDays);
+      if (!rewardAmount || !durationDays) {
+        result.skippedInvalidPlans += 1;
+        logger.error({ userId: userSnapshot.id, founderId: founderSnapshot.id, rewardAmount: founderSnapshot.rewardAmount, durationDays: founderSnapshot.durationDays }, "Invalid active founder skipped during daily earnings");
+        continue;
+      }
+
+      const session = await mongoose.startSession();
+      try {
+        await withMongoRetry(() => session.withTransaction(async () => {
+          const user = normalizeUserRecord(await UserModel.findOne({ id: userSnapshot.id }, null, { session }).lean());
+          if (!user) return;
+          const foundersList = Array.isArray(user.activeFounders) ? user.activeFounders : [];
+          const founder = foundersList.find((item) => item.id === founderSnapshot.id);
+          if (!founder || founder.status !== "active") return;
+
+          const currentDaysPaid = Math.max(0, Number.isFinite(Number(founder.daysPaid)) ? Number(founder.daysPaid) : 0);
+          const currentRewardAmount = positiveFiniteNumber(founder.rewardAmount);
+          const currentDurationDays = positiveFiniteNumber(founder.durationDays);
+          if (!currentRewardAmount || !currentDurationDays || currentDaysPaid >= currentDurationDays) return;
+
+          const nextPayoutAt = planNextPayoutTimestamp(founder);
+          const dueDays = Math.min(duePayoutSlots(nextPayoutAt), currentDurationDays - currentDaysPaid);
+          if (dueDays <= 0) return;
+
+          const payout = money((currentRewardAmount / currentDurationDays) * dueDays);
+          if (payout <= 0) return;
+
+          const lastPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays - 1);
+          const paidDayFrom = currentDaysPaid + 1;
+          const paidDayTo = currentDaysPaid + dueDays;
+          const paidDayLabel = paidDayFrom === paidDayTo ? `Jour ${paidDayTo}` : `Jours ${paidDayFrom}-${paidDayTo}`;
+          founder.daysPaid = currentDaysPaid + dueDays;
+          founder.earnedAmount = money(Number(founder.earnedAmount || 0) + payout);
+          founder.lastPayoutAt = lastPayoutAt;
+          founder.lastPayoutDate = String(lastPayoutAt).slice(0, 10);
+          founder.nextPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays);
+
+          await UserModel.updateOne(
+            { id: user.id },
+            { $set: { activeFounders: foundersList } },
+            { session }
+          );
+
+          const ledgerEntries = buildLedgerEntries([{
+            accountType: "founders_grs",
+            accountId: user.id,
+            direction: "credit",
+            amount: payout,
+            balanceAfter: money(Number(founder.amount || 0) + Number(founder.earnedAmount || 0)),
+            description: `Gain Founders bloque ${founder.name || "GRS Core Founders Club"}`
+          }], {
+            source: "founders_daily_earning",
+            referenceId: founder.id,
+            extra: { userId: user.id, activeFounderId: founder.id, planId: founder.planId, days: dueDays, payoutDate }
+          });
+          if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+
+          await TransactionModel.create([{
+            id: nanoid(),
+            userId: user.id,
+            type: "Gain",
+            description: `Gain Founders bloque ${founder.name || "GRS Core Founders Club"} (${paidDayLabel})`,
+            amount: payout,
+            displayAmount: `+${payout.toFixed(2)} GRSC bloque`,
+            status: "Active",
+            createdAt: nowIso(),
+            metadata: { source: "founders_daily_earning", activeFounderId: founder.id, planId: founder.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
+          }], { session });
+
+          let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
+          for (let level = 0; level < bonusRates.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
+            const referrerQuery = [];
+            if (currentReferrer.id) referrerQuery.push({ id: currentReferrer.id });
+            if (currentReferrer.email) referrerQuery.push({ email: normalizeEmail(currentReferrer.email) });
+            if (currentReferrer.code) referrerQuery.push({ refCode: normalizeInvitationCode(currentReferrer.code) });
+            const referrer = referrerQuery.length ? normalizeUserRecord(await UserModel.findOne({ $or: referrerQuery }, null, { session }).lean()) : null;
+            if (!referrer) break;
+
+            if (unlockedReferralLevels(referrer) > level) {
+              const bonus = networkBonusMoney((payout * bonusRates[level]) / 100);
+              if (bonus > 0) {
+                const referrerGrsBalance = networkBonusMoney(Number(referrer.grsBalance || 0) + bonus);
+                await UserModel.updateOne(
+                  { id: referrer.id },
+                  { $set: { grsBalance: referrerGrsBalance } },
+                  { session }
+                );
+                const bonusLedger = buildLedgerEntries([{
+                  accountType: "user_grs",
+                  accountId: referrer.id,
+                  direction: "credit",
+                  amount: bonus,
+                  balanceAfter: referrerGrsBalance,
+                  description: `Bonus Founders journalier niveau ${level + 1}`,
+                  precision: 4,
+                  balancePrecision: 4
+                }], {
+                  source: "founders_daily_referral_bonus",
+                  referenceId: founder.id,
+                  extra: { sourceUserId: user.id, level: level + 1, activeFounderId: founder.id, planId: founder.planId, days: dueDays, payoutDate }
+                });
+                if (bonusLedger.length) await LedgerEntryModel.insertMany(bonusLedger, { session });
+                await TransactionModel.create([{
+                  id: nanoid(),
+                  userId: referrer.id,
+                  type: "Bonus",
+                  description: `Bonus Founders journalier niveau ${level + 1} (${paidDayLabel})`,
+                  amount: bonus,
+                  displayAmount: formatNetworkBonusAmount(bonus, "GRSC"),
+                  status: "Completed",
+                  createdAt: nowIso(),
+                  metadata: { sourceUserId: user.id, level: level + 1, rate: bonusRates[level], activeFounderId: founder.id, planId: founder.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
+                }], { session });
+                result.creditedNetworkBonuses += 1;
+                result.creditedNetworkAmount = networkBonusMoney(result.creditedNetworkAmount + bonus);
               }
             }
 
@@ -2103,6 +2287,7 @@ async function ensureAdminUser() {
         merchantWallet: { available: 0, pending: 0, bonus: 0 },
         activePlans: [],
         activeStakes: [],
+        activeFounders: [],
         createdAt: nowIso()
       }
     },
@@ -2142,6 +2327,7 @@ async function ensureCommissionAccount({ email, password, fullName, role }) {
         merchantWallet: { available: 0, pending: 0, bonus: 0 },
         activePlans: [],
         activeStakes: [],
+        activeFounders: [],
         createdAt: nowIso()
       }
     },
@@ -2294,6 +2480,7 @@ app.post("/api/auth/register", validate(z.object({
     merchantWallet: { available: 0, pending: 0, bonus: 0 },
     activePlans: [],
     activeStakes: [],
+    activeFounders: [],
     createdAt: nowIso()
   });
 
@@ -2628,8 +2815,16 @@ app.post("/api/swap/grscoin-deposits", authenticate, requirePlatformAccess(), up
   if (!txRef) return res.status(400).json({ message: "Reference transaction requise." });
   if (!req.file?.buffer?.length) return res.status(400).json({ message: "Preuve de paiement requise." });
 
-  const grsAmount = method === "usdt_bep20" && creditAsset === "GRSC" ? grsFromUsdt(rawAmount) : method === "grscoin" ? rawAmount : 0;
-  const ausdAmount = method === "usdt_bep20" && creditAsset === "AUSD" ? money(rawAmount / AUSD_PRICE_USDT) : 0;
+  const isUsdtBep20Deposit = method === "usdt_bep20";
+  const feeUsdtAmount = isUsdtBep20Deposit ? money(rawAmount * GRSCOIN_SWAP_FEE_RATE) : 0;
+  const adminCommission = isUsdtBep20Deposit ? money(rawAmount * GRSCOIN_SWAP_ADMIN_RATE) : 0;
+  const developerCommission = isUsdtBep20Deposit ? money(rawAmount * GRSCOIN_SWAP_DEVELOPER_RATE) : 0;
+  const platformCommission = isUsdtBep20Deposit ? money(feeUsdtAmount - adminCommission - developerCommission) : 0;
+  const netUsdtAmount = isUsdtBep20Deposit ? money(rawAmount - feeUsdtAmount) : rawAmount;
+  const grossGrsAmount = isUsdtBep20Deposit && creditAsset === "GRSC" ? grsFromUsdt(rawAmount) : 0;
+  const feeGrsAmount = isUsdtBep20Deposit && creditAsset === "GRSC" ? grsFromUsdt(feeUsdtAmount) : 0;
+  const grsAmount = isUsdtBep20Deposit && creditAsset === "GRSC" ? grsFromUsdt(netUsdtAmount) : method === "grscoin" ? rawAmount : 0;
+  const ausdAmount = isUsdtBep20Deposit && creditAsset === "AUSD" ? money(netUsdtAmount / AUSD_PRICE_USDT) : 0;
   const usdtAmount = method === "usdt_bep20" ? rawAmount : money(grsAmount * GRSCOIN_PRICE_USDT);
   const displayAmount = creditAsset === "AUSD" ? `+${ausdAmount.toFixed(2)} AUSD` : `+${grsAmount.toFixed(2)} GRSC`;
   const proof = {
@@ -2654,8 +2849,17 @@ app.post("/api/swap/grscoin-deposits", authenticate, requirePlatformAccess(), up
       ...(txRef ? { txRef } : {}),
       originalAmount: rawAmount,
       usdtAmount,
+      netUsdtAmount,
       grsAmount,
       ausdAmount,
+      fee: feeUsdtAmount,
+      feeAsset: "USDT",
+      feeUsdtAmount,
+      adminCommission,
+      developerCommission,
+      platformCommission,
+      grossGrsAmount,
+      feeGrsAmount,
       ausdPriceUsdt: AUSD_PRICE_USDT,
       priceUsdt: GRSCOIN_PRICE_USDT,
       proof
@@ -3310,7 +3514,7 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
           result = { error: "Solde USDT insuffisant." };
           return;
         }
-        const platformCredit = money(amount - adminCommission - developerCommission);
+        const platformCredit = netUsdt;
         const platform = await PlatformAccountModel.findOneAndUpdate(
           { id: "platform" },
           { $inc: { balance: platformCredit, fees: fee }, $setOnInsert: { createdAt: nowIso() } },
@@ -3320,7 +3524,8 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
         const commissionTransactions = [];
         for (const target of [
           { email: ADMIN_EMAIL, amount: adminCommission, rate: AUSD_SWAP_ADMIN_SHARE, accountType: "admin", description: "Commission admin swap AUSD" },
-          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommission, rate: AUSD_SWAP_DEVELOPER_SHARE, accountType: "developer", description: "Commission developpeur swap AUSD" }
+          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommission, rate: AUSD_SWAP_DEVELOPER_SHARE, accountType: "developer", description: "Commission developpeur swap AUSD" },
+          { email: PLATFORM_EMAIL, amount: platformCommission, rate: 1 - AUSD_SWAP_ADMIN_SHARE - AUSD_SWAP_DEVELOPER_SHARE, accountType: "platform_user", description: "Commission plateforme swap AUSD" }
         ]) {
           if (!target.email || target.amount <= 0) continue;
           const creditedUser = await UserModel.findOneAndUpdate(
@@ -3368,7 +3573,7 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
           result = { error: "Solde AUSD insuffisant." };
           return;
         }
-        const platformDebit = money(usdtAmount + adminCommission + developerCommission);
+        const platformDebit = money(usdtAmount + adminCommission + developerCommission + platformCommission);
         const platform = await PlatformAccountModel.findOneAndUpdate(
           { id: "platform", $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, platformDebit] } },
           { $inc: { balance: -platformDebit, fees: platformCommission }, $setOnInsert: { createdAt: nowIso() } },
@@ -3382,7 +3587,8 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
         const commissionTransactions = [];
         for (const target of [
           { email: ADMIN_EMAIL, amount: adminCommission, rate: AUSD_SWAP_ADMIN_SHARE, accountType: "admin", description: "Commission admin swap AUSD vers USDT" },
-          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommission, rate: AUSD_SWAP_DEVELOPER_SHARE, accountType: "developer", description: "Commission developpeur swap AUSD vers USDT" }
+          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommission, rate: AUSD_SWAP_DEVELOPER_SHARE, accountType: "developer", description: "Commission developpeur swap AUSD vers USDT" },
+          { email: PLATFORM_EMAIL, amount: platformCommission, rate: 1 - AUSD_SWAP_ADMIN_SHARE - AUSD_SWAP_DEVELOPER_SHARE, accountType: "platform_user", description: "Commission plateforme swap AUSD vers USDT" }
         ]) {
           if (!target.email || target.amount <= 0) continue;
           const creditedUser = await UserModel.findOneAndUpdate(
@@ -3735,6 +3941,219 @@ app.post("/api/staking/:id/claim", authenticate, requirePlatformAccess(), async 
         status: "Completed",
         createdAt: nowIso(),
         metadata: { activeStakeId: stake.id, rewardAmount: money(stake.rewardAmount || 0), earnedAmount: money(stake.earnedAmount || 0), claimedAmount }
+      }], { session });
+      result = { user: normalizeUserRecord(updatedUser), claimedAmount };
+    });
+
+    if (result?.error) return res.status(400).json({ message: result.error });
+    res.json({ user: sanitizeUser(result.user), claimedAmount: result.claimedAmount });
+  } finally {
+    await session.endSession();
+  }
+});
+
+app.post("/api/founders/activate", authenticate, requirePlatformAccess(), validate(z.object({
+  amount: z.coerce.number().positive(),
+  plan: z.string().min(2)
+})), async (req, res) => {
+  const plan = parseFoundersPlan(req.body.plan);
+  if (!plan) return res.status(400).json({ message: "Niveau Founders Club inconnu." });
+  const founderAmount = money(req.body.amount);
+  if (founderAmount < money(plan.minAmount)) {
+    return res.status(400).json({ message: `Participation minimum ${plan.name}: ${plan.minAmount.toLocaleString("fr-FR")} GRSC.` });
+  }
+
+  const activationFee = money(founderAmount * FOUNDERS_ACTIVATION_FEE_RATE);
+  const adminFee = money(activationFee * FOUNDERS_ACTIVATION_ADMIN_SHARE);
+  const developerFee = money(activationFee * FOUNDERS_ACTIVATION_DEVELOPER_SHARE);
+  const platformFee = money(activationFee - adminFee - developerFee);
+  const totalDebit = money(founderAmount + activationFee);
+  const rewardAmount = money(founderAmount * plan.rewardRate * plan.durationYears);
+  const maturityAmount = money(founderAmount + rewardAmount);
+  const activatedAt = nowIso();
+  const activeFounder = {
+    id: nanoid(),
+    planId: plan.id,
+    name: plan.name,
+    amount: founderAmount,
+    rewardRate: plan.rewardRate,
+    rewardAmount,
+    maturityAmount,
+    durationYears: plan.durationYears,
+    durationDays: plan.durationDays,
+    activatedAt,
+    lastPayoutAt: null,
+    lastPayoutDate: today(),
+    nextPayoutAt: addDaysToTimestamp(activatedAt, 1),
+    daysPaid: 0,
+    earnedAmount: 0,
+    endsAt: addDaysToTimestamp(activatedAt, plan.durationDays),
+    status: "active"
+  };
+
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      const updatedUser = await UserModel.findOneAndUpdate(
+        {
+          id: req.user.id,
+          status: "active",
+          $expr: { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, totalDebit] }
+        },
+        [{
+          $set: {
+            grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, totalDebit] }, 2] },
+            activeFounders: { $concatArrays: [{ $ifNull: ["$activeFounders", []] }, [activeFounder]] }
+          }
+        }],
+        { new: true, session, lean: true }
+      );
+      if (!updatedUser) {
+        result = { error: `Solde GRSCOIN insuffisant. Total requis: ${totalDebit.toFixed(2)} GRSC, incluant ${activationFee.toFixed(2)} GRSC de frais d'activation.` };
+        return;
+      }
+
+      const feeRows = [];
+      const feeTransactions = [];
+      const creditFeeRecipient = async ({ email, amount, accountType, label, share }) => {
+        if (!email || amount <= 0) return;
+        const creditedUser = await UserModel.findOneAndUpdate(
+          { email },
+          [{
+            $set: {
+              grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, amount] }, 2] }
+            }
+          }],
+          { new: true, session, lean: true }
+        );
+        if (!creditedUser) return;
+        feeRows.push({
+          accountType,
+          accountId: creditedUser.id,
+          direction: "credit",
+          amount,
+          balanceAfter: creditedUser.grsBalance,
+          description: label
+        });
+        feeTransactions.push({
+          id: nanoid(),
+          userId: creditedUser.id,
+          type: "Commission",
+          description: label,
+          amount,
+          displayAmount: `+${amount.toFixed(2)} GRSC`,
+          status: "Completed",
+          createdAt: nowIso(),
+          metadata: { source: "founders_activation_fee", activeFounderId: activeFounder.id, sourceUserId: req.user.id, feeAmount: activationFee, share }
+        });
+      };
+      await creditFeeRecipient({ email: ADMIN_EMAIL, amount: adminFee, accountType: "admin_grs", label: "Commission admin activation Founders", share: FOUNDERS_ACTIVATION_ADMIN_SHARE });
+      await creditFeeRecipient({ email: COMMISSION_DEVELOPER_EMAIL, amount: developerFee, accountType: "developer_grs", label: "Commission developpeur activation Founders", share: FOUNDERS_ACTIVATION_DEVELOPER_SHARE });
+      await creditFeeRecipient({ email: PLATFORM_EMAIL, amount: platformFee, accountType: "platform_user_grs", label: "Commission plateforme activation Founders", share: 1 - FOUNDERS_ACTIVATION_ADMIN_SHARE - FOUNDERS_ACTIVATION_DEVELOPER_SHARE });
+
+      const entries = buildLedgerEntries([{
+        accountType: "user_grs",
+        accountId: req.user.id,
+        direction: "debit",
+        amount: totalDebit,
+        balanceAfter: updatedUser.grsBalance,
+        description: `Activation ${plan.name} avec frais`
+      }, {
+        accountType: "founders_grs",
+        accountId: req.user.id,
+        direction: "credit",
+        amount: founderAmount,
+        balanceAfter: founderAmount,
+        description: `GRSCOIN verrouille ${plan.name}`
+      }, ...feeRows], { source: "founders_activation", referenceId: activeFounder.id, extra: { planId: plan.id, rewardAmount, maturityAmount, activationFee, adminFee, developerFee, platformFee } });
+      if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+      if (feeTransactions.length) await TransactionModel.insertMany(feeTransactions, { session });
+
+      await TransactionModel.create([{
+        id: nanoid(),
+        userId: req.user.id,
+        type: "Founders",
+        description: `Activation ${plan.name}`,
+        amount: totalDebit,
+        displayAmount: `-${totalDebit.toFixed(2)} GRSC`,
+        status: "Active",
+        createdAt: nowIso(),
+        metadata: { source: "founders_activation", planId: plan.id, activeFounderId: activeFounder.id, founderAmount, activationFee, adminFee, developerFee, platformFee, totalDebit, rewardAmount, maturityAmount, endsAt: activeFounder.endsAt }
+      }], { session });
+      result = { user: normalizeUserRecord(updatedUser), activeFounder, activationFee, totalDebit };
+    });
+
+    if (result?.error) return res.status(400).json({ message: result.error });
+    res.status(201).json({ user: sanitizeUser(result.user), activeFounder: result.activeFounder, activationFee: result.activationFee, totalDebit: result.totalDebit });
+  } finally {
+    await session.endSession();
+  }
+});
+
+app.post("/api/founders/:id/claim", authenticate, requirePlatformAccess(), async (req, res) => {
+  const founderId = String(req.params.id || "");
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      const user = normalizeUserRecord(await UserModel.findOne({ id: req.user.id }, null, { session }).lean());
+      const founders = Array.isArray(user?.activeFounders) ? user.activeFounders : [];
+      const founderIndex = founders.findIndex((item) => item.id === founderId);
+      const founder = founderIndex >= 0 ? founders[founderIndex] : null;
+      if (!founder) {
+        result = { error: "Participation Founders Club introuvable." };
+        return;
+      }
+      if (founder.status !== "active") {
+        result = { error: "Cette participation a deja ete reclamee." };
+        return;
+      }
+      if (Date.parse(founder.endsAt || "") > Date.now()) {
+        result = { error: "Cette participation n'est pas encore arrivee a maturite." };
+        return;
+      }
+
+      const earnedAmount = money(Number(founder.earnedAmount || founder.rewardAmount || 0));
+      const claimedAmount = money(Number(founder.amount || 0) + earnedAmount);
+      founders[founderIndex] = { ...founder, status: "completed", claimedAt: nowIso() };
+      const updatedUser = await UserModel.findOneAndUpdate(
+        { id: user.id },
+        [{
+          $set: {
+            grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, claimedAmount] }, 2] },
+            activeFounders: founders
+          }
+        }],
+        { new: true, session, lean: true }
+      );
+
+      const entries = buildLedgerEntries([{
+        accountType: "founders_grs",
+        accountId: user.id,
+        direction: "debit",
+        amount: money(founder.amount || 0),
+        balanceAfter: 0,
+        description: `Sortie ${founder.name || "GRS Core Founders Club"}`
+      }, {
+        accountType: "user_grs",
+        accountId: user.id,
+        direction: "credit",
+        amount: claimedAmount,
+        balanceAfter: updatedUser.grsBalance,
+        description: `Reclamation ${founder.name || "GRS Core Founders Club"}`
+      }], { source: "founders_claim", referenceId: founder.id, extra: { rewardAmount: money(founder.rewardAmount || 0), earnedAmount, claimedAmount } });
+      if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+      await TransactionModel.create([{
+        id: nanoid(),
+        userId: user.id,
+        type: "Founders",
+        description: `Reclamation ${founder.name || "GRS Core Founders Club"}`,
+        amount: claimedAmount,
+        displayAmount: `+${claimedAmount.toFixed(2)} GRSC`,
+        status: "Completed",
+        createdAt: nowIso(),
+        metadata: { source: "founders_claim", activeFounderId: founder.id, rewardAmount: money(founder.rewardAmount || 0), earnedAmount, claimedAmount }
       }], { session });
       result = { user: normalizeUserRecord(updatedUser), claimedAmount };
     });
@@ -4562,6 +4981,7 @@ app.get("/api/admin/users/activity", authenticate, requireAdmin, async (req, res
       user: owner,
       activePlans: Array.isArray(user.activePlans) ? user.activePlans : [],
       activeStakes: Array.isArray(user.activeStakes) ? user.activeStakes : [],
+      activeFounders: Array.isArray(user.activeFounders) ? user.activeFounders : [],
       transactions: transactions.map((tx) => enrichAdminTransaction(tx, user)),
       timeline: [
         ...transactions.map((tx) => ({
@@ -4596,6 +5016,17 @@ app.get("/api/admin/users/activity", authenticate, requireAdmin, async (req, res
           program: "staking",
           reference: stake.id || stake.planId || "",
           details: stake
+        })),
+        ...(Array.isArray(user.activeFounders) ? user.activeFounders : []).map((item) => ({
+          id: item.id,
+          kind: "founders",
+          date: item.activatedAt || item.createdAt || "",
+          title: item.name || item.planId || "GRS Core Founders Club",
+          status: item.status || "",
+          amount: `${Number(item.amount || 0).toFixed(2)} GRSC`,
+          program: "founders",
+          reference: item.id || item.planId || "",
+          details: item
         })),
         ...cicoRequests.map((item) => ({
           id: item.id,
@@ -4656,6 +5087,18 @@ app.get("/api/admin/transactions", authenticate, requireAdmin, async (req, res, 
           { "metadata.source": /staking/i },
           { "metadata.stakeId": { $exists: true } },
           { description: /staking/i }
+        ]
+      };
+      programClauses.push(programQuery);
+      summaryClauses.push(programQuery);
+    }
+    if (program === "founders") {
+      const programQuery = {
+        $or: [
+          { type: "Founders" },
+          { "metadata.source": /founders/i },
+          { "metadata.activeFounderId": { $exists: true } },
+          { description: /founder/i }
         ]
       };
       programClauses.push(programQuery);
@@ -4768,10 +5211,20 @@ app.get("/api/admin/export/:section", authenticate, requireAdmin, async (req, re
         ]
       }];
     }
-    if (section === "trading" || section === "staking") {
+    if (section === "founders") {
+      baseClauses = [{
+        $or: [
+          { type: "Founders" },
+          { "metadata.source": /founders/i },
+          { "metadata.activeFounderId": { $exists: true } },
+          { description: /founder/i }
+        ]
+      }];
+    }
+    if (section === "trading" || section === "staking" || section === "founders") {
       const users = await UserModel.find({}, safeUserProjection).lean();
       const rows = users.flatMap((user) => {
-        const list = section === "trading" ? (user.activePlans || []) : (user.activeStakes || []);
+        const list = section === "trading" ? (user.activePlans || []) : section === "staking" ? (user.activeStakes || []) : (user.activeFounders || []);
         return list.map((item) => ({
           ...item,
           userId: user.id,
@@ -4782,10 +5235,10 @@ app.get("/api/admin/export/:section", authenticate, requireAdmin, async (req, re
       return res
         .type("text/csv")
         .set("Content-Disposition", `attachment; filename="afrix-admin-${section}-${today()}.csv"`)
-        .send(adminParticipationCsv(rows, section === "staking" ? "GRSC" : "USDT"));
+        .send(adminParticipationCsv(rows, section === "trading" ? "USDT" : "GRSC"));
     }
     if (section === "transactions") baseClauses = [];
-    if (!["deposits", "withdrawals", "transactions", "swap", "money"].includes(section)) {
+    if (!["deposits", "withdrawals", "transactions", "swap", "money", "founders"].includes(section)) {
       return res.status(404).json({ message: "Export admin introuvable." });
     }
     const query = await buildAdminTransactionQueryWithSearch(req.query, baseClauses);
@@ -4809,9 +5262,9 @@ app.get("/api/admin/programs/:program", authenticate, requireAdmin, async (req, 
     const users = await UserModel.find({}, safeUserProjection).lean();
     const programStats = adminProgramStatsFromUsers(users);
 
-    if (program === "trading" || program === "staking") {
+    if (program === "trading" || program === "staking" || program === "founders") {
       const rows = users.flatMap((user) => {
-        const list = program === "trading" ? (user.activePlans || []) : (user.activeStakes || []);
+        const list = program === "trading" ? (user.activePlans || []) : program === "staking" ? (user.activeStakes || []) : (user.activeFounders || []);
         return list.map((item) => ({
           ...item,
           userId: user.id,
@@ -5241,6 +5694,7 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
         const isAusdPurchase = tx.metadata?.asset === "AUSD_PURCHASE";
         const isAusdCredit = isAusdPurchase;
         const isUsdtConvertedGrsPurchase = isGrsPurchase && tx.metadata?.method === "usdt_bep20";
+        const isUsdtConvertedSwapDeposit = (isGrsPurchase || isAusdPurchase) && tx.metadata?.method === "usdt_bep20";
         const grsAmount = money(tx.metadata?.grsAmount || tx.amount);
         const ausdAmount = money(tx.metadata?.ausdAmount || tx.amount);
         const grsValueUsdt = money(tx.metadata?.usdtAmount || (grsAmount * GRSCOIN_PRICE_USDT));
@@ -5284,10 +5738,10 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
         }
         const commissionRows = [];
         const commissionTransactions = [];
-        if (isUsdtConvertedGrsPurchase) {
-          const adminCommission = money(grsValueUsdt * GRSCOIN_SWAP_ADMIN_RATE);
-          const developerCommission = money(grsValueUsdt * GRSCOIN_SWAP_DEVELOPER_RATE);
-          const platformCommission = money(grsValueUsdt * GRSCOIN_SWAP_PLATFORM_RATE);
+        if (isUsdtConvertedSwapDeposit) {
+          const adminCommission = money(tx.metadata?.adminCommission || (grsValueUsdt * GRSCOIN_SWAP_ADMIN_RATE));
+          const developerCommission = money(tx.metadata?.developerCommission || (grsValueUsdt * GRSCOIN_SWAP_DEVELOPER_RATE));
+          const platformCommission = money(tx.metadata?.platformCommission || (grsValueUsdt * GRSCOIN_SWAP_PLATFORM_RATE));
           let platformBalanceAfterDebits = money(platform?.balance || 0);
           const payoutTargets = [
             {
@@ -5810,6 +6264,7 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
         merchantWallet: { available: 0, pending: 0, bonus: 0 },
         activePlans: [],
         activeStakes: [],
+        activeFounders: [],
         createdAt: nowIso(),
         metadata: { createdByAdmin: req.user.id }
       };

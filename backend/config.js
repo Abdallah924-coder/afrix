@@ -56,6 +56,7 @@ export const pageRoutes = {
   "/afrix-money": "pages/afrix-money.html",
   "/swap": "pages/swap.html",
   "/staking": "pages/staking.html",
+  "/founders-club": "pages/founders-club.html",
   "/exchange": "pages/exchange.html",
   "/merchant": "pages/merchant.html",
   "/elite": "pages/elite.html",
@@ -94,6 +95,15 @@ export const stakingPlans = [
   { id: "smart", name: "Smart Staking", minAmount: 500, rewardRate: 0.10, durationDays: 180 },
   { id: "premium", name: "Premium Staking", minAmount: 2500, rewardRate: 0.17, durationDays: 270 },
   { id: "elite", name: "Elite Staking", minAmount: 5000, rewardRate: 0.25, durationDays: 365 }
+];
+
+export const foundersPlans = [
+  { id: "bronze", name: "Founder Bronze", minAmount: 10000, rewardRate: 0.031, durationYears: 10, durationDays: 3650 },
+  { id: "silver", name: "Founder Silver", minAmount: 50000, rewardRate: 0.0335, durationYears: 12, durationDays: 4380 },
+  { id: "gold", name: "Founder Gold", minAmount: 100000, rewardRate: 0.035, durationYears: 15, durationDays: 5475 },
+  { id: "platinum", name: "Founder Platinum", minAmount: 250000, rewardRate: 0.037, durationYears: 18, durationDays: 6570 },
+  { id: "diamond", name: "Founder Diamond", minAmount: 500000, rewardRate: 0.038, durationYears: 20, durationDays: 7300 },
+  { id: "legend", name: "Founder Legend", minAmount: 1000000, rewardRate: 0.04, durationYears: 25, durationDays: 9125 }
 ];
 
 export const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];

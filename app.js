@@ -7,10 +7,11 @@ let registerCountryOptionsHtml = null;
 
 const pageTitles = {
   dashboard: "Tableau de bord",
-  wallet: "Wallet USDT",
+  wallet: "Wallet AUSD",
   "afrix-money": "AFRIX Money",
   plans: "AFRIX Trading Program",
   staking: "AFRIX Staking Program",
+  "founders-club": "GRS CORE FOUNDERS CLUB",
   swap: "AFRIX Swap GRSCOIN",
   exchange: "Exchange",
   merchant: "Merchant",
@@ -26,10 +27,11 @@ const pageTitles = {
 
 const navItems = [
   ["dashboard", "Dashboard", "/dashboard"],
-  ["wallet", "Wallet USDT", "/wallet"],
+  ["wallet", "Wallet AUSD", "/wallet"],
   ["afrix-money", "AFRIX Money", "/afrix-money"],
   ["plans", "AFRIX Trading Program", "/plans"],
   ["staking", "AFRIX Staking Program", "/staking"],
+  ["founders-club", "GRS CORE FOUNDERS CLUB", "/founders-club"],
   ["swap", "AFRIX Swap GRSCOIN", "/swap"],
   ["exchange", "Exchange", "/exchange"],
   ["merchant", "Merchant", "/merchant"],
@@ -48,6 +50,7 @@ const P2P_FEE_RATE = 0.01;
 const AUSD_PRICE_USDT = 3.25;
 const CDF_DEPOSIT_RATE_USDT = 2800;
 const CDF_WITHDRAWAL_RATE_USDT = 2365;
+const FOUNDERS_ACTIVATION_FEE_RATE = 0.01;
 const contactLinks = {
   telegramSupport: "https://t.me/Assistant_grs_core",
   telegramChannel: "https://t.me/ecosysteme_grs",
@@ -83,6 +86,15 @@ const stakingPlans = [
   { id: "smart", tier: "Smart", name: "Smart Staking", minAmount: 500, amount: "500 GRSC et plus", rewardRate: 0.10, objective: "10%", exitValue: "110%", durationDays: 180, duration: "180 jours", featured: true },
   { id: "premium", tier: "Premium", name: "Premium Staking", minAmount: 2500, amount: "2 500 GRSC et plus", rewardRate: 0.17, objective: "17%", exitValue: "117%", durationDays: 270, duration: "270 jours" },
   { id: "elite", tier: "Elite", name: "Elite Staking", minAmount: 5000, amount: "5 000 GRSC et plus", rewardRate: 0.25, objective: "25%", exitValue: "125%", durationDays: 365, duration: "365 jours" }
+];
+
+const foundersPlans = [
+  { id: "bronze", tier: "Bronze", name: "Founder Bronze", minAmount: 10000, amount: "10 000 GRSC", rewardRate: 0.031, objective: "3,10% / an", durationYears: 10, durationDays: 3650, duration: "10 ans" },
+  { id: "silver", tier: "Silver", name: "Founder Silver", minAmount: 50000, amount: "50 000 GRSC", rewardRate: 0.0335, objective: "3,35% / an", durationYears: 12, durationDays: 4380, duration: "12 ans", featured: true },
+  { id: "gold", tier: "Gold", name: "Founder Gold", minAmount: 100000, amount: "100 000 GRSC", rewardRate: 0.035, objective: "3,50% / an", durationYears: 15, durationDays: 5475, duration: "15 ans" },
+  { id: "platinum", tier: "Platinum", name: "Founder Platinum", minAmount: 250000, amount: "250 000 GRSC", rewardRate: 0.037, objective: "3,70% / an", durationYears: 18, durationDays: 6570, duration: "18 ans", featured: true },
+  { id: "diamond", tier: "Diamond", name: "Founder Diamond", minAmount: 500000, amount: "500 000 GRSC", rewardRate: 0.038, objective: "3,80% / an", durationYears: 20, durationDays: 7300, duration: "20 ans", global: true },
+  { id: "legend", tier: "Legend", name: "Founder Legend", minAmount: 1000000, amount: "1 000 000 GRSC+", rewardRate: 0.04, objective: "4,00% / an", durationYears: 25, durationDays: 9125, duration: "25 ans", global: true }
 ];
 
 function tradingPlanName(nameOrId = "") {
@@ -126,6 +138,7 @@ const emptyUser = {
   disputes: [],
   activePlans: [],
   activeStakes: [],
+  activeFounders: [],
   bonusLevelsOverride: 0,
   ausdBalance: 0,
   platformControls: {},
@@ -380,6 +393,7 @@ function normalizeUser(user) {
     disputes: Array.isArray(user?.disputes) ? user.disputes : [],
     activePlans: Array.isArray(user?.activePlans) ? user.activePlans : [],
     activeStakes: Array.isArray(user?.activeStakes) ? user.activeStakes : [],
+    activeFounders: Array.isArray(user?.activeFounders) ? user.activeFounders : [],
     ledgerEntries: Array.isArray(user?.ledgerEntries) ? user.ledgerEntries : [],
     platformControls: user?.platformControls || {},
     platformAccount: user?.platformAccount || {},
@@ -966,13 +980,14 @@ function renderSwap(user) {
   const updateUsdtDepositPreview = () => {
     const amount = Number(usdtDepositAmountInput?.value || 0);
     const creditAsset = usdtDepositAssetInput?.value || "GRSC";
-    const grsAmount = amount > 0 && grsCoinPriceUsdt ? amount / grsCoinPriceUsdt : 0;
-    const ausdAmount = amount > 0 ? amount / AUSD_PRICE_USDT : 0;
+    const netAmount = amount > 0 ? amount * (1 - totalFeeRate) : 0;
+    const grsAmount = netAmount > 0 && grsCoinPriceUsdt ? netAmount / grsCoinPriceUsdt : 0;
+    const ausdAmount = netAmount > 0 ? netAmount / AUSD_PRICE_USDT : 0;
     if (usdtDepositPreview) {
       usdtDepositPreview.textContent = amount > 0
         ? creditAsset === "AUSD"
-          ? `${formatUsdt(amount)} -> ${formatAusd(ausdAmount)} apres validation admin.`
-          : `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres validation admin. Commissions et bonus separes.`
+          ? `${formatUsdt(amount)} -> ${formatAusd(ausdAmount)} apres 2.5% de frais et validation admin.`
+          : `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres 2.5% de frais et validation admin.`
         : "Saisissez le montant USDT a convertir.";
     }
   };
@@ -1168,6 +1183,94 @@ function renderStaking(user) {
         </article>
       `;
     }).join("") : `<p class="muted">Aucun staking actif pour le moment.</p>`;
+  }
+}
+
+function renderFounders(user) {
+  const plansList = document.querySelector("[data-founders-plans-list]");
+  const activeList = document.querySelector("[data-active-founders-list]");
+  const activeCount = document.querySelector("[data-active-founders-count]");
+  const grsBalance = document.querySelector("[data-founders-grs-balance]");
+  const lockedBalance = document.querySelector("[data-founders-locked-balance]");
+  const projectedRewards = document.querySelector("[data-founders-projected-rewards]");
+  if (!plansList && !activeList && !grsBalance) return;
+
+  const activeFounders = (user.activeFounders || [])
+    .slice()
+    .sort((a, b) => String(b.activatedAt || "").localeCompare(String(a.activatedAt || "")));
+  const activeOnly = activeFounders.filter((item) => item.status === "active");
+  const lockedTotal = activeOnly.reduce((total, item) => total + Number(item.amount || 0), 0);
+  const rewardTotal = activeOnly.reduce((total, item) => total + Number(item.rewardAmount || 0), 0);
+
+  if (grsBalance) grsBalance.textContent = formatGrsc(user.grsBalance);
+  if (lockedBalance) lockedBalance.textContent = formatGrsc(lockedTotal);
+  if (projectedRewards) projectedRewards.textContent = formatGrsc(rewardTotal);
+  if (activeCount) activeCount.textContent = activeOnly.length;
+
+  if (plansList) {
+    plansList.innerHTML = foundersPlans.map((plan) => {
+      const activationFee = plan.minAmount * FOUNDERS_ACTIVATION_FEE_RATE;
+      const totalRequired = plan.minAmount + activationFee;
+      const canActivate = Number(user.grsBalance || 0) >= totalRequired;
+      const className = [plan.featured ? "featured" : "", plan.global ? "global" : "", plan.id === "legend" ? "founder-legend-card" : ""].filter(Boolean).join(" ");
+      const maturityRate = plan.rewardRate * plan.durationYears;
+      return `
+        <article class="partner-level-card ${className}">
+          <span class="plan-tier">${escapeHtml(plan.name)}</span>
+          <h2>${escapeHtml(plan.tier)}</h2>
+          <div class="partner-requirements">
+            <span><small>Participation</small><strong>${escapeHtml(plan.amount)}</strong></span>
+            <span><small>Duree</small><strong>${escapeHtml(plan.duration)}</strong></span>
+            <span><small>Objectif indicatif</small><strong>${escapeHtml(plan.objective)}</strong></span>
+          </div>
+          <p>GRSCOIN verrouilles jusqu'a maturite avec restitution du capital et recompense ciblee selon les performances de l'ecosysteme.</p>
+          <small>Recompense ciblee sur le cycle: ${Number((maturityRate * 100).toFixed(2)).toLocaleString("fr-FR")}%</small>
+          <small>Frais activation: ${formatGrsc(activationFee)} - Total requis: ${formatGrsc(totalRequired)}</small>
+          <small>Solde disponible: ${formatGrsc(user.grsBalance)}</small>
+          <label class="plan-investment-input">
+            Montant a immobiliser
+            <input type="number" min="${plan.minAmount}" step="0.01" value="${plan.minAmount}" data-founder-amount>
+          </label>
+          <button class="btn primary" type="button" data-founder-plan="${escapeHtml(plan.id)}">${canActivate ? "Activer" : "Solde insuffisant"}</button>
+        </article>
+      `;
+    }).join("");
+  }
+
+  if (activeList) {
+    activeList.innerHTML = activeFounders.length ? activeFounders.map((item) => {
+      const start = Date.parse(item.activatedAt || "");
+      const end = Date.parse(item.endsAt || "");
+      const now = Date.now();
+      const totalMs = Number.isFinite(start) && Number.isFinite(end) ? Math.max(1, end - start) : 1;
+      const elapsedMs = Number.isFinite(start) ? Math.max(0, now - start) : 0;
+      const percent = item.status === "completed" ? 100 : Math.max(0, Math.min(100, Math.round((elapsedMs / totalMs) * 100)));
+      const remainingDays = Number.isFinite(end) ? Math.max(0, Math.ceil((end - now) / 86_400_000)) : Number(item.durationDays || 0);
+      const canClaim = item.status === "active" && Number.isFinite(end) && now >= end;
+      const status = item.status === "completed" ? "Reclame" : canClaim ? "Disponible" : "Actif";
+      return `
+        <article class="active-plan-card">
+          <div class="active-plan-head">
+            <span>
+              <strong>${escapeHtml(item.name || "GRS Core Founders Club")}</strong>
+              <small>${escapeHtml(status)} depuis ${escapeHtml(String(item.activatedAt || "").slice(0, 10) || "-")}</small>
+            </span>
+            <b>${percent}%</b>
+          </div>
+          <div class="progress active-plan-progress" aria-label="Progression Founders Club ${percent}%">
+            <span style="width:${percent}%"></span>
+          </div>
+          <div class="active-plan-stats">
+            <small><span>Capital bloque</span>${formatGrsc(item.amount || 0)}</small>
+            <small><span>Objectif annuel</span>${Number((Number(item.rewardRate || 0) * 100).toFixed(2)).toLocaleString("fr-FR")}%</small>
+            <small><span>Gains bloques</span>${formatGrsc(item.earnedAmount || 0)}</small>
+            <small><span>Sortie ciblee</span>${formatGrsc(item.maturityAmount || 0)}</small>
+            <small><span>Jours restants</span>${remainingDays.toLocaleString("fr-FR")}</small>
+          </div>
+          ${item.status === "active" ? `<button class="btn secondary" type="button" data-founder-claim="${escapeHtml(item.id)}" ${canClaim ? "" : "disabled"}>Reclamer</button>` : ""}
+        </article>
+      `;
+    }).join("") : `<p class="muted">Aucune participation Founders Club active pour le moment.</p>`;
   }
 }
 
@@ -1743,6 +1846,7 @@ const adminDetailedState = {
     withdrawals: 1,
     trading: 1,
     staking: 1,
+    founders: 1,
     swap: 1,
     money: 1
   }
@@ -1981,6 +2085,15 @@ function renderProgramSummary(program, payload = {}) {
         <div><span>Gains staking</span><strong>${formatGrsc(stats.totalEarned)}</strong></div>
       </div>
     `;
+  } else if (program === "founders") {
+    target.innerHTML = `
+      <div class="admin-stat-grid compact">
+        <div><span>Founders actifs</span><strong>${Number(stats.activeCount || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>Total participations</span><strong>${Number(stats.totalCount || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>GRSC immobilises</span><strong>${formatGrsc(stats.activeLocked)}</strong></div>
+        <div><span>Recompenses ciblees</span><strong>${formatGrsc(stats.totalReward)}</strong></div>
+      </div>
+    `;
   } else if (program === "swap") {
     target.innerHTML = `
       <div class="admin-stat-grid compact">
@@ -2009,15 +2122,15 @@ async function loadAdminProgram(program, page = adminDetailedState.pages[program
   target.innerHTML = `<p class="muted">Chargement du programme...</p>`;
   const payload = await apiRequest(`/admin/programs/${program}?page=${page}&limit=20`, { timeoutMs: 25_000 });
   renderProgramSummary(program, payload);
-  if (program === "trading" || program === "staking") {
+  if (program === "trading" || program === "staking" || program === "founders") {
     target.innerHTML = payload.items.length ? payload.items.map((item) => `
       <div class="queue-row admin-detail-row">
         <span>
           ${escapeHtml(item.name || item.planId || "Participation")}
           <small>${escapeHtml(item.userName || item.userEmail || "")} - ${escapeHtml(item.userEmail || "")} - ${escapeHtml(adminStatusLabel(item.status))}</small>
-          <small>Début: ${escapeHtml(item.startedAt || item.createdAt || "-")} - Prochain paiement: ${escapeHtml(item.nextPayoutAt || "-")} - Jours payés: ${Number(item.daysPaid || 0).toLocaleString("fr-FR")}/${Number(item.durationDays || 0).toLocaleString("fr-FR")}</small>
+          <small>Début: ${escapeHtml(item.activatedAt || item.startedAt || item.createdAt || "-")} - Fin: ${escapeHtml(item.endsAt || "-")} - Durée: ${Number(item.durationDays || 0).toLocaleString("fr-FR")} jours</small>
         </span>
-        <strong>${program === "trading" ? formatUsdt(item.amount) : formatGrsc(item.amount)}<small>Gagné: ${program === "trading" ? formatUsdt(item.earnedAmount) : formatGrsc(item.earnedAmount)}</small></strong>
+        <strong>${program === "trading" ? formatUsdt(item.amount) : formatGrsc(item.amount)}<small>${program === "founders" ? `Cible: ${formatGrsc(item.rewardAmount)}` : `Gagné: ${program === "trading" ? formatUsdt(item.earnedAmount) : formatGrsc(item.earnedAmount)}`}</small></strong>
         <button class="btn primary" type="button" data-admin-open-activity="${escapeHtml(item.userEmail || "")}">Tracer</button>
       </div>
     `).join("") + renderAdminPagination(program, payload.pagination) : `<p class="muted">Aucune participation.</p>`;
@@ -2058,12 +2171,14 @@ async function lookupAdminActivity(emailOverride = "") {
       <div><span>Réservé</span><strong>${formatUsdt(user.reservedBalance)}</strong></div>
       <div><span>Trading actif</span><strong>${formatUsdt(user.activeInvestmentAmount)}</strong></div>
       <div><span>Staking actif</span><strong>${formatGrsc(user.activeStakeAmount)}</strong></div>
+      <div><span>Founders actif</span><strong>${formatGrsc(user.activeFounderAmount)}</strong></div>
       <div><span>Parrain</span><strong>${escapeHtml(user.referrerEmail || user.referrerCode || "-")}</strong></div>
       <div><span>Statut</span><strong>${escapeHtml(adminStatusLabel(user.status))}</strong></div>
     </div>
     <article class="admin-sublist admin-timeline"><h2>Timeline unifiée</h2>${(data.timeline || []).map((item) => `<div><span>${escapeHtml(item.title || item.kind || "Activité")}<small>${escapeHtml(item.date || "-")} - ${escapeHtml(item.program || item.kind || "-")} - ${escapeHtml(item.reference || "-")}</small></span><strong>${escapeHtml(item.amount || "-")}<small>${escapeHtml(adminStatusLabel(item.status))}</small></strong></div>`).join("") || `<p class="muted">Aucune activité.</p>`}</article>
     <article class="admin-sublist"><h2>AFRIX Trading Program</h2>${(data.activePlans || []).map((plan) => `<div><span>${escapeHtml(plan.name || plan.planId || "Plan")}<small>${escapeHtml(plan.status || "")} - ${escapeHtml(plan.startedAt || "-")} - Jours ${Number(plan.daysPaid || 0)}/${Number(plan.durationDays || 0)}</small></span><strong>${formatUsdt(plan.amount)}<small>${formatUsdt(plan.earnedAmount)} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun plan.</p>`}</article>
     <article class="admin-sublist"><h2>AFRIX Staking Program</h2>${(data.activeStakes || []).map((stake) => `<div><span>${escapeHtml(stake.name || stake.planId || "Stake")}<small>${escapeHtml(stake.status || "")} - ${escapeHtml(stake.startedAt || "-")} - Jours ${Number(stake.daysPaid || 0)}/${Number(stake.durationDays || 0)}</small></span><strong>${formatGrsc(stake.amount)}<small>${formatGrsc(stake.earnedAmount)} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun staking.</p>`}</article>
+    <article class="admin-sublist"><h2>GRS Core Founders Club</h2>${(data.activeFounders || []).map((item) => `<div><span>${escapeHtml(item.name || item.planId || "Founders")}<small>${escapeHtml(item.status || "")} - ${escapeHtml(item.activatedAt || "-")} - Fin ${escapeHtml(item.endsAt || "-")}</small></span><strong>${formatGrsc(item.amount)}<small>${formatGrsc(item.rewardAmount)} cible</small></strong></div>`).join("") || `<p class="muted">Aucune participation Founders.</p>`}</article>
     <article class="admin-sublist"><h2>Transactions traçables</h2>${renderAdminDetailedTransactions(txRows)}</article>
     <article class="admin-sublist"><h2>AFRIX Money / CICO</h2>${(data.cicoRequests || []).map((item) => `<div><span>${escapeHtml(item.reference || item.id || "")}<small>${escapeHtml(item.type || "")} - ${escapeHtml(item.method || "")} - ${escapeHtml(item.status || "")}</small></span><strong>${formatUsdt(item.amount)}</strong></div>`).join("") || `<p class="muted">Aucune opération CICO.</p>`}</article>
     <article class="admin-sublist"><h2>Exchange</h2>${(data.exchangeOrders || []).map((item) => `<div><span>${escapeHtml(item.reference || item.id || "")}<small>${escapeHtml(item.type || "")} - ${escapeHtml(item.paymentMethod || "")} - ${escapeHtml(item.status || "")}</small></span><strong>${formatUsdt(item.amount)}</strong></div>`).join("") || `<p class="muted">Aucune opération Exchange.</p>`}</article>
@@ -2078,7 +2193,7 @@ async function loadActiveDetailedAdminSection(section = adminDetailedState.secti
     if (section === "transactions") await loadAdminRecentTransactions();
     if (section === "deposits") await loadAdminDetailedTransactions("deposits");
     if (section === "withdrawals") await loadAdminDetailedTransactions("withdrawals");
-    if (["trading", "staking", "swap", "money"].includes(section)) await loadAdminProgram(section);
+    if (["trading", "staking", "founders", "swap", "money"].includes(section)) await loadAdminProgram(section);
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -2723,6 +2838,54 @@ function setupActions(user) {
     try {
       const response = await apiJson(`/staking/${encodeURIComponent(button.dataset.stakingClaim)}/claim`, {}, { timeoutMs: 25_000 });
       showToast(`Staking reclame: ${formatGrsc(response.claimedAmount)} credites.`);
+      const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
+      renderProtectedShell(document.body.dataset.page, freshUser);
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
+
+  bindClickOnce("[data-founders-plans-list]", async (event) => {
+    const button = event.target.closest("[data-founder-plan]");
+    if (!button) return;
+    const article = button.closest("article");
+    const amount = Number(article?.querySelector("[data-founder-amount]")?.value || 0);
+    const plan = foundersPlans.find((item) => item.id === button.dataset.founderPlan);
+    const minAmount = Number(plan?.minAmount || 10000);
+    if (!Number.isFinite(amount) || amount < minAmount) {
+      showToast(`Participation minimum ${plan?.name || "Founders Club"}: ${formatGrsc(minAmount)}.`, "error");
+      return;
+    }
+    const activationFee = Number((amount * FOUNDERS_ACTIVATION_FEE_RATE).toFixed(2));
+    const totalRequired = Number((amount + activationFee).toFixed(2));
+    if (totalRequired > Number(user.grsBalance || 0)) {
+      showToast(`Solde GRSCOIN insuffisant. Total requis: ${formatGrsc(totalRequired)} incluant ${formatGrsc(activationFee)} de frais. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
+      return;
+    }
+    const confirmed = window.confirm(`Confirmer l'immobilisation de ${formatGrsc(amount)} dans ${plan?.name || "GRS Core Founders Club"} ? Frais activation: ${formatGrsc(activationFee)}. Total debite: ${formatGrsc(totalRequired)}.`);
+    if (!confirmed) return;
+    const restoreButton = setButtonLoading(button, "Activation...");
+    try {
+      const response = await apiJson("/founders/activate", { amount, plan: button.dataset.founderPlan }, { timeoutMs: 25_000 });
+      showToast(`Founders Club active: ${formatGrsc(response.activeFounder?.amount || amount)}. Frais: ${formatGrsc(response.activationFee || activationFee)}.`);
+      const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
+      renderProtectedShell(document.body.dataset.page, freshUser);
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
+
+  bindClickOnce("[data-active-founders-list]", async (event) => {
+    const button = event.target.closest("[data-founder-claim]");
+    if (!button) return;
+    const restoreButton = setButtonLoading(button, "Reclamation...");
+    try {
+      const response = await apiJson(`/founders/${encodeURIComponent(button.dataset.founderClaim)}/claim`, {}, { timeoutMs: 25_000 });
+      showToast(`Participation Founders reclamee: ${formatGrsc(response.claimedAmount)} credites.`);
       const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
       renderProtectedShell(document.body.dataset.page, freshUser);
     } catch (error) {
@@ -3381,6 +3544,7 @@ function renderProtectedShell(page, user) {
   renderSwap(user);
   renderPlans(user);
   renderStaking(user);
+  renderFounders(user);
   renderNetwork(user);
   renderProfile(user);
   renderContact();
