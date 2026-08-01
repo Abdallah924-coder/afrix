@@ -32,6 +32,7 @@ import {
   TOKEN_TTL,
   bonusRates,
   defaultDb,
+  etfPlans,
   foundersPlans,
   isProduction,
   jwtSecret,
@@ -98,9 +99,15 @@ const AUSD_SWAP_ADMIN_SHARE = 0.10;
 const AUSD_SWAP_DEVELOPER_SHARE = 0.10;
 const CDF_DEPOSIT_RATE_USDT = 2800;
 const CDF_WITHDRAWAL_RATE_USDT = 2365;
-const STAKING_ADMIN_COMMISSION_RATE = 0.03;
-const STAKING_DEVELOPER_COMMISSION_RATE = 0.03;
-const STAKING_PLATFORM_COMMISSION_RATE = 0.04;
+const STAKING_PROGRAM_FEE_RATE = 0.005;
+const TRADING_PROGRAM_FEE_RATE = 0.0075;
+const ETF_PROGRAM_FEE_RATE = 0.01;
+const ACTIVATION_ADMIN_COMMISSION_RATE = 0.025;
+const ACTIVATION_DEVELOPER_COMMISSION_RATE = 0.025;
+const USER_REVENUE_ADMIN_COMMISSION_RATE = 0.05;
+const USER_REVENUE_DEVELOPER_COMMISSION_RATE = 0.05;
+const PLATFORM_FEE_ADMIN_SHARE = 0.10;
+const PLATFORM_FEE_DEVELOPER_SHARE = 0.10;
 const FOUNDERS_ACTIVATION_FEE_RATE = 0.01;
 const FOUNDERS_ACTIVATION_ADMIN_SHARE = 0.10;
 const FOUNDERS_ACTIVATION_DEVELOPER_SHARE = 0.10;
@@ -150,7 +157,8 @@ function normalizeUserRecord(user = {}) {
     },
     activePlans: Array.isArray(user.activePlans) ? user.activePlans : [],
     activeStakes: Array.isArray(user.activeStakes) ? user.activeStakes : [],
-    activeFounders: Array.isArray(user.activeFounders) ? user.activeFounders : []
+    activeFounders: Array.isArray(user.activeFounders) ? user.activeFounders : [],
+    activeEtfs: Array.isArray(user.activeEtfs) ? user.activeEtfs : []
   };
 }
 
@@ -504,6 +512,11 @@ function formatNetworkBonusAmount(value, asset = "USDT") {
   return `+${amount.toFixed(4)} ${asset}`;
 }
 
+function formatAssetAmount(value, asset = "USDT", prefix = "") {
+  const amount = money(value);
+  return `${prefix}${amount.toFixed(2)} ${asset}`;
+}
+
 function sanitizeUser(user) {
   const { passwordHash, ...safeUser } = user;
   return safeUser;
@@ -523,7 +536,8 @@ function buildAdminStats(db) {
   const userCreatedAt = (user) => new Date(user.createdAt || 0).getTime();
   const transactions = db.transactions || [];
   const users = db.users || [];
-  const activePlans = users.flatMap((user) => (user.activePlans || []).filter((plan) => plan.status === "active"));
+  const activePlans = users.flatMap((user) => (user.activePlans || []).filter((plan) => plan.status === "active" || plan.status === "dividend"));
+  const activeEtfs = users.flatMap((user) => (user.activeEtfs || []).filter((item) => item.status === "active" || item.status === "matured"));
   const completedTransactions = transactions.filter((tx) => tx.status === "Completed" || tx.status === "Active");
   const platformRevenue = completedTransactions.reduce((total, tx) => {
     if (tx.type === "Retrait") return total + Number(tx.metadata?.fee || 0);
@@ -538,9 +552,9 @@ function buildAdminStats(db) {
     newUsersWeek: users.filter((user) => userCreatedAt(user) >= startOfWeek.getTime()).length,
     newUsersMonth: users.filter((user) => userCreatedAt(user) >= startOfMonth.getTime()).length,
     activeUsers: users.filter((user) => (user.status || "active") === "active").length,
-    activePlansCount: activePlans.length,
-    usersWithActivePlans: users.filter((user) => (user.activePlans || []).some((plan) => plan.status === "active")).length,
-    investedCapital: money(activePlans.reduce((total, plan) => total + Number(plan.amount || 0), 0)),
+    activePlansCount: activePlans.length + activeEtfs.length,
+    usersWithActivePlans: users.filter((user) => (user.activePlans || []).some((plan) => plan.status === "active" || plan.status === "dividend") || (user.activeEtfs || []).some((item) => item.status === "active" || item.status === "matured")).length,
+    investedCapital: money(activePlans.reduce((total, plan) => total + Number(plan.amount || 0), 0) + activeEtfs.reduce((total, item) => total + Number(item.amount || 0), 0)),
     transactionVolume: money(completedTransactions.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0)),
     platformRevenue: money(platformRevenue),
     partners: users.filter((user) => user.referrerId).length,
@@ -627,6 +641,7 @@ function transactionProgram(tx = {}) {
   const description = tx.description || "";
   if (type === "Swap" || asset.includes("GRSC") || source.includes("grscoin") || source.includes("afrix_swap")) return "swap";
   if (source.includes("founders") || tx.metadata?.activeFounderId || description.toLowerCase().includes("founder")) return "founders";
+  if (source.includes("etf") || tx.metadata?.activeEtfId || description.toLowerCase().includes("etf")) return "etf";
   if (source.includes("staking") || tx.metadata?.stakeId || description.toLowerCase().includes("staking")) return "staking";
   if (type === "Plan" || type === "Gain" || tx.metadata?.activePlanId || tx.metadata?.planId) return "trading";
   if (type === "P2P" || type === "CICO" || type === "Merchant" || source.includes("cico") || source.includes("p2p")) return "money";
@@ -639,6 +654,7 @@ function compactAdminUser(user = {}) {
   const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
   const activeStakes = Array.isArray(user.activeStakes) ? user.activeStakes : [];
   const activeFounders = Array.isArray(user.activeFounders) ? user.activeFounders : [];
+  const activeEtfs = Array.isArray(user.activeEtfs) ? user.activeEtfs : [];
   return {
     id: user.id,
     fullName: user.fullName || user.email,
@@ -658,12 +674,14 @@ function compactAdminUser(user = {}) {
     referrerEmail: user.referrerEmail || "",
     referrerCode: user.referrerCode || "",
     bonusLevelsOverride: Number(user.bonusLevelsOverride || 0),
-    activePlansCount: activePlans.filter((plan) => plan.status === "active").length,
+    activePlansCount: activePlans.filter((plan) => plan.status === "active" || plan.status === "dividend").length,
     activeStakesCount: activeStakes.filter((stake) => stake.status === "active").length,
     activeFoundersCount: activeFounders.filter((item) => item.status === "active").length,
-    activeInvestmentAmount: money(activePlans.filter((plan) => plan.status === "active").reduce((total, plan) => total + Number(plan.amount || 0), 0)),
+    activeEtfsCount: activeEtfs.filter((item) => item.status === "active" || item.status === "matured").length,
+    activeInvestmentAmount: money(activePlans.filter((plan) => plan.status === "active" || plan.status === "dividend").reduce((total, plan) => total + Number(plan.amount || 0), 0)),
     activeStakeAmount: money(activeStakes.filter((stake) => stake.status === "active").reduce((total, stake) => total + Number(stake.amount || 0), 0)),
     activeFounderAmount: money(activeFounders.filter((item) => item.status === "active").reduce((total, item) => total + Number(item.amount || 0), 0)),
+    activeEtfAmount: money(activeEtfs.filter((item) => item.status === "active" || item.status === "matured").reduce((total, item) => total + Number(item.amount || 0), 0)),
     merchantStatus: user.merchantProfile?.status || "Aucun profil",
     createdAt: user.createdAt || ""
   };
@@ -708,6 +726,11 @@ function adminProgramStatsFromUsers(users = []) {
     .map((item) => ({ ...item, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
   const allFounders = users.flatMap((user) => (user.activeFounders || [])
     .map((item) => ({ ...item, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
+  const activeEtfs = users.flatMap((user) => (user.activeEtfs || [])
+    .filter((item) => item.status === "active" || item.status === "matured")
+    .map((item) => ({ ...item, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
+  const allEtfs = users.flatMap((user) => (user.activeEtfs || [])
+    .map((item) => ({ ...item, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
 
   return {
     trading: {
@@ -727,6 +750,12 @@ function adminProgramStatsFromUsers(users = []) {
       totalCount: allFounders.length,
       activeLocked: money(activeFounders.reduce((total, item) => total + Number(item.amount || 0), 0)),
       totalReward: money(allFounders.reduce((total, item) => total + Number(item.rewardAmount || 0), 0))
+    },
+    etf: {
+      activeCount: activeEtfs.length,
+      totalCount: allEtfs.length,
+      activeCapital: money(activeEtfs.reduce((total, item) => total + Number(item.amount || 0), 0)),
+      totalDividends: money(allEtfs.reduce((total, item) => total + Number(item.dividendAmount || 0), 0))
     }
   };
 }
@@ -1046,10 +1075,11 @@ function notifyTransactionDecision(tx) {
 }
 
 function notifyPlanActivation(user, activePlan, amount) {
+  const asset = activePlan?.asset || "USDT";
   notifyAdmin("AFRIX - Plan active", "Plan active", "Un investissement vient d'etre active.", [
     { label: "Utilisateur", value: user.email },
     { label: "Plan", value: activePlan?.name },
-    { label: "Montant", value: formatAmount(amount || activePlan?.amount || 0) },
+    { label: "Montant", value: formatAssetAmount(amount || activePlan?.amount || 0, asset) },
     { label: "Cycle", value: `${activePlan?.durationDays || 0} jours` }
   ]).catch((error) => logger.error({ err: error }, "Plan activation admin email failed"));
 }
@@ -1165,6 +1195,11 @@ function parseStakingPlan(planName) {
 function parseFoundersPlan(planName) {
   const normalized = String(planName || "").toLowerCase();
   return foundersPlans.find((plan) => plan.id === normalized || plan.name.toLowerCase() === normalized) || null;
+}
+
+function parseEtfPlan(planName) {
+  const normalized = String(planName || "").toLowerCase();
+  return etfPlans.find((plan) => plan.id === normalized || plan.name.toLowerCase() === normalized) || null;
 }
 
 function planForAmount(amount) {
@@ -1344,9 +1379,21 @@ function duePayoutSlots(nextPayoutAt, endValue = nowIso()) {
   return Math.floor((end - next) / PLAN_PAYOUT_INTERVAL_MS) + 1;
 }
 
+function dueIntervalSlots(nextPayoutAt, intervalDays, endValue = nowIso()) {
+  const next = Date.parse(nextPayoutAt);
+  const end = Date.parse(endValue);
+  const intervalMs = Math.max(1, Number(intervalDays || 1)) * PLAN_PAYOUT_INTERVAL_MS;
+  if (!Number.isFinite(next) || !Number.isFinite(end) || end < next) return 0;
+  return Math.floor((end - next) / intervalMs) + 1;
+}
+
 function positiveFiniteNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function revenueCommissionsEnabled(item = {}) {
+  return item?.revenueCommissionEnabled === true;
 }
 
 function grsFromUsdt(usdtAmount) {
@@ -1361,10 +1408,17 @@ function composeUser(db, user) {
       fullName: candidate.fullName || candidate.email.split("@")[0],
       email: candidate.email,
       activity: candidate.activity,
+      hasActiveInvestment: (Array.isArray(candidate.activePlans) ? candidate.activePlans : []).some((plan) => plan.status === "active" || plan.status === "dividend") ||
+        (Array.isArray(candidate.activeStakes) ? candidate.activeStakes : []).some((stake) => stake.status === "active") ||
+        (Array.isArray(candidate.activeFounders) ? candidate.activeFounders : []).some((item) => item.status === "active") ||
+        (Array.isArray(candidate.activeEtfs) ? candidate.activeEtfs : []).some((item) => item.status === "active" || item.status === "matured"),
+      activePlansCount: (Array.isArray(candidate.activePlans) ? candidate.activePlans : []).filter((plan) => plan.status === "active" || plan.status === "dividend").length,
       referrerId: candidate.referrerId || "",
       referrerEmail: candidate.referrerEmail || "",
       referrerCode: candidate.referrerCode || ""
     }));
+  const registeredPartners = directPartners.length;
+  const activePartners = directPartners.filter((partner) => partner.hasActiveInvestment).length;
 
   const approvedMerchants = db.users
     .filter((candidate) => candidate.merchantProfile?.status === "approved")
@@ -1390,8 +1444,12 @@ function composeUser(db, user) {
     grsBalance: money(user.grsBalance),
     reservedBalance: money(user.reservedBalance),
     activity: money(user.activity),
-    team: directPartners.length,
+    team: registeredPartners,
+    registeredPartners,
+    activePartners,
     bonus: money(user.bonus),
+    activityGrsc: grsFromUsdt(user.activity),
+    bonusGrsc: grsFromUsdt(user.bonus),
     rank: rankFromActivity(user.activity),
     progress: progressFromActivity(user.activity),
     progressText: "Progression calculee selon votre activite validee.",
@@ -1505,7 +1563,7 @@ function composeUser(db, user) {
           referrerId: candidate.referrerId || "",
           referrerEmail: candidate.referrerEmail || "",
           referrerCode: candidate.referrerCode || "",
-          activePlansCount: (candidate.activePlans || []).filter((plan) => plan.status === "active").length,
+          activePlansCount: (candidate.activePlans || []).filter((plan) => plan.status === "active" || plan.status === "dividend").length,
           merchantStatus: candidate.merchantProfile?.status || "Aucun profil",
           createdAt: candidate.createdAt
         }))
@@ -1602,14 +1660,14 @@ function distributeHouseCommissions(db, sourceUser, amount) {
   const recipients = [
     {
       email: ADMIN_EMAIL,
-      rate: 0.075,
-      label: "Commission admin",
+      rate: ACTIVATION_ADMIN_COMMISSION_RATE,
+      label: "Commission activation",
       source: "admin_activation_commission"
     },
     {
       email: COMMISSION_DEVELOPER_EMAIL,
-      rate: 0.075,
-      label: "Commission developpeur",
+      rate: ACTIVATION_DEVELOPER_COMMISSION_RATE,
+      label: "Commission activation",
       source: "developer_activation_commission"
     }
   ];
@@ -1738,9 +1796,10 @@ async function processDailyPlanEarnings(options = {}) {
     {
       ...(onlyUserId ? { id: onlyUserId } : {}),
       $or: [
-        { activePlans: { $elemMatch: { status: "active" } } },
+        { activePlans: { $elemMatch: { status: { $in: ["active", "dividend"] } } } },
         { activeStakes: { $elemMatch: { status: "active" } } },
-        { activeFounders: { $elemMatch: { status: "active" } } }
+        { activeFounders: { $elemMatch: { status: "active" } } },
+        { activeEtfs: { $elemMatch: { status: { $in: ["active", "matured"] } } } }
       ]
     }
   ).lean();
@@ -1758,11 +1817,11 @@ async function processDailyPlanEarnings(options = {}) {
   for (const userSnapshot of users) {
     const activePlans = Array.isArray(userSnapshot.activePlans) ? userSnapshot.activePlans : [];
     for (const planSnapshot of activePlans) {
-      if (planSnapshot.status !== "active") continue;
+      if (planSnapshot.status !== "active" && planSnapshot.status !== "dividend") continue;
 
       const amount = positiveFiniteNumber(planSnapshot.amount);
-      const dailyRate = positiveFiniteNumber(planSnapshot.dailyRate);
-      const durationDays = positiveFiniteNumber(planSnapshot.durationDays);
+      const dailyRate = planSnapshot.status === "active" ? positiveFiniteNumber(planSnapshot.dailyRate) : 1;
+      const durationDays = planSnapshot.status === "active" ? positiveFiniteNumber(planSnapshot.durationDays) : 1;
       if (!amount || !dailyRate || !durationDays) {
         result.skippedInvalidPlans += 1;
         logger.error({ userId: userSnapshot.id, planId: planSnapshot.id, amount: planSnapshot.amount, dailyRate: planSnapshot.dailyRate, durationDays: planSnapshot.durationDays }, "Invalid active plan skipped during daily earnings");
@@ -1776,7 +1835,89 @@ async function processDailyPlanEarnings(options = {}) {
           if (!user) return;
           const plansList = Array.isArray(user.activePlans) ? user.activePlans : [];
           const plan = plansList.find((item) => item.id === planSnapshot.id);
-          if (!plan || plan.status !== "active") return;
+          if (!plan || (plan.status !== "active" && plan.status !== "dividend")) return;
+          const planAsset = String(plan.asset || "USDT").toUpperCase() === "AUSD" ? "AUSD" : "USDT";
+          const isAusdPlan = planAsset === "AUSD";
+
+          if (plan.status === "dividend") {
+            const dividendRate = positiveFiniteNumber(plan.dividendRate);
+            const currentAmount = positiveFiniteNumber(plan.amount);
+            if (!dividendRate || !currentAmount) return;
+            const nextDividendAt = plan.nextDividendAt || addDaysToTimestamp(plan.completedAt || plan.activatedAt || nowIso(), 90);
+            const dueDividends = dueIntervalSlots(nextDividendAt, 90);
+            if (dueDividends <= 0) return;
+
+            const grossPayout = money(currentAmount * dividendRate * dueDividends);
+            const applyRevenueCommissions = revenueCommissionsEnabled(plan);
+            const revenueAdminCommission = applyRevenueCommissions ? money(grossPayout * USER_REVENUE_ADMIN_COMMISSION_RATE) : 0;
+            const revenueDeveloperCommission = applyRevenueCommissions ? money(grossPayout * USER_REVENUE_DEVELOPER_COMMISSION_RATE) : 0;
+            const payout = grossPayout;
+            if (payout <= 0) return;
+            const lastDividendAt = addDaysToTimestamp(nextDividendAt, (dueDividends - 1) * 90);
+            plan.lastDividendAt = lastDividendAt;
+            plan.nextDividendAt = addDaysToTimestamp(nextDividendAt, dueDividends * 90);
+            plan.dividendsPaid = Math.max(0, Number(plan.dividendsPaid || 0)) + dueDividends;
+            plan.dividendAmount = money(Number(plan.dividendAmount || 0) + payout);
+
+            const balanceField = isAusdPlan ? "ausdBalance" : "balance";
+            const updatedBalance = money(Number(user[balanceField] || 0) + payout);
+            await UserModel.updateOne(
+              { id: user.id },
+              { $set: { [balanceField]: updatedBalance, activePlans: plansList } },
+              { session }
+            );
+
+            const ledgerEntries = buildLedgerEntries([{
+              accountType: isAusdPlan ? "user_ausd" : "user",
+              accountId: user.id,
+              direction: "credit",
+              amount: payout,
+              balanceAfter: updatedBalance,
+              description: `Dividende trimestriel ${plan.name}`
+            }], {
+              source: "plan_quarterly_dividend",
+              referenceId: plan.id,
+              extra: { userId: user.id, planId: plan.planId, dividends: dueDividends, payoutDate, asset: planAsset }
+            });
+            if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+            const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
+            const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
+            await payDirectCommission({
+              session,
+              accountId: adminAccount?.id,
+              amount: revenueAdminCommission,
+              label: `Commission dividende ${plan.name}`,
+              source: "admin_user_revenue_commission",
+              referenceId: plan.id,
+              extra: { sourceUserId: user.id, activePlanId: plan.id, planId: plan.planId, rate: USER_REVENUE_ADMIN_COMMISSION_RATE, grossPayout, netPayout: payout },
+              asset: planAsset
+            });
+            await payDirectCommission({
+              session,
+              accountId: developerAccount?.id,
+              amount: revenueDeveloperCommission,
+              label: `Commission dividende ${plan.name}`,
+              source: "developer_user_revenue_commission",
+              referenceId: plan.id,
+              extra: { sourceUserId: user.id, activePlanId: plan.id, planId: plan.planId, rate: USER_REVENUE_DEVELOPER_COMMISSION_RATE, grossPayout, netPayout: payout },
+              asset: planAsset
+            });
+            await TransactionModel.create([{
+              id: nanoid(),
+              userId: user.id,
+              type: "Gain",
+              description: `Dividende trimestriel ${plan.name}`,
+              amount: payout,
+              displayAmount: formatAssetAmount(payout, planAsset, "+"),
+              status: "Completed",
+              createdAt: nowIso(),
+              metadata: { planId: plan.planId, activePlanId: plan.id, dividends: dueDividends, payoutDate, asset: planAsset }
+            }], { session });
+
+            result.creditedUsers += 1;
+            result.creditedAmount = money(result.creditedAmount + payout);
+            return;
+          }
 
           const currentDaysPaid = Math.max(0, Number.isFinite(Number(plan.daysPaid)) ? Number(plan.daysPaid) : 0);
           const currentAmount = positiveFiniteNumber(plan.amount);
@@ -1788,7 +1929,11 @@ async function processDailyPlanEarnings(options = {}) {
           const dueDays = Math.min(duePayoutSlots(nextPayoutAt), currentDurationDays - currentDaysPaid);
           if (dueDays <= 0) return;
 
-          const payout = money(currentAmount * currentDailyRate * dueDays);
+          const grossPayout = money(currentAmount * currentDailyRate * dueDays);
+          const applyRevenueCommissions = revenueCommissionsEnabled(plan);
+          const revenueAdminCommission = applyRevenueCommissions ? money(grossPayout * USER_REVENUE_ADMIN_COMMISSION_RATE) : 0;
+          const revenueDeveloperCommission = applyRevenueCommissions ? money(grossPayout * USER_REVENUE_DEVELOPER_COMMISSION_RATE) : 0;
+          const payout = grossPayout;
           if (payout <= 0) return;
 
           const lastPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays - 1);
@@ -1801,43 +1946,79 @@ async function processDailyPlanEarnings(options = {}) {
           plan.lastPayoutDate = String(lastPayoutAt).slice(0, 10);
           plan.nextPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays);
           if (plan.daysPaid >= currentDurationDays) {
-            plan.status = "completed";
-            plan.completedAt = nowIso();
+            if (positiveFiniteNumber(plan.dividendRate) > 0) {
+              plan.status = "dividend";
+              plan.completedAt = nowIso();
+              plan.dividendStartedAt = nowIso();
+              plan.nextDividendAt = addDaysToTimestamp(nowIso(), 90);
+              plan.dividendsPaid = Math.max(0, Number(plan.dividendsPaid || 0));
+              plan.dividendAmount = money(plan.dividendAmount || 0);
+            } else {
+              plan.status = "completed";
+              plan.completedAt = nowIso();
+            }
           }
 
-          const updatedBalance = money(Number(user.balance || 0) + payout);
+          const balanceField = isAusdPlan ? "ausdBalance" : "balance";
+          const updatedBalance = money(Number(user[balanceField] || 0) + payout);
           await UserModel.updateOne(
             { id: user.id },
-            { $set: { balance: updatedBalance, activePlans: plansList } },
+            { $set: { [balanceField]: updatedBalance, activePlans: plansList } },
             { session }
           );
 
-          const platform = await PlatformAccountModel.findOneAndUpdate(
-            { id: "platform" },
-            { $inc: { balance: -payout }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
-            { upsert: true, new: true, session, lean: true }
-          );
-
-          const ledgerEntries = buildLedgerEntries([{
-            accountType: "user",
+          const ledgerInputs = [{
+            accountType: isAusdPlan ? "user_ausd" : "user",
             accountId: user.id,
             direction: "credit",
             amount: payout,
             balanceAfter: updatedBalance,
             description: `Gain journalier ${plan.name}`
-          }, {
-            accountType: "platform",
-            accountId: "platform",
-            direction: "debit",
-            amount: payout,
-            balanceAfter: platform.balance,
-            description: `Gain journalier ${plan.name}`
-          }], {
+          }];
+          if (!isAusdPlan) {
+            const platform = await PlatformAccountModel.findOneAndUpdate(
+              { id: "platform" },
+              { $inc: { balance: -payout }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
+              { upsert: true, new: true, session, lean: true }
+            );
+            ledgerInputs.push({
+              accountType: "platform",
+              accountId: "platform",
+              direction: "debit",
+              amount: payout,
+              balanceAfter: platform.balance,
+              description: `Gain journalier ${plan.name}`
+            });
+          }
+
+          const ledgerEntries = buildLedgerEntries(ledgerInputs, {
             source: "plan_daily_earning",
             referenceId: plan.id,
-            extra: { userId: user.id, planId: plan.planId, days: dueDays, payoutDate }
+            extra: { userId: user.id, planId: plan.planId, days: dueDays, payoutDate, asset: planAsset }
           });
           if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+          const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
+          const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
+          await payDirectCommission({
+            session,
+            accountId: adminAccount?.id,
+            amount: revenueAdminCommission,
+            label: `Commission revenu ${plan.name}`,
+            source: "admin_user_revenue_commission",
+            referenceId: plan.id,
+            extra: { sourceUserId: user.id, activePlanId: plan.id, planId: plan.planId, rate: USER_REVENUE_ADMIN_COMMISSION_RATE, days: dueDays, grossPayout, netPayout: payout },
+            asset: planAsset
+          });
+          await payDirectCommission({
+            session,
+            accountId: developerAccount?.id,
+            amount: revenueDeveloperCommission,
+            label: `Commission revenu ${plan.name}`,
+            source: "developer_user_revenue_commission",
+            referenceId: plan.id,
+            extra: { sourceUserId: user.id, activePlanId: plan.id, planId: plan.planId, rate: USER_REVENUE_DEVELOPER_COMMISSION_RATE, days: dueDays, grossPayout, netPayout: payout },
+            asset: planAsset
+          });
 
           await TransactionModel.create([{
             id: nanoid(),
@@ -1845,10 +2026,10 @@ async function processDailyPlanEarnings(options = {}) {
             type: "Gain",
             description: `Gain journalier ${plan.name} (${paidDayLabel})`,
             amount: payout,
-            displayAmount: formatAmount(payout, "+"),
+            displayAmount: formatAssetAmount(payout, planAsset, "+"),
             status: "Completed",
             createdAt: nowIso(),
-            metadata: { planId: plan.planId, activePlanId: plan.id, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
+            metadata: { planId: plan.planId, activePlanId: plan.id, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate, asset: planAsset }
           }], { session });
 
           let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
@@ -1863,29 +2044,15 @@ async function processDailyPlanEarnings(options = {}) {
             if (unlockedReferralLevels(referrer) > level) {
               const bonus = networkBonusMoney((payout * bonusRates[level]) / 100);
               if (bonus > 0) {
-                const referrerBalance = networkBonusMoney(Number(referrer.balance || 0) + bonus);
+                const referrerBalance = networkBonusMoney(Number(referrer[balanceField] || 0) + bonus);
                 const referrerBonus = networkBonusMoney(Number(referrer.bonus || 0) + bonus);
                 await UserModel.updateOne(
                   { id: referrer.id },
-                  { $set: { balance: referrerBalance, bonus: referrerBonus } },
+                  { $set: { [balanceField]: referrerBalance, bonus: referrerBonus } },
                   { session }
                 );
-                const bonusPlatform = await PlatformAccountModel.findOneAndUpdate(
-                  { id: "platform" },
-                  { $inc: { balance: -bonus }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
-                  { upsert: true, new: true, session, lean: true }
-                );
-                const bonusLedger = buildLedgerEntries([{
-                  accountType: "platform",
-                  accountId: "platform",
-                  direction: "debit",
-                  amount: bonus,
-                  balanceAfter: bonusPlatform.balance,
-                  description: `Bonus reseau journalier niveau ${level + 1}`,
-                  precision: 4,
-                  balancePrecision: 4
-                }, {
-                  accountType: "user",
+                const bonusLedgerInputs = [{
+                  accountType: isAusdPlan ? "user_ausd" : "user",
                   accountId: referrer.id,
                   direction: "credit",
                   amount: bonus,
@@ -1893,10 +2060,28 @@ async function processDailyPlanEarnings(options = {}) {
                   description: `Bonus reseau journalier niveau ${level + 1}`,
                   precision: 4,
                   balancePrecision: 4
-                }], {
+                }];
+                if (!isAusdPlan) {
+                  const bonusPlatform = await PlatformAccountModel.findOneAndUpdate(
+                    { id: "platform" },
+                    { $inc: { balance: -bonus }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
+                    { upsert: true, new: true, session, lean: true }
+                  );
+                  bonusLedgerInputs.unshift({
+                    accountType: "platform",
+                    accountId: "platform",
+                    direction: "debit",
+                    amount: bonus,
+                    balanceAfter: bonusPlatform.balance,
+                    description: `Bonus reseau journalier niveau ${level + 1}`,
+                    precision: 4,
+                    balancePrecision: 4
+                  });
+                }
+                const bonusLedger = buildLedgerEntries(bonusLedgerInputs, {
                   source: "network_daily_bonus",
                   referenceId: plan.id,
-                  extra: { sourceUserId: user.id, level: level + 1, activePlanId: plan.id, planId: plan.planId, days: dueDays, payoutDate }
+                  extra: { sourceUserId: user.id, level: level + 1, activePlanId: plan.id, planId: plan.planId, days: dueDays, payoutDate, asset: planAsset }
                 });
                 if (bonusLedger.length) await LedgerEntryModel.insertMany(bonusLedger, { session });
                 await TransactionModel.create([{
@@ -1905,10 +2090,10 @@ async function processDailyPlanEarnings(options = {}) {
                   type: "Bonus",
                   description: `Bonus reseau journalier niveau ${level + 1} (${paidDayLabel})`,
                   amount: bonus,
-                  displayAmount: formatNetworkBonusAmount(bonus, "USDT"),
+                  displayAmount: formatNetworkBonusAmount(bonus, planAsset),
                   status: "Completed",
                   createdAt: nowIso(),
-                  metadata: { sourceUserId: user.id, level: level + 1, rate: bonusRates[level], activePlanId: plan.id, planId: plan.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
+                  metadata: { sourceUserId: user.id, level: level + 1, rate: bonusRates[level], activePlanId: plan.id, planId: plan.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate, asset: planAsset }
                 }], { session });
                 result.creditedNetworkBonuses += 1;
                 result.creditedNetworkAmount = networkBonusMoney(result.creditedNetworkAmount + bonus);
@@ -1920,8 +2105,158 @@ async function processDailyPlanEarnings(options = {}) {
 
           result.creditedUsers += 1;
           result.creditedAmount = money(result.creditedAmount + payout);
-          if (plan.status === "completed") result.completedPlans += 1;
+          if (plan.status === "completed" || plan.status === "dividend") result.completedPlans += 1;
         }));
+      } finally {
+        await session.endSession();
+      }
+    }
+
+    const activeEtfs = Array.isArray(userSnapshot.activeEtfs) ? userSnapshot.activeEtfs : [];
+    for (const etfSnapshot of activeEtfs) {
+      if (etfSnapshot.status !== "active" && etfSnapshot.status !== "matured") continue;
+      const amount = positiveFiniteNumber(etfSnapshot.amount);
+      const monthlyRate = positiveFiniteNumber(etfSnapshot.monthlyRate);
+      if (!amount || !monthlyRate) {
+        result.skippedInvalidPlans += 1;
+        logger.error({ userId: userSnapshot.id, etfId: etfSnapshot.id, amount: etfSnapshot.amount, monthlyRate: etfSnapshot.monthlyRate }, "Invalid ETF skipped during earnings");
+        continue;
+      }
+
+      const session = await mongoose.startSession();
+      try {
+        await withMongoRetry(() => session.withTransaction(async () => {
+          const user = normalizeUserRecord(await UserModel.findOne({ id: userSnapshot.id }, null, { session }).lean());
+          if (!user) return;
+          const etfsList = Array.isArray(user.activeEtfs) ? user.activeEtfs : [];
+          const etf = etfsList.find((item) => item.id === etfSnapshot.id);
+          if (!etf || (etf.status !== "active" && etf.status !== "matured")) return;
+
+          const nextDividendAt = etf.nextDividendAt || addDaysToTimestamp(etf.activatedAt || nowIso(), 30);
+          const dueDividends = dueIntervalSlots(nextDividendAt, 30);
+          if (dueDividends <= 0) return;
+
+          const grossPayout = money(Number(etf.amount || 0) * Number(etf.monthlyRate || 0) * dueDividends);
+          const applyRevenueCommissions = revenueCommissionsEnabled(etf);
+          const revenueAdminCommission = applyRevenueCommissions ? money(grossPayout * USER_REVENUE_ADMIN_COMMISSION_RATE) : 0;
+          const revenueDeveloperCommission = applyRevenueCommissions ? money(grossPayout * USER_REVENUE_DEVELOPER_COMMISSION_RATE) : 0;
+          const payout = grossPayout;
+          if (payout <= 0) return;
+
+          const lastDividendAt = addDaysToTimestamp(nextDividendAt, (dueDividends - 1) * 30);
+          etf.lastDividendAt = lastDividendAt;
+          etf.nextDividendAt = addDaysToTimestamp(nextDividendAt, dueDividends * 30);
+          etf.dividendsPaid = Math.max(0, Number(etf.dividendsPaid || 0)) + dueDividends;
+          etf.dividendAmount = money(Number(etf.dividendAmount || 0) + payout);
+          if (etf.status === "active" && Date.parse(etf.endsAt || "") <= Date.now()) {
+            etf.status = "matured";
+            etf.maturedAt = nowIso();
+          }
+
+          const updatedBalance = money(Number(user.ausdBalance || 0) + payout);
+          await UserModel.updateOne(
+            { id: user.id },
+            { $set: { ausdBalance: updatedBalance, activeEtfs: etfsList } },
+            { session }
+          );
+
+          const ledgerEntries = buildLedgerEntries([{
+            accountType: "user_ausd",
+            accountId: user.id,
+            direction: "credit",
+            amount: payout,
+            balanceAfter: updatedBalance,
+            description: `Dividende mensuel ${etf.name || "AFRIX ETF Program"}`
+          }], {
+            source: "etf_monthly_dividend",
+            referenceId: etf.id,
+            extra: { userId: user.id, activeEtfId: etf.id, planId: etf.planId, dividends: dueDividends, payoutDate, asset: "AUSD" }
+          });
+          if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+
+          const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
+          const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
+          await payDirectCommission({
+            session,
+            accountId: adminAccount?.id,
+            amount: revenueAdminCommission,
+            label: `Commission dividende ETF`,
+            source: "admin_user_revenue_commission",
+            referenceId: etf.id,
+            extra: { sourceUserId: user.id, activeEtfId: etf.id, planId: etf.planId, rate: USER_REVENUE_ADMIN_COMMISSION_RATE, dividends: dueDividends },
+            asset: "AUSD"
+          });
+          await payDirectCommission({
+            session,
+            accountId: developerAccount?.id,
+            amount: revenueDeveloperCommission,
+            label: `Commission dividende ETF`,
+            source: "developer_user_revenue_commission",
+            referenceId: etf.id,
+            extra: { sourceUserId: user.id, activeEtfId: etf.id, planId: etf.planId, rate: USER_REVENUE_DEVELOPER_COMMISSION_RATE, dividends: dueDividends },
+            asset: "AUSD"
+          });
+
+          await TransactionModel.create([{
+            id: nanoid(),
+            userId: user.id,
+            type: "Gain",
+            description: `Dividende mensuel ${etf.name || "AFRIX ETF Program"}`,
+            amount: payout,
+            displayAmount: formatAssetAmount(payout, "AUSD", "+"),
+            status: "Completed",
+            createdAt: nowIso(),
+            metadata: { source: "etf_monthly_dividend", activeEtfId: etf.id, planId: etf.planId, dividends: dueDividends, payoutDate, asset: "AUSD" }
+          }], { session });
+
+          let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
+          for (let level = 0; level < bonusRates.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
+            const referrer = await findUserByReferralPointer(currentReferrer, session);
+            if (!referrer) break;
+            if (unlockedReferralLevels(referrer) > level) {
+              const bonus = networkBonusMoney((payout * bonusRates[level]) / 100);
+              if (bonus > 0) {
+                const referrerBalance = networkBonusMoney(Number(referrer.ausdBalance || 0) + bonus);
+                const referrerBonus = networkBonusMoney(Number(referrer.bonus || 0) + bonus);
+                await UserModel.updateOne({ id: referrer.id }, { $set: { ausdBalance: referrerBalance, bonus: referrerBonus } }, { session });
+                const bonusLedger = buildLedgerEntries([{
+                  accountType: "user_ausd",
+                  accountId: referrer.id,
+                  direction: "credit",
+                  amount: bonus,
+                  balanceAfter: referrerBalance,
+                  description: `Bonus ETF mensuel niveau ${level + 1}`,
+                  precision: 4,
+                  balancePrecision: 4
+                }], {
+                  source: "etf_monthly_referral_bonus",
+                  referenceId: etf.id,
+                  extra: { sourceUserId: user.id, level: level + 1, activeEtfId: etf.id, planId: etf.planId, dividends: dueDividends, payoutDate, asset: "AUSD" }
+                });
+                if (bonusLedger.length) await LedgerEntryModel.insertMany(bonusLedger, { session });
+                await TransactionModel.create([{
+                  id: nanoid(),
+                  userId: referrer.id,
+                  type: "Bonus",
+                  description: `Bonus ETF mensuel niveau ${level + 1}`,
+                  amount: bonus,
+                  displayAmount: formatNetworkBonusAmount(bonus, "AUSD"),
+                  status: "Completed",
+                  createdAt: nowIso(),
+                  metadata: { sourceUserId: user.id, level: level + 1, rate: bonusRates[level], activeEtfId: etf.id, planId: etf.planId, dividends: dueDividends, payoutDate, asset: "AUSD" }
+                }], { session });
+                result.creditedNetworkBonuses += 1;
+                result.creditedNetworkAmount = money(result.creditedNetworkAmount + bonus);
+              }
+            }
+            currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
+          }
+
+          result.creditedUsers += 1;
+          result.creditedAmount = money(result.creditedAmount + payout);
+        }));
+      } catch (error) {
+        logger.error({ err: error, userId: userSnapshot.id, etfId: etfSnapshot.id }, "ETF monthly dividend processing failed");
       } finally {
         await session.endSession();
       }
@@ -1957,7 +2292,11 @@ async function processDailyPlanEarnings(options = {}) {
           const dueDays = Math.min(duePayoutSlots(nextPayoutAt), currentDurationDays - currentDaysPaid);
           if (dueDays <= 0) return;
 
-          const payout = money((currentRewardAmount / currentDurationDays) * dueDays);
+          const grossPayout = money((currentRewardAmount / currentDurationDays) * dueDays);
+          const applyRevenueCommissions = revenueCommissionsEnabled(stake);
+          const revenueAdminCommission = applyRevenueCommissions ? money(grossPayout * USER_REVENUE_ADMIN_COMMISSION_RATE) : 0;
+          const revenueDeveloperCommission = applyRevenueCommissions ? money(grossPayout * USER_REVENUE_DEVELOPER_COMMISSION_RATE) : 0;
+          const payout = grossPayout;
           if (payout <= 0) return;
 
           const lastPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays - 1);
@@ -1989,6 +2328,28 @@ async function processDailyPlanEarnings(options = {}) {
             extra: { userId: user.id, stakeId: stake.id, planId: stake.planId, days: dueDays, payoutDate }
           });
           if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+          const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
+          const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
+          await payDirectCommission({
+            session,
+            accountId: adminAccount?.id,
+            amount: revenueAdminCommission,
+            label: `Commission revenu Staking`,
+            source: "admin_user_revenue_commission",
+            referenceId: stake.id,
+            extra: { sourceUserId: user.id, stakeId: stake.id, planId: stake.planId, rate: USER_REVENUE_ADMIN_COMMISSION_RATE, days: dueDays },
+            asset: "GRSC"
+          });
+          await payDirectCommission({
+            session,
+            accountId: developerAccount?.id,
+            amount: revenueDeveloperCommission,
+            label: `Commission revenu Staking`,
+            source: "developer_user_revenue_commission",
+            referenceId: stake.id,
+            extra: { sourceUserId: user.id, stakeId: stake.id, planId: stake.planId, rate: USER_REVENUE_DEVELOPER_COMMISSION_RATE, days: dueDays },
+            asset: "GRSC"
+          });
 
           await TransactionModel.create([{
             id: nanoid(),
@@ -2092,7 +2453,11 @@ async function processDailyPlanEarnings(options = {}) {
           const dueDays = Math.min(duePayoutSlots(nextPayoutAt), currentDurationDays - currentDaysPaid);
           if (dueDays <= 0) return;
 
-          const payout = money((currentRewardAmount / currentDurationDays) * dueDays);
+          const grossPayout = money((currentRewardAmount / currentDurationDays) * dueDays);
+          const applyRevenueCommissions = revenueCommissionsEnabled(founder);
+          const revenueAdminCommission = applyRevenueCommissions ? money(grossPayout * USER_REVENUE_ADMIN_COMMISSION_RATE) : 0;
+          const revenueDeveloperCommission = applyRevenueCommissions ? money(grossPayout * USER_REVENUE_DEVELOPER_COMMISSION_RATE) : 0;
+          const payout = grossPayout;
           if (payout <= 0) return;
 
           const lastPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays - 1);
@@ -2124,6 +2489,28 @@ async function processDailyPlanEarnings(options = {}) {
             extra: { userId: user.id, activeFounderId: founder.id, planId: founder.planId, days: dueDays, payoutDate }
           });
           if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
+          const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
+          const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
+          await payDirectCommission({
+            session,
+            accountId: adminAccount?.id,
+            amount: revenueAdminCommission,
+            label: `Commission revenu Founders`,
+            source: "admin_user_revenue_commission",
+            referenceId: founder.id,
+            extra: { sourceUserId: user.id, activeFounderId: founder.id, planId: founder.planId, rate: USER_REVENUE_ADMIN_COMMISSION_RATE, days: dueDays },
+            asset: "GRSC"
+          });
+          await payDirectCommission({
+            session,
+            accountId: developerAccount?.id,
+            amount: revenueDeveloperCommission,
+            label: `Commission revenu Founders`,
+            source: "developer_user_revenue_commission",
+            referenceId: founder.id,
+            extra: { sourceUserId: user.id, activeFounderId: founder.id, planId: founder.planId, rate: USER_REVENUE_DEVELOPER_COMMISSION_RATE, days: dueDays },
+            asset: "GRSC"
+          });
 
           await TransactionModel.create([{
             id: nanoid(),
@@ -2289,6 +2676,7 @@ async function ensureAdminUser() {
         activePlans: [],
         activeStakes: [],
         activeFounders: [],
+        activeEtfs: [],
         createdAt: nowIso()
       }
     },
@@ -2329,6 +2717,7 @@ async function ensureCommissionAccount({ email, password, fullName, role }) {
         activePlans: [],
         activeStakes: [],
         activeFounders: [],
+        activeEtfs: [],
         createdAt: nowIso()
       }
     },
@@ -2482,6 +2871,7 @@ app.post("/api/auth/register", validate(z.object({
     activePlans: [],
     activeStakes: [],
     activeFounders: [],
+    activeEtfs: [],
     createdAt: nowIso()
   });
 
@@ -3251,7 +3641,7 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
           direction: "credit",
           amount: adminCommissionGrs,
           balanceAfter: adminAccount.grsBalance,
-          description: "Commission admin AFRIX Swap en GRSC"
+          description: "Commission AFRIX Swap en GRSC"
         });
         commissionTransactions.push({
           id: nanoid(),
@@ -3272,7 +3662,7 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
           direction: "credit",
           amount: developerCommissionGrs,
           balanceAfter: developerAccount.grsBalance,
-          description: "Commission developpeur AFRIX Swap en GRSC"
+          description: "Commission AFRIX Swap en GRSC"
         });
         commissionTransactions.push({
           id: nanoid(),
@@ -3524,8 +3914,8 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
         const commissionRows = [];
         const commissionTransactions = [];
         for (const target of [
-          { email: ADMIN_EMAIL, amount: adminCommission, rate: AUSD_SWAP_ADMIN_SHARE, accountType: "admin", description: "Commission admin swap AUSD" },
-          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommission, rate: AUSD_SWAP_DEVELOPER_SHARE, accountType: "developer", description: "Commission developpeur swap AUSD" },
+          { email: ADMIN_EMAIL, amount: adminCommission, rate: AUSD_SWAP_ADMIN_SHARE, accountType: "admin", description: "Commission swap AUSD" },
+          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommission, rate: AUSD_SWAP_DEVELOPER_SHARE, accountType: "developer", description: "Commission swap AUSD" },
           { email: PLATFORM_EMAIL, amount: platformCommission, rate: 1 - AUSD_SWAP_ADMIN_SHARE - AUSD_SWAP_DEVELOPER_SHARE, accountType: "platform_user", description: "Commission plateforme swap AUSD" }
         ]) {
           if (!target.email || target.amount <= 0) continue;
@@ -3587,8 +3977,8 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
         const commissionRows = [];
         const commissionTransactions = [];
         for (const target of [
-          { email: ADMIN_EMAIL, amount: adminCommission, rate: AUSD_SWAP_ADMIN_SHARE, accountType: "admin", description: "Commission admin swap AUSD vers USDT" },
-          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommission, rate: AUSD_SWAP_DEVELOPER_SHARE, accountType: "developer", description: "Commission developpeur swap AUSD vers USDT" },
+          { email: ADMIN_EMAIL, amount: adminCommission, rate: AUSD_SWAP_ADMIN_SHARE, accountType: "admin", description: "Commission swap AUSD vers USDT" },
+          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommission, rate: AUSD_SWAP_DEVELOPER_SHARE, accountType: "developer", description: "Commission swap AUSD vers USDT" },
           { email: PLATFORM_EMAIL, amount: platformCommission, rate: 1 - AUSD_SWAP_ADMIN_SHARE - AUSD_SWAP_DEVELOPER_SHARE, accountType: "platform_user", description: "Commission plateforme swap AUSD vers USDT" }
         ]) {
           if (!target.email || target.amount <= 0) continue;
@@ -3641,8 +4031,8 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
         const commissionRows = [];
         const commissionTransactions = [];
         for (const target of [
-          { email: ADMIN_EMAIL, amount: adminCommissionGrs, rate: GRSCOIN_SWAP_ADMIN_RATE, accountType: "admin_grs", description: "Commission admin swap AUSD vers GRSC" },
-          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommissionGrs, rate: GRSCOIN_SWAP_DEVELOPER_RATE, accountType: "developer_grs", description: "Commission developpeur swap AUSD vers GRSC" },
+          { email: ADMIN_EMAIL, amount: adminCommissionGrs, rate: GRSCOIN_SWAP_ADMIN_RATE, accountType: "admin_grs", description: "Commission swap AUSD vers GRSC" },
+          { email: COMMISSION_DEVELOPER_EMAIL, amount: developerCommissionGrs, rate: GRSCOIN_SWAP_DEVELOPER_RATE, accountType: "developer_grs", description: "Commission swap AUSD vers GRSC" },
           { email: PLATFORM_EMAIL, amount: platformCommissionGrs, rate: GRSCOIN_SWAP_PLATFORM_RATE, accountType: "platform_user_grs", description: "Commission plateforme swap AUSD vers GRSC" }
         ]) {
           if (!target.email || target.amount <= 0) continue;
@@ -3698,6 +4088,188 @@ app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(
   notifyPlanActivation(result.user, result.activePlan, investmentAmount);
 });
 
+app.post("/api/etf/activate", authenticate, requirePlatformAccess(), validate(z.object({
+  amount: z.coerce.number().positive(),
+  plan: z.string().min(2)
+})), async (req, res) => {
+  const plan = parseEtfPlan(req.body.plan);
+  if (!plan) return res.status(400).json({ message: "Portefeuille ETF inconnu." });
+  const etfAmount = money(req.body.amount);
+  if (etfAmount < money(plan.minAmount)) {
+    return res.status(400).json({ message: `Montant minimum ${plan.name}: ${plan.minAmount.toLocaleString("fr-FR")} AUSD.` });
+  }
+
+  const programFee = money(etfAmount * ETF_PROGRAM_FEE_RATE);
+  const programFeeAdmin = money(programFee * PLATFORM_FEE_ADMIN_SHARE);
+  const programFeeDeveloper = money(programFee * PLATFORM_FEE_DEVELOPER_SHARE);
+  const programFeePlatform = money(programFee - programFeeAdmin - programFeeDeveloper);
+  const activationAdminCommission = money(etfAmount * ACTIVATION_ADMIN_COMMISSION_RATE);
+  const activationDeveloperCommission = money(etfAmount * ACTIVATION_DEVELOPER_COMMISSION_RATE);
+  const totalDebit = money(etfAmount + programFee);
+  const activatedAt = nowIso();
+  const activeEtf = {
+    id: nanoid(),
+    planId: plan.id,
+    name: plan.name,
+    amount: etfAmount,
+    monthlyRate: plan.monthlyRate,
+    durationMonths: plan.durationMonths,
+    durationDays: plan.durationDays,
+    activatedAt,
+    lastDividendAt: null,
+    nextDividendAt: addDaysToTimestamp(activatedAt, 30),
+    dividendsPaid: 0,
+    dividendAmount: 0,
+    endsAt: addDaysToTimestamp(activatedAt, plan.durationDays),
+    status: "active",
+    asset: "AUSD",
+    revenueCommissionEnabled: true
+  };
+
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      const updatedUser = await UserModel.findOneAndUpdate(
+        {
+          id: req.user.id,
+          status: "active",
+          $expr: { $gte: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, totalDebit] }
+        },
+        [{
+          $set: {
+            ausdBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, totalDebit] }, 2] },
+            activity: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$activity", 0] } }, etfAmount] }, 2] },
+            activeEtfs: { $concatArrays: [{ $ifNull: ["$activeEtfs", []] }, [activeEtf]] }
+          }
+        }],
+        { new: true, session, lean: true }
+      );
+      if (!updatedUser) {
+        result = { error: `Solde AUSD insuffisant. Total requis: ${totalDebit.toFixed(2)} AUSD, incluant ${programFee.toFixed(2)} AUSD de frais programme.` };
+        return;
+      }
+
+      const entries = buildLedgerEntries([{
+        accountType: "user_ausd",
+        accountId: req.user.id,
+        direction: "debit",
+        amount: totalDebit,
+        balanceAfter: updatedUser.ausdBalance,
+        description: `Activation ${plan.name} avec frais`
+      }, {
+        accountType: "etf_ausd",
+        accountId: req.user.id,
+        direction: "credit",
+        amount: etfAmount,
+        balanceAfter: etfAmount,
+        description: `Capital ETF bloque ${plan.name}`
+      }], { source: "etf_activation", referenceId: activeEtf.id, extra: { planId: plan.id, etfAmount, programFee, totalDebit, asset: "AUSD" } });
+      if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+
+      const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
+      const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
+      const platformAccount = PLATFORM_EMAIL ? await UserModel.findOne({ email: PLATFORM_EMAIL }, null, { session }).lean() : null;
+      await payDirectCommission({ session, accountId: adminAccount?.id, amount: programFeeAdmin, label: "Commission frais programme ETF", source: "admin_program_fee_commission", referenceId: activeEtf.id, extra: { sourceUserId: req.user.id, activeEtfId: activeEtf.id, feeRate: ETF_PROGRAM_FEE_RATE }, asset: "AUSD" });
+      await payDirectCommission({ session, accountId: developerAccount?.id, amount: programFeeDeveloper, label: "Commission frais programme ETF", source: "developer_program_fee_commission", referenceId: activeEtf.id, extra: { sourceUserId: req.user.id, activeEtfId: activeEtf.id, feeRate: ETF_PROGRAM_FEE_RATE }, asset: "AUSD" });
+      await payDirectCommission({ session, accountId: platformAccount?.id, amount: programFeePlatform, label: "Frais programme ETF plateforme", source: "platform_program_fee", referenceId: activeEtf.id, extra: { sourceUserId: req.user.id, activeEtfId: activeEtf.id, feeRate: ETF_PROGRAM_FEE_RATE }, asset: "AUSD" });
+      await payDirectCommission({ session, accountId: adminAccount?.id, amount: activationAdminCommission, label: "Commission activation ETF", source: "admin_activation_commission", referenceId: activeEtf.id, extra: { sourceUserId: req.user.id, activeEtfId: activeEtf.id, rate: ACTIVATION_ADMIN_COMMISSION_RATE }, asset: "AUSD" });
+      await payDirectCommission({ session, accountId: developerAccount?.id, amount: activationDeveloperCommission, label: "Commission activation ETF", source: "developer_activation_commission", referenceId: activeEtf.id, extra: { sourceUserId: req.user.id, activeEtfId: activeEtf.id, rate: ACTIVATION_DEVELOPER_COMMISSION_RATE }, asset: "AUSD" });
+
+      await TransactionModel.create([{
+        id: nanoid(),
+        userId: req.user.id,
+        type: "ETF",
+        description: `Activation ${plan.name}`,
+        amount: totalDebit,
+        displayAmount: formatAssetAmount(totalDebit, "AUSD", "-"),
+        status: "Active",
+        createdAt: nowIso(),
+        metadata: { source: "etf_activation", planId: plan.id, activeEtfId: activeEtf.id, etfAmount, programFee, totalDebit, endsAt: activeEtf.endsAt, asset: "AUSD" }
+      }], { session });
+      result = { user: normalizeUserRecord(updatedUser), activeEtf, programFee, totalDebit };
+    });
+
+    if (result?.error) return res.status(400).json({ message: result.error });
+    res.status(201).json({ user: sanitizeUser(result.user), activeEtf: result.activeEtf, programFee: result.programFee, totalDebit: result.totalDebit });
+  } finally {
+    await session.endSession();
+  }
+});
+
+app.post("/api/etf/:id/claim", authenticate, requirePlatformAccess(), async (req, res) => {
+  const etfId = String(req.params.id || "");
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      const user = normalizeUserRecord(await UserModel.findOne({ id: req.user.id }, null, { session }).lean());
+      const etfs = Array.isArray(user?.activeEtfs) ? user.activeEtfs : [];
+      const etfIndex = etfs.findIndex((item) => item.id === etfId);
+      const etf = etfIndex >= 0 ? etfs[etfIndex] : null;
+      if (!etf) {
+        result = { error: "Participation ETF introuvable." };
+        return;
+      }
+      if (etf.status === "completed") {
+        result = { error: "Ce capital ETF a deja ete retire." };
+        return;
+      }
+      if (Date.parse(etf.endsAt || "") > Date.now()) {
+        result = { error: "Le capital ETF est bloque pendant 36 mois." };
+        return;
+      }
+
+      const claimedAmount = money(etf.amount || 0);
+      etfs[etfIndex] = { ...etf, status: "completed", claimedAt: nowIso() };
+      const updatedUser = await UserModel.findOneAndUpdate(
+        { id: user.id },
+        [{
+          $set: {
+            ausdBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, claimedAmount] }, 2] },
+            activeEtfs: etfs
+          }
+        }],
+        { new: true, session, lean: true }
+      );
+
+      const entries = buildLedgerEntries([{
+        accountType: "etf_ausd",
+        accountId: user.id,
+        direction: "debit",
+        amount: claimedAmount,
+        balanceAfter: 0,
+        description: `Sortie capital ETF ${etf.name || "AFRIX ETF Program"}`
+      }, {
+        accountType: "user_ausd",
+        accountId: user.id,
+        direction: "credit",
+        amount: claimedAmount,
+        balanceAfter: updatedUser.ausdBalance,
+        description: `Retrait capital ETF ${etf.name || "AFRIX ETF Program"}`
+      }], { source: "etf_claim", referenceId: etf.id, extra: { activeEtfId: etf.id, claimedAmount, asset: "AUSD" } });
+      if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+      await TransactionModel.create([{
+        id: nanoid(),
+        userId: user.id,
+        type: "ETF",
+        description: `Retrait capital ETF ${etf.name || "AFRIX ETF Program"}`,
+        amount: claimedAmount,
+        displayAmount: formatAssetAmount(claimedAmount, "AUSD", "+"),
+        status: "Completed",
+        createdAt: nowIso(),
+        metadata: { source: "etf_claim", activeEtfId: etf.id, claimedAmount, asset: "AUSD" }
+      }], { session });
+      result = { user: normalizeUserRecord(updatedUser), claimedAmount };
+    });
+
+    if (result?.error) return res.status(400).json({ message: result.error });
+    res.json({ user: sanitizeUser(result.user), claimedAmount: result.claimedAmount });
+  } finally {
+    await session.endSession();
+  }
+});
+
 app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validate(z.object({
   amount: z.coerce.number().positive(),
   plan: z.string().min(2)
@@ -3709,6 +4281,13 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
     return res.status(400).json({ message: `Montant minimum ${plan.name}: ${plan.minAmount.toFixed(2)} GRSC.` });
   }
 
+  const programFee = money(stakeAmount * STAKING_PROGRAM_FEE_RATE);
+  const programFeeAdmin = money(programFee * PLATFORM_FEE_ADMIN_SHARE);
+  const programFeeDeveloper = money(programFee * PLATFORM_FEE_DEVELOPER_SHARE);
+  const programFeePlatform = money(programFee - programFeeAdmin - programFeeDeveloper);
+  const activationAdminCommission = money(stakeAmount * ACTIVATION_ADMIN_COMMISSION_RATE);
+  const activationDeveloperCommission = money(stakeAmount * ACTIVATION_DEVELOPER_COMMISSION_RATE);
+  const totalDebit = money(stakeAmount + programFee);
   const rewardAmount = money(stakeAmount * plan.rewardRate);
   const maturityAmount = money(stakeAmount + rewardAmount);
   const activatedAt = nowIso();
@@ -3728,7 +4307,8 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
     daysPaid: 0,
     earnedAmount: 0,
     endsAt: addDaysToTimestamp(activatedAt, plan.durationDays),
-    status: "active"
+    status: "active",
+    revenueCommissionEnabled: true
   };
 
   const session = await mongoose.startSession();
@@ -3739,18 +4319,18 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
         {
           id: req.user.id,
           status: "active",
-          $expr: { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, stakeAmount] }
+          $expr: { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, totalDebit] }
         },
         [{
           $set: {
-            grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, stakeAmount] }, 2] },
+            grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, totalDebit] }, 2] },
             activeStakes: { $concatArrays: [{ $ifNull: ["$activeStakes", []] }, [activeStake]] }
           }
         }],
         { new: true, session, lean: true }
       );
       if (!updatedUser) {
-        result = { error: "Solde GRSCOIN insuffisant pour activer ce staking." };
+        result = { error: `Solde GRSCOIN insuffisant pour activer ce staking. Total requis: ${totalDebit.toFixed(2)} GRSC.` };
         return;
       }
 
@@ -3758,9 +4338,9 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
         accountType: "user_grs",
         accountId: req.user.id,
         direction: "debit",
-        amount: stakeAmount,
+        amount: totalDebit,
         balanceAfter: updatedUser.grsBalance,
-        description: `Activation ${plan.name}`
+        description: `Activation ${plan.name} avec frais`
       }, {
         accountType: "staking_grs",
         accountId: req.user.id,
@@ -3768,7 +4348,7 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
         amount: stakeAmount,
         balanceAfter: stakeAmount,
         description: `GRSCOIN verrouille ${plan.name}`
-      }], { source: "staking_activation", referenceId: activeStake.id, extra: { planId: plan.id } });
+      }], { source: "staking_activation", referenceId: activeStake.id, extra: { planId: plan.id, stakeAmount, programFee, totalDebit } });
       if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
 
       const benefitRows = [];
@@ -3815,27 +4395,43 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
       const platformAccount = PLATFORM_EMAIL ? await UserModel.findOne({ email: PLATFORM_EMAIL }, null, { session }).lean() : null;
       await creditGrsBenefit({
         account: adminAccount,
-        amount: rewardAmount * STAKING_ADMIN_COMMISSION_RATE,
-        label: "Commission admin staking",
-        source: "staking_admin_commission",
+        amount: programFeeAdmin,
+        label: "Commission frais programme Staking",
+        source: "staking_program_fee_commission",
         accountType: "admin_grs",
-        extra: { sourceUserId: req.user.id, rate: STAKING_ADMIN_COMMISSION_RATE, rewardAmount }
+        extra: { sourceUserId: req.user.id, rate: PLATFORM_FEE_ADMIN_SHARE, feeRate: STAKING_PROGRAM_FEE_RATE }
       });
       await creditGrsBenefit({
         account: developerAccount,
-        amount: rewardAmount * STAKING_DEVELOPER_COMMISSION_RATE,
-        label: "Commission developpeur staking",
-        source: "staking_developer_commission",
+        amount: programFeeDeveloper,
+        label: "Commission frais programme Staking",
+        source: "staking_program_fee_commission",
         accountType: "developer_grs",
-        extra: { sourceUserId: req.user.id, rate: STAKING_DEVELOPER_COMMISSION_RATE, rewardAmount }
+        extra: { sourceUserId: req.user.id, rate: PLATFORM_FEE_DEVELOPER_SHARE, feeRate: STAKING_PROGRAM_FEE_RATE }
       });
       await creditGrsBenefit({
         account: platformAccount,
-        amount: rewardAmount * STAKING_PLATFORM_COMMISSION_RATE,
-        label: "Commission plateforme staking",
-        source: "staking_platform_commission",
+        amount: programFeePlatform,
+        label: "Frais programme Staking plateforme",
+        source: "staking_program_fee",
         accountType: "platform_user_grs",
-        extra: { sourceUserId: req.user.id, rate: STAKING_PLATFORM_COMMISSION_RATE, rewardAmount }
+        extra: { sourceUserId: req.user.id, rate: 1 - PLATFORM_FEE_ADMIN_SHARE - PLATFORM_FEE_DEVELOPER_SHARE, feeRate: STAKING_PROGRAM_FEE_RATE }
+      });
+      await creditGrsBenefit({
+        account: adminAccount,
+        amount: activationAdminCommission,
+        label: "Commission activation Staking",
+        source: "staking_activation_commission",
+        accountType: "admin_grs",
+        extra: { sourceUserId: req.user.id, rate: ACTIVATION_ADMIN_COMMISSION_RATE }
+      });
+      await creditGrsBenefit({
+        account: developerAccount,
+        amount: activationDeveloperCommission,
+        label: "Commission activation Staking",
+        source: "staking_activation_commission",
+        accountType: "developer_grs",
+        extra: { sourceUserId: req.user.id, rate: ACTIVATION_DEVELOPER_COMMISSION_RATE }
       });
 
       if (benefitRows.length) {
@@ -3849,7 +4445,7 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
         })), {
           source: "staking_activation_benefits",
           referenceId: activeStake.id,
-          extra: { planId: plan.id, rewardAmount }
+          extra: { planId: plan.id, programFee, rewardAmount }
         });
         if (benefitEntries.length) await LedgerEntryModel.insertMany(benefitEntries, { session });
       }
@@ -3860,17 +4456,17 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
         userId: req.user.id,
         type: "Staking",
         description: `Activation ${plan.name}`,
-        amount: stakeAmount,
-        displayAmount: `-${stakeAmount.toFixed(2)} GRSC`,
+        amount: totalDebit,
+        displayAmount: `-${totalDebit.toFixed(2)} GRSC`,
         status: "Active",
         createdAt: nowIso(),
-        metadata: { planId: plan.id, activeStakeId: activeStake.id, rewardAmount, maturityAmount, endsAt: activeStake.endsAt }
+        metadata: { planId: plan.id, activeStakeId: activeStake.id, stakeAmount, programFee, totalDebit, rewardAmount, maturityAmount, endsAt: activeStake.endsAt }
       }], { session });
-      result = { user: normalizeUserRecord(updatedUser), activeStake };
+      result = { user: normalizeUserRecord(updatedUser), activeStake, programFee, totalDebit };
     });
 
     if (result?.error) return res.status(400).json({ message: result.error });
-    res.status(201).json({ user: sanitizeUser(result.user), activeStake: result.activeStake });
+    res.status(201).json({ user: sanitizeUser(result.user), activeStake: result.activeStake, programFee: result.programFee, totalDebit: result.totalDebit });
   } finally {
     await session.endSession();
   }
@@ -3968,6 +4564,8 @@ app.post("/api/founders/activate", authenticate, requirePlatformAccess(), valida
   const adminFee = money(activationFee * FOUNDERS_ACTIVATION_ADMIN_SHARE);
   const developerFee = money(activationFee * FOUNDERS_ACTIVATION_DEVELOPER_SHARE);
   const platformFee = money(activationFee - adminFee - developerFee);
+  const activationAdminCommission = money(founderAmount * ACTIVATION_ADMIN_COMMISSION_RATE);
+  const activationDeveloperCommission = money(founderAmount * ACTIVATION_DEVELOPER_COMMISSION_RATE);
   const totalDebit = money(founderAmount + activationFee);
   const rewardAmount = money(founderAmount * plan.rewardRate * plan.durationYears);
   const maturityAmount = money(founderAmount + rewardAmount);
@@ -3989,7 +4587,8 @@ app.post("/api/founders/activate", authenticate, requirePlatformAccess(), valida
     daysPaid: 0,
     earnedAmount: 0,
     endsAt: addDaysToTimestamp(activatedAt, plan.durationDays),
-    status: "active"
+    status: "active",
+    revenueCommissionEnabled: true
   };
 
   const session = await mongoose.startSession();
@@ -4011,7 +4610,7 @@ app.post("/api/founders/activate", authenticate, requirePlatformAccess(), valida
         { new: true, session, lean: true }
       );
       if (!updatedUser) {
-        result = { error: `Solde GRSCOIN insuffisant. Total requis: ${totalDebit.toFixed(2)} GRSC, incluant ${activationFee.toFixed(2)} GRSC de frais d'activation.` };
+        result = { error: `Solde GRSCOIN insuffisant. Total requis: ${totalDebit.toFixed(2)} GRSC, incluant ${activationFee.toFixed(2)} GRSC de frais programme.` };
         return;
       }
 
@@ -4049,9 +4648,31 @@ app.post("/api/founders/activate", authenticate, requirePlatformAccess(), valida
           metadata: { source: "founders_activation_fee", activeFounderId: activeFounder.id, sourceUserId: req.user.id, feeAmount: activationFee, share }
         });
       };
-      await creditFeeRecipient({ email: ADMIN_EMAIL, amount: adminFee, accountType: "admin_grs", label: "Commission admin activation Founders", share: FOUNDERS_ACTIVATION_ADMIN_SHARE });
-      await creditFeeRecipient({ email: COMMISSION_DEVELOPER_EMAIL, amount: developerFee, accountType: "developer_grs", label: "Commission developpeur activation Founders", share: FOUNDERS_ACTIVATION_DEVELOPER_SHARE });
-      await creditFeeRecipient({ email: PLATFORM_EMAIL, amount: platformFee, accountType: "platform_user_grs", label: "Commission plateforme activation Founders", share: 1 - FOUNDERS_ACTIVATION_ADMIN_SHARE - FOUNDERS_ACTIVATION_DEVELOPER_SHARE });
+      await creditFeeRecipient({ email: ADMIN_EMAIL, amount: adminFee, accountType: "admin_grs", label: "Commission frais programme Founders", share: FOUNDERS_ACTIVATION_ADMIN_SHARE });
+      await creditFeeRecipient({ email: COMMISSION_DEVELOPER_EMAIL, amount: developerFee, accountType: "developer_grs", label: "Commission frais programme Founders", share: FOUNDERS_ACTIVATION_DEVELOPER_SHARE });
+      await creditFeeRecipient({ email: PLATFORM_EMAIL, amount: platformFee, accountType: "platform_user_grs", label: "Frais programme Founders plateforme", share: 1 - FOUNDERS_ACTIVATION_ADMIN_SHARE - FOUNDERS_ACTIVATION_DEVELOPER_SHARE });
+      const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
+      const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
+      await payDirectCommission({
+        session,
+        accountId: adminAccount?.id,
+        amount: activationAdminCommission,
+        label: "Commission activation Founders",
+        source: "admin_activation_commission",
+        referenceId: req.user.id,
+        extra: { sourceUserId: req.user.id, rate: ACTIVATION_ADMIN_COMMISSION_RATE, activeFounderId: activeFounder.id },
+        asset: "GRSC"
+      });
+      await payDirectCommission({
+        session,
+        accountId: developerAccount?.id,
+        amount: activationDeveloperCommission,
+        label: "Commission activation Founders",
+        source: "developer_activation_commission",
+        referenceId: req.user.id,
+        extra: { sourceUserId: req.user.id, rate: ACTIVATION_DEVELOPER_COMMISSION_RATE, activeFounderId: activeFounder.id },
+        asset: "GRSC"
+      });
 
       const entries = buildLedgerEntries([{
         accountType: "user_grs",
@@ -4067,7 +4688,7 @@ app.post("/api/founders/activate", authenticate, requirePlatformAccess(), valida
         amount: founderAmount,
         balanceAfter: founderAmount,
         description: `GRSCOIN verrouille ${plan.name}`
-      }, ...feeRows], { source: "founders_activation", referenceId: activeFounder.id, extra: { planId: plan.id, rewardAmount, maturityAmount, activationFee, adminFee, developerFee, platformFee } });
+      }, ...feeRows], { source: "founders_activation", referenceId: activeFounder.id, extra: { planId: plan.id, rewardAmount, maturityAmount, activationFee, programFee: activationFee, platformFee, activationCommissionTotal: money(activationAdminCommission + activationDeveloperCommission), totalDebit } });
       if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
       if (feeTransactions.length) await TransactionModel.insertMany(feeTransactions, { session });
 
@@ -4080,7 +4701,7 @@ app.post("/api/founders/activate", authenticate, requirePlatformAccess(), valida
         displayAmount: `-${totalDebit.toFixed(2)} GRSC`,
         status: "Active",
         createdAt: nowIso(),
-        metadata: { source: "founders_activation", planId: plan.id, activeFounderId: activeFounder.id, founderAmount, activationFee, adminFee, developerFee, platformFee, totalDebit, rewardAmount, maturityAmount, endsAt: activeFounder.endsAt }
+        metadata: { source: "founders_activation", planId: plan.id, activeFounderId: activeFounder.id, founderAmount, programFee: activationFee, totalDebit, rewardAmount, maturityAmount, endsAt: activeFounder.endsAt }
       }], { session });
       result = { user: normalizeUserRecord(updatedUser), activeFounder, activationFee, totalDebit };
     });
@@ -4983,6 +5604,7 @@ app.get("/api/admin/users/activity", authenticate, requireAdmin, async (req, res
       activePlans: Array.isArray(user.activePlans) ? user.activePlans : [],
       activeStakes: Array.isArray(user.activeStakes) ? user.activeStakes : [],
       activeFounders: Array.isArray(user.activeFounders) ? user.activeFounders : [],
+      activeEtfs: Array.isArray(user.activeEtfs) ? user.activeEtfs : [],
       transactions: transactions.map((tx) => enrichAdminTransaction(tx, user)),
       timeline: [
         ...transactions.map((tx) => ({
@@ -4999,10 +5621,10 @@ app.get("/api/admin/users/activity", authenticate, requireAdmin, async (req, res
         ...(Array.isArray(user.activePlans) ? user.activePlans : []).map((plan) => ({
           id: plan.id,
           kind: "trading",
-          date: plan.startedAt || plan.createdAt || "",
+          date: plan.activatedAt || plan.startedAt || plan.createdAt || "",
           title: plan.name || plan.planId || "AFRIX Trading Program",
           status: plan.status || "",
-          amount: formatAmount(plan.amount || 0),
+          amount: formatAssetAmount(plan.amount || 0, plan.asset || "AUSD"),
           program: "trading",
           reference: plan.id || plan.planId || "",
           details: plan
@@ -5026,6 +5648,17 @@ app.get("/api/admin/users/activity", authenticate, requireAdmin, async (req, res
           status: item.status || "",
           amount: `${Number(item.amount || 0).toFixed(2)} GRSC`,
           program: "founders",
+          reference: item.id || item.planId || "",
+          details: item
+        })),
+        ...(Array.isArray(user.activeEtfs) ? user.activeEtfs : []).map((item) => ({
+          id: item.id,
+          kind: "etf",
+          date: item.activatedAt || item.createdAt || "",
+          title: item.name || item.planId || "AFRIX ETF PROGRAM",
+          status: item.status || "",
+          amount: formatAssetAmount(item.amount || 0, "AUSD"),
+          program: "etf",
           reference: item.id || item.planId || "",
           details: item
         })),
@@ -5100,6 +5733,18 @@ app.get("/api/admin/transactions", authenticate, requireAdmin, async (req, res, 
           { "metadata.source": /founders/i },
           { "metadata.activeFounderId": { $exists: true } },
           { description: /founder/i }
+        ]
+      };
+      programClauses.push(programQuery);
+      summaryClauses.push(programQuery);
+    }
+    if (program === "etf") {
+      const programQuery = {
+        $or: [
+          { type: "ETF" },
+          { "metadata.source": /etf/i },
+          { "metadata.activeEtfId": { $exists: true } },
+          { description: /etf/i }
         ]
       };
       programClauses.push(programQuery);
@@ -5222,24 +5867,34 @@ app.get("/api/admin/export/:section", authenticate, requireAdmin, async (req, re
         ]
       }];
     }
-    if (section === "trading" || section === "staking" || section === "founders") {
+    if (section === "etf") {
+      baseClauses = [{
+        $or: [
+          { type: "ETF" },
+          { "metadata.source": /etf/i },
+          { "metadata.activeEtfId": { $exists: true } },
+          { description: /etf/i }
+        ]
+      }];
+    }
+    if (section === "trading" || section === "staking" || section === "founders" || section === "etf") {
       const users = await UserModel.find({}, safeUserProjection).lean();
       const rows = users.flatMap((user) => {
-        const list = section === "trading" ? (user.activePlans || []) : section === "staking" ? (user.activeStakes || []) : (user.activeFounders || []);
+        const list = section === "trading" ? (user.activePlans || []) : section === "staking" ? (user.activeStakes || []) : section === "founders" ? (user.activeFounders || []) : (user.activeEtfs || []);
         return list.map((item) => ({
           ...item,
           userId: user.id,
           userEmail: user.email,
           userName: user.fullName || user.email
         }));
-      }).sort((a, b) => String(b.startedAt || b.createdAt || "").localeCompare(String(a.startedAt || a.createdAt || "")));
+      }).sort((a, b) => String(b.activatedAt || b.startedAt || b.createdAt || "").localeCompare(String(a.activatedAt || a.startedAt || a.createdAt || "")));
       return res
         .type("text/csv")
         .set("Content-Disposition", `attachment; filename="afrix-admin-${section}-${today()}.csv"`)
-        .send(adminParticipationCsv(rows, section === "trading" ? "USDT" : "GRSC"));
+        .send(adminParticipationCsv(rows, section === "staking" || section === "founders" ? "GRSC" : "AUSD"));
     }
     if (section === "transactions") baseClauses = [];
-    if (!["deposits", "withdrawals", "transactions", "swap", "money", "founders"].includes(section)) {
+    if (!["deposits", "withdrawals", "transactions", "swap", "money", "founders", "etf"].includes(section)) {
       return res.status(404).json({ message: "Export admin introuvable." });
     }
     const query = await buildAdminTransactionQueryWithSearch(req.query, baseClauses);
@@ -5263,9 +5918,9 @@ app.get("/api/admin/programs/:program", authenticate, requireAdmin, async (req, 
     const users = await UserModel.find({}, safeUserProjection).lean();
     const programStats = adminProgramStatsFromUsers(users);
 
-    if (program === "trading" || program === "staking" || program === "founders") {
+    if (program === "trading" || program === "staking" || program === "founders" || program === "etf") {
       const rows = users.flatMap((user) => {
-        const list = program === "trading" ? (user.activePlans || []) : program === "staking" ? (user.activeStakes || []) : (user.activeFounders || []);
+        const list = program === "trading" ? (user.activePlans || []) : program === "staking" ? (user.activeStakes || []) : program === "founders" ? (user.activeFounders || []) : (user.activeEtfs || []);
         return list.map((item) => ({
           ...item,
           userId: user.id,
@@ -5273,7 +5928,7 @@ app.get("/api/admin/programs/:program", authenticate, requireAdmin, async (req, 
           userName: user.fullName || user.email,
           status: item.status || "active"
         }));
-      }).sort((a, b) => String(b.startedAt || b.createdAt || "").localeCompare(String(a.startedAt || a.createdAt || "")));
+      }).sort((a, b) => String(b.activatedAt || b.startedAt || b.createdAt || "").localeCompare(String(a.activatedAt || a.startedAt || a.createdAt || "")));
       const pageItems = rows.slice(skip, skip + limit);
       return res.json({
         stats: programStats[program],
@@ -5356,39 +6011,37 @@ app.get("/api/admin/deposits/:id/proof", authenticate, requireAdmin, async (req,
   });
 });
 
-async function payDirectCommission({ session, accountId, amount, label, source, referenceId, extra = {} }) {
+async function payDirectCommission({ session, accountId, amount, label, source, referenceId, extra = {}, asset = "USDT" }) {
   const commission = money(amount);
   if (commission <= 0 || !accountId) return;
+  const publicSource = String(source || "").includes("user_revenue")
+    ? "user_revenue_commission"
+    : String(source || "").includes("program_fee")
+      ? "program_fee_commission"
+      : String(source || "").includes("activation")
+        ? "activation_commission"
+        : "commission";
+  const normalizedAsset = ["AUSD", "GRSC"].includes(String(asset || "").toUpperCase()) ? String(asset || "").toUpperCase() : "USDT";
+  const balanceField = normalizedAsset === "AUSD" ? "ausdBalance" : normalizedAsset === "GRSC" ? "grsBalance" : "balance";
+  const accountType = normalizedAsset === "AUSD" ? "user_ausd" : normalizedAsset === "GRSC" ? "user_grs" : "user";
   const account = await UserModel.findOneAndUpdate(
     { id: accountId },
     [{
       $set: {
-        balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, commission] }, 2] }
+        [balanceField]: { $round: [{ $add: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, commission] }, 2] }
       }
     }],
     { new: true, session, lean: true }
   );
   if (!account) return;
-  const platform = await PlatformAccountModel.findOneAndUpdate(
-    { id: "platform" },
-    { $inc: { balance: -commission }, $setOnInsert: { createdAt: nowIso() } },
-    { upsert: true, new: true, session, lean: true }
-  );
   const ledgerEntries = buildLedgerEntries([{
-    accountType: "platform",
-    accountId: "platform",
-    direction: "debit",
-    amount: commission,
-    balanceAfter: platform.balance,
-    description: label
-  }, {
-    accountType: "user",
+    accountType,
     accountId,
     direction: "credit",
     amount: commission,
-    balanceAfter: account.balance,
+    balanceAfter: account[balanceField],
     description: label
-  }], { source, referenceId, extra });
+  }], { source, referenceId, extra: { ...extra, asset: normalizedAsset } });
   if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
   await TransactionModel.create([{
     id: nanoid(),
@@ -5396,17 +6049,27 @@ async function payDirectCommission({ session, accountId, amount, label, source, 
     type: "Commission",
     description: label,
     amount: commission,
-    displayAmount: formatAmount(commission, "+"),
+    displayAmount: normalizedAsset === "GRSC" ? `+${commission.toFixed(2)} GRSC` : formatAssetAmount(commission, normalizedAsset, "+"),
     status: "Completed",
     createdAt: nowIso(),
-    metadata: { source, referenceId, ...extra }
+    metadata: { source: publicSource, referenceId, ...extra, asset: normalizedAsset }
   }], { session });
 }
 
 async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, initiatedBy = null }) {
   const investmentAmount = money(amount || plan.minAmount);
+  const planAsset = String(plan.asset || "USDT").toUpperCase() === "AUSD" ? "AUSD" : "USDT";
+  const isAusdPlan = planAsset === "AUSD";
+  const balanceField = isAusdPlan ? "ausdBalance" : "balance";
+  const programFee = money(investmentAmount * TRADING_PROGRAM_FEE_RATE);
+  const programFeeAdmin = money(programFee * PLATFORM_FEE_ADMIN_SHARE);
+  const programFeeDeveloper = money(programFee * PLATFORM_FEE_DEVELOPER_SHARE);
+  const programFeePlatform = money(programFee - programFeeAdmin - programFeeDeveloper);
+  const activationAdminCommission = money(investmentAmount * ACTIVATION_ADMIN_COMMISSION_RATE);
+  const activationDeveloperCommission = money(investmentAmount * ACTIVATION_DEVELOPER_COMMISSION_RATE);
+  const totalDebit = money(investmentAmount + programFee);
   if (investmentAmount < money(plan.minAmount)) {
-    return { error: `Montant minimum ${plan.name}: ${formatAmount(plan.minAmount)}.` };
+    return { error: `Montant minimum ${plan.name}: ${formatAssetAmount(plan.minAmount, planAsset)}.` };
   }
 
   const session = await mongoose.startSession();
@@ -5438,6 +6101,8 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         amount: investmentAmount,
         dailyRate: plan.dailyRate,
         durationDays: plan.durationDays,
+        dividendRate: Number(plan.dividendRate || 0),
+        asset: planAsset,
         activatedAt,
         lastPayoutAt: null,
         lastPayoutDate: today(),
@@ -5445,17 +6110,18 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         daysPaid: 0,
         earnedAmount: 0,
         capitalReturnedAt: null,
-        status: "active"
+        status: "active",
+        revenueCommissionEnabled: true
       };
 
       const updatedUser = await UserModel.findOneAndUpdate(
         {
           id: user.id,
-          $expr: { $gte: [{ $toDouble: { $ifNull: ["$balance", 0] } }, investmentAmount] }
+          $expr: { $gte: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, totalDebit] }
         },
         [{
           $set: {
-            balance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$balance", 0] } }, investmentAmount] }, 2] },
+            [balanceField]: { $round: [{ $subtract: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, totalDebit] }, 2] },
             activity: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$activity", 0] } }, investmentAmount] }, 2] },
             activePlans: { $concatArrays: [{ $ifNull: ["$activePlans", []] }, [activePlan]] }
           }
@@ -5463,62 +6129,99 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         { new: true, session, lean: true }
       );
       if (!updatedUser) {
-        result = { error: "Solde insuffisant pour activer ce plan." };
+        result = { error: `Solde ${planAsset} insuffisant pour activer ce plan. Total requis: ${formatAssetAmount(totalDebit, planAsset)}.` };
         return;
       }
 
-      const platform = await PlatformAccountModel.findOneAndUpdate(
-        { id: "platform" },
-        { $inc: { balance: investmentAmount, fees: investmentAmount }, $setOnInsert: { createdAt: nowIso() } },
-        { upsert: true, new: true, session, lean: true }
-      );
-      const activationLedger = buildLedgerEntries([{
-        accountType: "user",
+      const ledgerInputs = [{
+        accountType: isAusdPlan ? "user_ausd" : "user",
         accountId: user.id,
         direction: "debit",
-        amount: investmentAmount,
-        balanceAfter: updatedUser.balance,
-        description: `Activation ${plan.name}`
-      }, {
-        accountType: "platform",
-        accountId: "platform",
-        direction: "credit",
-        amount: investmentAmount,
-        balanceAfter: platform.balance,
-        description: `Activation ${plan.name}`
-      }], { source: "plan_activation", referenceId: activePlan.id, extra: { planId: plan.id, initiatedBy } });
+        amount: totalDebit,
+        balanceAfter: updatedUser[balanceField],
+        description: `Activation ${plan.name} avec frais`
+      }];
+      if (!isAusdPlan) {
+        const platform = await PlatformAccountModel.findOneAndUpdate(
+          { id: "platform" },
+          { $inc: { balance: investmentAmount, fees: investmentAmount }, $setOnInsert: { createdAt: nowIso() } },
+          { upsert: true, new: true, session, lean: true }
+        );
+        ledgerInputs.push({
+          accountType: "platform",
+          accountId: "platform",
+          direction: "credit",
+          amount: investmentAmount,
+          balanceAfter: platform.balance,
+          description: `Activation ${plan.name}`
+        });
+      }
+      const activationLedger = buildLedgerEntries(ledgerInputs, { source: "plan_activation", referenceId: activePlan.id, extra: { planId: plan.id, initiatedBy, asset: planAsset, investmentAmount, programFee, activationCommissionTotal: money(activationAdminCommission + activationDeveloperCommission), totalDebit } });
       if (activationLedger.length) await LedgerEntryModel.insertMany(activationLedger, { session });
       await TransactionModel.create([{
         id: nanoid(),
         userId: user.id,
         type: "Plan",
         description: `Activation ${plan.name}`,
-        amount: investmentAmount,
-        displayAmount: formatAmount(investmentAmount, "-"),
+        amount: totalDebit,
+        displayAmount: formatAssetAmount(totalDebit, planAsset, "-"),
         status: "Active",
         createdAt: nowIso(),
-        metadata: { planId: plan.id, activePlanId: activePlan.id, initiatedBy }
+        metadata: { planId: plan.id, activePlanId: activePlan.id, initiatedBy, asset: planAsset, investmentAmount, programFee, totalDebit }
       }], { session });
 
       const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
       const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
+      const platformAccount = PLATFORM_EMAIL ? await UserModel.findOne({ email: PLATFORM_EMAIL }, null, { session }).lean() : null;
       await payDirectCommission({
         session,
         accountId: adminAccount?.id,
-        amount: investmentAmount * 0.075,
-        label: "Commission admin activation plan",
-        source: "admin_activation_commission",
+        amount: programFeeAdmin,
+        label: "Commission frais programme Trading",
+        source: "admin_program_fee_commission",
         referenceId: user.id,
-        extra: { sourceUserId: user.id, rate: 0.075 }
+        extra: { sourceUserId: user.id, rate: PLATFORM_FEE_ADMIN_SHARE, feeRate: TRADING_PROGRAM_FEE_RATE, activePlanId: activePlan.id },
+        asset: planAsset
       });
       await payDirectCommission({
         session,
         accountId: developerAccount?.id,
-        amount: investmentAmount * 0.075,
-        label: "Commission developpeur activation plan",
+        amount: programFeeDeveloper,
+        label: "Commission frais programme Trading",
+        source: "developer_program_fee_commission",
+        referenceId: user.id,
+        extra: { sourceUserId: user.id, rate: PLATFORM_FEE_DEVELOPER_SHARE, feeRate: TRADING_PROGRAM_FEE_RATE, activePlanId: activePlan.id },
+        asset: planAsset
+      });
+      await payDirectCommission({
+        session,
+        accountId: platformAccount?.id,
+        amount: programFeePlatform,
+        label: "Frais programme Trading plateforme",
+        source: "platform_program_fee",
+        referenceId: user.id,
+        extra: { sourceUserId: user.id, rate: 1 - PLATFORM_FEE_ADMIN_SHARE - PLATFORM_FEE_DEVELOPER_SHARE, feeRate: TRADING_PROGRAM_FEE_RATE, activePlanId: activePlan.id },
+        asset: planAsset
+      });
+      await payDirectCommission({
+        session,
+        accountId: adminAccount?.id,
+        amount: activationAdminCommission,
+        label: "Commission activation plan",
+        source: "admin_activation_commission",
+        referenceId: user.id,
+        extra: { sourceUserId: user.id, rate: ACTIVATION_ADMIN_COMMISSION_RATE, activePlanId: activePlan.id },
+        asset: planAsset
+      });
+      await payDirectCommission({
+        session,
+        accountId: developerAccount?.id,
+        amount: activationDeveloperCommission,
+        label: "Commission activation plan",
         source: "developer_activation_commission",
         referenceId: user.id,
-        extra: { sourceUserId: user.id, rate: 0.075 }
+        extra: { sourceUserId: user.id, rate: ACTIVATION_DEVELOPER_COMMISSION_RATE, activePlanId: activePlan.id },
+        asset: planAsset
       });
 
       result = { user: normalizeUserRecord(updatedUser), activePlan };
@@ -5750,14 +6453,14 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
               amount: adminCommission,
               email: ADMIN_EMAIL,
               accountType: "admin",
-              description: "Commission admin AFRIX Swap"
+              description: "Commission AFRIX Swap"
             },
             {
               rate: GRSCOIN_SWAP_DEVELOPER_RATE,
               amount: developerCommission,
               email: COMMISSION_DEVELOPER_EMAIL,
               accountType: "developer",
-              description: "Commission developpeur AFRIX Swap"
+              description: "Commission AFRIX Swap"
             },
             {
               rate: GRSCOIN_SWAP_PLATFORM_RATE,
@@ -6091,7 +6794,7 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
                 balanceAfter: platformUser.grsBalance,
                 description: `Frais GRSC ${tx.description || "Retrait approuve"}`
               }], {
-                source: "admin_withdrawal_fee_grs",
+                source: "withdrawal_fee_grs",
                 referenceId: tx.id,
                 extra: { reviewedBy: adminId, userId: tx.userId, method: tx.metadata?.method || "", feeUsdtEquivalent: feeAmount, grsCoinPriceUsdt: tx.metadata?.grsCoinPriceUsdt || GRSCOIN_PRICE_USDT }
               });
@@ -6105,7 +6808,7 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
                 displayAmount: `+${feeGrsAmount.toFixed(2)} GRSC`,
                 status: "Completed",
                 createdAt: nowIso(),
-                metadata: { source: "admin_withdrawal_fee_grs", withdrawalId: tx.id, sourceUserId: tx.userId, feeUsdtEquivalent: feeAmount, grsCoinPriceUsdt: tx.metadata?.grsCoinPriceUsdt || GRSCOIN_PRICE_USDT }
+                metadata: { source: "withdrawal_fee_grs", withdrawalId: tx.id, sourceUserId: tx.userId, feeUsdtEquivalent: feeAmount, grsCoinPriceUsdt: tx.metadata?.grsCoinPriceUsdt || GRSCOIN_PRICE_USDT }
               }], { session });
             }
           } else if (feeAmount > 0 && tx.metadata?.feeAsset !== "GRSC") {
@@ -6266,6 +6969,7 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
         activePlans: [],
         activeStakes: [],
         activeFounders: [],
+        activeEtfs: [],
         createdAt: nowIso(),
         metadata: { createdByAdmin: req.user.id }
       };
@@ -6420,7 +7124,7 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
                   balanceAfter: platformUser.grsBalance,
                   description: `Frais GRSC ${tx.description || "Retrait approuve"}`
                 }], {
-                  source: "admin_withdrawal_fee_grs",
+                  source: "withdrawal_fee_grs",
                   referenceId: tx.id,
                   extra: { userId: user.id, method: tx.metadata.method || "", feeUsdtEquivalent: feeAmount }
                 });

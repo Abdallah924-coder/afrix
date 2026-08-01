@@ -12,6 +12,7 @@ const pageTitles = {
   plans: "AFRIX Trading Program",
   staking: "AFRIX Staking Program",
   "founders-club": "GRS CORE FOUNDERS CLUB",
+  etf: "AFRIX ETF PROGRAM",
   swap: "AFRIX Swap GRSCOIN",
   exchange: "Exchange",
   merchant: "Merchant",
@@ -32,6 +33,7 @@ const navItems = [
   ["plans", "AFRIX Trading Program", "/plans"],
   ["staking", "AFRIX Staking Program", "/staking"],
   ["founders-club", "GRS CORE FOUNDERS CLUB", "/founders-club"],
+  ["etf", "AFRIX ETF PROGRAM", "/etf"],
   ["swap", "AFRIX Swap GRSCOIN", "/swap"],
   ["exchange", "Exchange", "/exchange"],
   ["merchant", "Merchant", "/merchant"],
@@ -50,6 +52,9 @@ const P2P_FEE_RATE = 0.01;
 const AUSD_PRICE_USDT = 3.25;
 const CDF_DEPOSIT_RATE_USDT = 2800;
 const CDF_WITHDRAWAL_RATE_USDT = 2365;
+const TRADING_PROGRAM_FEE_RATE = 0.0075;
+const STAKING_PROGRAM_FEE_RATE = 0.005;
+const ETF_PROGRAM_FEE_RATE = 0.01;
 const FOUNDERS_ACTIVATION_FEE_RATE = 0.01;
 const contactLinks = {
   telegramSupport: "https://t.me/Assistant_grs_core",
@@ -75,17 +80,17 @@ const supportChannels = [
 let deferredInstallPrompt = null;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 const plans = [
-  { id: "starter", tier: "Bronze", name: "Starter Trading", minAmount: 10, amount: "10 USDT et plus", daily: "0,50%", duration: "90 jours", cycle: "capital bloque 90 jours + gains journaliers retirable", note: "Premier niveau obligatoire pour ouvrir la progression AFRIX." },
-  { id: "smart", tier: "Silver", name: "Smart Trading", minAmount: 50, amount: "50 USDT et plus", daily: "0,60%", duration: "180 jours", cycle: "capital bloque 180 jours + gains journaliers retirable", note: "Ouvert avec une participation Smart Staking de 5 000 GRSC.", requiredStakePlan: "smart", requiredStakeAmount: 5000, requiredStakeName: "Smart Staking", featured: true },
-  { id: "premium", tier: "Gold", name: "Premium Trading", minAmount: 300, amount: "300 USDT et plus", daily: "0,70%", duration: "270 jours", cycle: "capital bloque 270 jours + gains journaliers retirable", note: "Ouvert avec une participation Premium Staking de 25 000 GRSC.", requiredStakePlan: "premium", requiredStakeAmount: 25000, requiredStakeName: "Premium Staking" },
-  { id: "elite", tier: "Elite", name: "Elite Trading", minAmount: 500, amount: "500 USDT et plus", daily: "0,80%", duration: "365 jours", cycle: "capital bloque 365 jours + gains journaliers retirable", note: "Ouvert avec une participation Elite Staking de 50 000 GRSC.", requiredStakePlan: "elite", requiredStakeAmount: 50000, requiredStakeName: "Elite Staking" }
+  { id: "starter", tier: "Starter", name: "Starter Trading", minAmount: 10, amount: "10 AUSD et plus", daily: "0,342%", duration: "365 jours", cycle: "Objectif cycle: 125%", dividend: "0,35% / trimestre apres cycle", note: "Accessible a tous les nouveaux utilisateurs souhaitant decouvrir les solutions d'investissement de la plateforme." },
+  { id: "smart", tier: "Smart", name: "Smart Trading", minAmount: 250, amount: "250 AUSD et plus", daily: "0,356%", duration: "365 jours", cycle: "Objectif cycle: 130%", dividend: "0,37% / trimestre apres cycle", note: "Ouvert avec une participation Smart Staking de 5 000 GRSC.", requiredStakePlan: "smart", requiredStakeAmount: 5000, requiredStakeName: "Smart Staking", featured: true },
+  { id: "premium", tier: "Premium", name: "Premium Trading", minAmount: 500, amount: "500 AUSD et plus", daily: "0,383%", duration: "365 jours", cycle: "Objectif cycle: 140%", dividend: "0,40% / trimestre apres cycle", note: "Ouvert avec une participation Premium Staking de 25 000 GRSC.", requiredStakePlan: "premium", requiredStakeAmount: 25000, requiredStakeName: "Premium Staking" },
+  { id: "elite", tier: "Elite", name: "Elite Trading", minAmount: 1000, amount: "1 000 AUSD et plus", daily: "0,41%", duration: "365 jours", cycle: "Objectif cycle: 150%", dividend: "0,45% / trimestre apres cycle", note: "Ouvert avec une participation Elite Staking de 50 000 GRSC.", requiredStakePlan: "elite", requiredStakeAmount: 50000, requiredStakeName: "Elite Staking" }
 ];
 
 const stakingPlans = [
-  { id: "starter", tier: "Starter", name: "Starter Staking", minAmount: 100, amount: "100 GRSC et plus", rewardRate: 0.035, objective: "3,5%", exitValue: "103,5%", durationDays: 90, duration: "90 jours" },
-  { id: "smart", tier: "Smart", name: "Smart Staking", minAmount: 500, amount: "500 GRSC et plus", rewardRate: 0.10, objective: "10%", exitValue: "110%", durationDays: 180, duration: "180 jours", featured: true },
-  { id: "premium", tier: "Premium", name: "Premium Staking", minAmount: 2500, amount: "2 500 GRSC et plus", rewardRate: 0.17, objective: "17%", exitValue: "117%", durationDays: 270, duration: "270 jours" },
-  { id: "elite", tier: "Elite", name: "Elite Staking", minAmount: 5000, amount: "5 000 GRSC et plus", rewardRate: 0.25, objective: "25%", exitValue: "125%", durationDays: 365, duration: "365 jours" }
+  { id: "starter", tier: "Starter", name: "Starter Staking", minAmount: 100, amount: "100 GRSC et plus", rewardRate: 0.02, objective: "2%", range: "1 a 3%", exitValue: "102%", durationDays: 90, duration: "90 jours" },
+  { id: "smart", tier: "Smart", name: "Smart Staking", minAmount: 500, amount: "500 GRSC et plus", rewardRate: 0.05, objective: "5%", range: "3,5 a 6,5%", exitValue: "105%", durationDays: 180, duration: "180 jours", featured: true },
+  { id: "premium", tier: "Premium", name: "Premium Staking", minAmount: 2500, amount: "2 500 GRSC et plus", rewardRate: 0.09, objective: "9%", range: "6,5 a 11,5%", exitValue: "109%", durationDays: 270, duration: "270 jours" },
+  { id: "elite", tier: "Elite", name: "Elite Staking", minAmount: 5000, amount: "5 000 GRSC et plus", rewardRate: 0.15, objective: "15%", range: "10 a 20%", exitValue: "115%", durationDays: 365, duration: "365 jours" }
 ];
 
 const foundersPlans = [
@@ -95,6 +100,13 @@ const foundersPlans = [
   { id: "platinum", tier: "Platinum", name: "Founder Platinum", minAmount: 250000, amount: "250 000 GRSC", rewardRate: 0.037, objective: "3,70% / an", durationYears: 18, durationDays: 6570, duration: "18 ans", featured: true },
   { id: "diamond", tier: "Diamond", name: "Founder Diamond", minAmount: 500000, amount: "500 000 GRSC", rewardRate: 0.038, objective: "3,80% / an", durationYears: 20, durationDays: 7300, duration: "20 ans", global: true },
   { id: "legend", tier: "Legend", name: "Founder Legend", minAmount: 1000000, amount: "1 000 000 GRSC+", rewardRate: 0.04, objective: "4,00% / an", durationYears: 25, durationDays: 9125, duration: "25 ans", global: true }
+];
+
+const etfPlans = [
+  { id: "stable", tier: "Stable", name: "AFRIX Stable Portfolio", minAmount: 100, amount: "100 AUSD et plus", monthlyRate: 0.00835, objective: "0,835% / mois", range: "0,67% a 1,00% / mois", duration: "36 mois", profile: "Prudent" },
+  { id: "blue-chip", tier: "Blue Chip", name: "AFRIX Blue Chip Portfolio", minAmount: 2500, amount: "2 500 AUSD et plus", monthlyRate: 0.01, objective: "1,00% / mois", range: "0,75% a 1,25% / mois", duration: "36 mois", profile: "Actifs etablis", featured: true },
+  { id: "africa", tier: "Africa", name: "AFRIX Africa Portfolio", minAmount: 10000, amount: "10 000 AUSD et plus", monthlyRate: 0.0125, objective: "1,25% / mois", range: "1,00% a 1,50% / mois", duration: "36 mois", profile: "Croissance africaine" },
+  { id: "ai-innovation", tier: "AI & Innovation", name: "AFRIX AI & Innovation Portfolio", minAmount: 25000, amount: "25 000 AUSD et plus", monthlyRate: 0.015, objective: "1,50% / mois", range: "1,25% a 1,75% / mois", duration: "36 mois", profile: "Innovation long terme", featured: true }
 ];
 
 function tradingPlanName(nameOrId = "") {
@@ -139,6 +151,7 @@ const emptyUser = {
   activePlans: [],
   activeStakes: [],
   activeFounders: [],
+  activeEtfs: [],
   bonusLevelsOverride: 0,
   ausdBalance: 0,
   platformControls: {},
@@ -166,12 +179,45 @@ const formatAssetAmount = (value, asset = "USDT") => {
   if (asset === "GRSC") return formatGrsc(value);
   return formatUsdt(value);
 };
+function tradingActivationCosts(amount) {
+  const capital = Number(amount || 0);
+  const programFee = Number((capital * TRADING_PROGRAM_FEE_RATE).toFixed(2));
+  return {
+    programFee,
+    total: Number((capital + programFee).toFixed(2))
+  };
+}
+function foundersActivationCosts(amount) {
+  const capital = Number(amount || 0);
+  const programFee = Number((capital * FOUNDERS_ACTIVATION_FEE_RATE).toFixed(2));
+  return {
+    programFee,
+    total: Number((capital + programFee).toFixed(2))
+  };
+}
+function stakingActivationCosts(amount) {
+  const capital = Number(amount || 0);
+  const programFee = Number((capital * STAKING_PROGRAM_FEE_RATE).toFixed(2));
+  return {
+    programFee,
+    total: Number((capital + programFee).toFixed(2))
+  };
+}
+function etfActivationCosts(amount) {
+  const capital = Number(amount || 0);
+  const programFee = Number((capital * ETF_PROGRAM_FEE_RATE).toFixed(2));
+  return {
+    programFee,
+    total: Number((capital + programFee).toFixed(2))
+  };
+}
 const assetBalance = (user = {}, asset = "USDT") => {
   if (asset === "AUSD") return Number(user.ausdBalance || 0);
   if (asset === "GRSC") return Number(user.grsBalance || 0);
   return Number(user.balance || 0);
 };
 const usdtToAusd = (value) => Number(value || 0) / AUSD_PRICE_USDT;
+const usdtToGrsc = (value, user = {}) => Number(value || 0) * getGrsCoinPerUsdt(user);
 const formatTokenPrice = (value) => `${Number(value || 0).toFixed(4)} USDT`;
 const getGrsCoinPerUsdt = (user = {}) => {
   const price = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
@@ -394,6 +440,7 @@ function normalizeUser(user) {
     activePlans: Array.isArray(user?.activePlans) ? user.activePlans : [],
     activeStakes: Array.isArray(user?.activeStakes) ? user.activeStakes : [],
     activeFounders: Array.isArray(user?.activeFounders) ? user.activeFounders : [],
+    activeEtfs: Array.isArray(user?.activeEtfs) ? user.activeEtfs : [],
     ledgerEntries: Array.isArray(user?.ledgerEntries) ? user.ledgerEntries : [],
     platformControls: user?.platformControls || {},
     platformAccount: user?.platformAccount || {},
@@ -672,9 +719,13 @@ function renderDashboard(user) {
   const ausdBalance = document.querySelector("[data-ausd-balance]");
   const grsBalance = document.querySelector("[data-grs-balance]");
   const activity = document.querySelector("[data-activity]");
+  const activityGrsc = document.querySelector("[data-activity-grsc]");
   const levelNote = document.querySelector("[data-level-note]");
   const team = document.querySelector("[data-team]");
+  const teamRegistered = document.querySelector("[data-team-registered]");
+  const teamActive = document.querySelector("[data-team-active]");
   const bonus = document.querySelector("[data-bonus]");
+  const bonusGrsc = document.querySelector("[data-bonus-grsc]");
   const rank = document.querySelector("[data-rank]");
   const progress = document.querySelector("[data-progress]");
   const progressText = document.querySelector("[data-progress-text]");
@@ -689,9 +740,13 @@ function renderDashboard(user) {
   if (ausdBalance) ausdBalance.textContent = formatAusd(user.ausdBalance);
   if (grsBalance) grsBalance.textContent = formatGrsc(user.grsBalance);
   if (activity) activity.textContent = formatAusd(usdtToAusd(user.activity));
+  if (activityGrsc) activityGrsc.textContent = formatGrsc(user.activityGrsc || usdtToGrsc(user.activity, user));
   if (levelNote) levelNote.textContent = `${activeLevels} niveau${activeLevels > 1 ? "x" : ""} actif${activeLevels > 1 ? "s" : ""}`;
-  if (team) team.textContent = Number(user.team || 0);
+  if (team) team.textContent = Number(user.registeredPartners ?? user.team ?? 0);
+  if (teamRegistered) teamRegistered.textContent = `${Number(user.registeredPartners ?? user.team ?? 0).toLocaleString("fr-FR")} inscrit${Number(user.registeredPartners ?? user.team ?? 0) > 1 ? "s" : ""}`;
+  if (teamActive) teamActive.textContent = `${Number(user.activePartners || 0).toLocaleString("fr-FR")} actif${Number(user.activePartners || 0) > 1 ? "s" : ""}`;
   if (bonus) bonus.textContent = formatAusd(usdtToAusd(user.bonus));
+  if (bonusGrsc) bonusGrsc.textContent = formatGrsc(user.bonusGrsc || usdtToGrsc(user.bonus, user));
   if (rank) rank.textContent = user.rank || "Niveau 0";
   if (progress) progress.style.width = `${Math.max(0, Math.min(100, Number(user.progress || 0)))}%`;
   if (progressText) progressText.textContent = user.progressText || "Progression calculee selon votre activite validee.";
@@ -1031,6 +1086,7 @@ function renderPlans(user) {
   list.innerHTML = plans.map((plan) => {
     const currentActivity = plan.requiredStakePlan ? stakingActivityByPlan(plan.requiredStakePlan) : 0;
     const isUnlocked = !plan.requiredStakePlan || currentActivity >= Number(plan.requiredStakeAmount || 0);
+    const costs = tradingActivationCosts(plan.minAmount);
     const requirement = plan.requiredStakePlan
       ? `Condition: ${Number(plan.requiredStakeAmount || 0).toLocaleString("fr-FR")} GRSC dans ${plan.requiredStakeName} - Actuel: ${formatGrsc(currentActivity)}`
       : "Condition: ouverture initiale sans staking requis.";
@@ -1044,13 +1100,15 @@ function renderPlans(user) {
         <small><span>Objectif quotidien</span>${plan.daily}</small>
         <small><span>Duree du cycle</span>${plan.duration}</small>
         <small><span>Objectif cycle</span>${plan.cycle}</small>
+        <small><span>Dividende</span>${plan.dividend}</small>
       </div>
       <p>${plan.note}</p>
       <small>${requirement}</small>
-      <small>Solde disponible: ${formatUsdt(user.balance)} - Staking cumule: ${formatGrsc(totalStakingActivity)} / 80 000.00 GRSC</small>
+      <small>Frais programme: ${formatAusd(costs.programFee)} - Total minimum approximatif: ${formatAusd(costs.total)}</small>
+      <small>Solde disponible: ${formatAusd(user.ausdBalance)} - Staking cumule: ${formatGrsc(totalStakingActivity)} / 80 000.00 GRSC</small>
       <label class="plan-investment-input">
         Montant a investir
-        <input type="number" min="10" step="0.01" value="${plan.minAmount}" data-plan-amount>
+        <input type="number" min="${plan.minAmount}" step="0.01" value="${plan.minAmount}" data-plan-amount>
       </label>
       <button class="btn primary" type="button" data-plan="${escapeHtml(plan.name)}" data-plan-min="${plan.minAmount}" ${isUnlocked ? "" : "disabled"}>${isUnlocked ? "Activer" : "Verrouille"}</button>
     </article>
@@ -1075,7 +1133,9 @@ function renderActivePlans(user) {
     const remainingDays = Math.max(0, durationDays - daysPaid);
     const daysProgressLabel = `${daysPaid}/${durationDays} jours`;
     const dailyGain = Number(plan.amount || 0) * Number(plan.dailyRate || 0);
-    const status = plan.status === "completed" ? "Termine" : "Actif";
+    const asset = String(plan.asset || "USDT").toUpperCase() === "AUSD" ? "AUSD" : "USDT";
+    const formatPlanAmount = (value) => formatAssetAmount(value, asset);
+    const status = plan.status === "completed" ? "Termine" : plan.status === "dividend" ? "Dividendes" : "Actif";
     return `
       <article class="active-plan-card">
         <div class="active-plan-head">
@@ -1089,9 +1149,10 @@ function renderActivePlans(user) {
           <span style="width:${percent}%"></span>
         </div>
         <div class="active-plan-stats">
-          <small><span>Capital bloqué</span>${formatUsdt(plan.amount || 0)}</small>
-          <small><span>Gain par jour</span>${formatUsdt(dailyGain)}</small>
-          <small><span>Gains cumulés</span>${formatUsdt(plan.earnedAmount || 0)}</small>
+          <small><span>Capital converti</span>${formatPlanAmount(plan.amount || 0)}</small>
+          <small><span>Gain par jour</span>${formatPlanAmount(dailyGain)}</small>
+          <small><span>Gains cumulés</span>${formatPlanAmount(plan.earnedAmount || 0)}</small>
+          <small><span>Dividendes</span>${formatPlanAmount(plan.dividendAmount || 0)}</small>
           <small><span>Jours payés</span>${daysPaid}/${durationDays}</small>
           <small><span>Jours restants</span>${remainingDays}</small>
         </div>
@@ -1126,7 +1187,8 @@ function renderStaking(user) {
 
   if (plansList) {
     plansList.innerHTML = stakingPlans.map((plan) => {
-      const canActivate = Number(user.grsBalance || 0) >= plan.minAmount;
+      const costs = stakingActivationCosts(plan.minAmount);
+      const canActivate = Number(user.grsBalance || 0) >= costs.total;
       return `
         <article class="${plan.featured ? "featured" : ""}">
           <span class="plan-tier">${escapeHtml(plan.tier)}</span>
@@ -1135,9 +1197,11 @@ function renderStaking(user) {
           <div class="plan-metrics">
             <small><span>Cycle</span>${escapeHtml(plan.duration)}</small>
             <small><span>Objectif</span>${escapeHtml(plan.objective)}</small>
+            <small><span>Fourchette indic.</span>${escapeHtml(plan.range)}</small>
             <small><span>Sortie visee</span>${escapeHtml(plan.exitValue)}</small>
           </div>
           <p>Verrouillage temporaire de GRSCOIN avec restitution du capital et du resultat vise a l'issue du cycle.</p>
+          <small>Frais programme: ${formatGrsc(costs.programFee)} - Total requis: ${formatGrsc(costs.total)}</small>
           <small>Solde disponible: ${formatGrsc(user.grsBalance)}</small>
           <label class="plan-investment-input">
             Montant a staker
@@ -1209,8 +1273,9 @@ function renderFounders(user) {
 
   if (plansList) {
     plansList.innerHTML = foundersPlans.map((plan) => {
-      const activationFee = plan.minAmount * FOUNDERS_ACTIVATION_FEE_RATE;
-      const totalRequired = plan.minAmount + activationFee;
+      const costs = foundersActivationCosts(plan.minAmount);
+      const activationFee = costs.programFee;
+      const totalRequired = costs.total;
       const canActivate = Number(user.grsBalance || 0) >= totalRequired;
       const className = [plan.featured ? "featured" : "", plan.global ? "global" : "", plan.id === "legend" ? "founder-legend-card" : ""].filter(Boolean).join(" ");
       const maturityRate = plan.rewardRate * plan.durationYears;
@@ -1225,7 +1290,7 @@ function renderFounders(user) {
           </div>
           <p>GRSCOIN verrouilles jusqu'a maturite avec restitution du capital et recompense ciblee selon les performances de l'ecosysteme.</p>
           <small>Recompense ciblee sur le cycle: ${Number((maturityRate * 100).toFixed(2)).toLocaleString("fr-FR")}%</small>
-          <small>Frais activation: ${formatGrsc(activationFee)} - Total requis: ${formatGrsc(totalRequired)}</small>
+          <small>Frais programme: ${formatGrsc(activationFee)} - Total requis: ${formatGrsc(totalRequired)}</small>
           <small>Solde disponible: ${formatGrsc(user.grsBalance)}</small>
           <label class="plan-investment-input">
             Montant a immobiliser
@@ -1271,6 +1336,92 @@ function renderFounders(user) {
         </article>
       `;
     }).join("") : `<p class="muted">Aucune participation Founders Club active pour le moment.</p>`;
+  }
+}
+
+function renderEtf(user) {
+  const plansList = document.querySelector("[data-etf-plans-list]");
+  const activeList = document.querySelector("[data-active-etf-list]");
+  const activeCount = document.querySelector("[data-active-etf-count]");
+  const ausdBalance = document.querySelector("[data-etf-ausd-balance]");
+  const lockedBalance = document.querySelector("[data-etf-locked-balance]");
+  const dividendsTotal = document.querySelector("[data-etf-dividends-total]");
+  if (!plansList && !activeList && !ausdBalance) return;
+
+  const activeEtfs = (user.activeEtfs || [])
+    .slice()
+    .sort((a, b) => String(b.activatedAt || "").localeCompare(String(a.activatedAt || "")));
+  const openEtfs = activeEtfs.filter((item) => item.status === "active" || item.status === "matured");
+  const lockedTotal = openEtfs.reduce((total, item) => total + Number(item.amount || 0), 0);
+  const dividends = activeEtfs.reduce((total, item) => total + Number(item.dividendAmount || 0), 0);
+
+  if (ausdBalance) ausdBalance.textContent = formatAusd(user.ausdBalance);
+  if (lockedBalance) lockedBalance.textContent = formatAusd(lockedTotal);
+  if (dividendsTotal) dividendsTotal.textContent = formatAusd(dividends);
+  if (activeCount) activeCount.textContent = openEtfs.length;
+
+  if (plansList) {
+    plansList.innerHTML = etfPlans.map((plan) => {
+      const costs = etfActivationCosts(plan.minAmount);
+      const canActivate = Number(user.ausdBalance || 0) >= costs.total;
+      return `
+        <article class="${plan.featured ? "featured" : ""}">
+          <span class="plan-tier">${escapeHtml(plan.tier)}</span>
+          <h2>${escapeHtml(plan.name)}</h2>
+          <div class="plan-metrics">
+            <small><span>Minimum</span>${escapeHtml(plan.amount)}</small>
+            <small><span>Objectif</span>${escapeHtml(plan.objective)}</small>
+            <small><span>Duree blocage</span>${escapeHtml(plan.duration)}</small>
+            <small><span>Profil</span>${escapeHtml(plan.profile)}</small>
+          </div>
+          <p>Capital bloque pendant 36 mois. Les dividendes mensuels sont credites en AUSD et restent retirables depuis le wallet.</p>
+          <small>Fourchette indicative: ${escapeHtml(plan.range)}</small>
+          <small>Frais programme: ${formatAusd(costs.programFee)} - Total requis: ${formatAusd(costs.total)}</small>
+          <small>Solde disponible: ${formatAusd(user.ausdBalance)}</small>
+          <label class="plan-investment-input">
+            Montant a investir
+            <input type="number" min="${plan.minAmount}" step="0.01" value="${plan.minAmount}" data-etf-amount>
+          </label>
+          <button class="btn primary" type="button" data-etf-plan="${escapeHtml(plan.id)}">${canActivate ? "Activer" : "Solde insuffisant"}</button>
+        </article>
+      `;
+    }).join("");
+  }
+
+  if (activeList) {
+    activeList.innerHTML = activeEtfs.length ? activeEtfs.map((item) => {
+      const start = Date.parse(item.activatedAt || "");
+      const end = Date.parse(item.endsAt || "");
+      const now = Date.now();
+      const totalMs = Number.isFinite(start) && Number.isFinite(end) ? Math.max(1, end - start) : 1;
+      const elapsedMs = Number.isFinite(start) ? Math.max(0, now - start) : 0;
+      const percent = item.status === "completed" ? 100 : Math.max(0, Math.min(100, Math.round((elapsedMs / totalMs) * 100)));
+      const remainingDays = Number.isFinite(end) ? Math.max(0, Math.ceil((end - now) / 86_400_000)) : Number(item.durationDays || 0);
+      const canClaim = item.status !== "completed" && Number.isFinite(end) && now >= end;
+      const status = item.status === "completed" ? "Capital retire" : canClaim ? "Capital disponible" : "Actif";
+      return `
+        <article class="active-plan-card">
+          <div class="active-plan-head">
+            <span>
+              <strong>${escapeHtml(item.name || "AFRIX ETF Program")}</strong>
+              <small>${escapeHtml(status)} depuis ${escapeHtml(String(item.activatedAt || "").slice(0, 10) || "-")}</small>
+            </span>
+            <b>${percent}%</b>
+          </div>
+          <div class="progress active-plan-progress" aria-label="Progression ETF ${percent}%">
+            <span style="width:${percent}%"></span>
+          </div>
+          <div class="active-plan-stats">
+            <small><span>Capital bloque</span>${formatAusd(item.amount || 0)}</small>
+            <small><span>Dividende mensuel</span>${Number((Number(item.monthlyRate || 0) * 100).toFixed(3)).toLocaleString("fr-FR")}%</small>
+            <small><span>Dividendes recus</span>${formatAusd(item.dividendAmount || 0)}</small>
+            <small><span>Mois payes</span>${Number(item.dividendsPaid || 0).toLocaleString("fr-FR")}</small>
+            <small><span>Jours restants</span>${remainingDays.toLocaleString("fr-FR")}</small>
+          </div>
+          ${item.status !== "completed" ? `<button class="btn secondary" type="button" data-etf-claim="${escapeHtml(item.id)}" ${canClaim ? "" : "disabled"}>Retirer le capital</button>` : ""}
+        </article>
+      `;
+    }).join("") : `<p class="muted">Aucune participation ETF active pour le moment.</p>`;
   }
 }
 
@@ -1978,6 +2129,9 @@ async function loadAdminDetailedSummary() {
   document.querySelectorAll("[data-admin-summary-usdt]").forEach((item) => {
     item.textContent = formatUsdt(nestedValue(summary, item.dataset.adminSummaryUsdt) || 0);
   });
+  document.querySelectorAll("[data-admin-summary-ausd]").forEach((item) => {
+    item.textContent = formatAusd(nestedValue(summary, item.dataset.adminSummaryAusd) || 0);
+  });
   document.querySelectorAll("[data-admin-summary-grsc]").forEach((item) => {
     item.textContent = formatGrsc(nestedValue(summary, item.dataset.adminSummaryGrsc) || 0);
   });
@@ -2008,7 +2162,7 @@ async function loadAdminDetailedUsers(page = adminDetailedState.pages.users) {
         <small>${escapeHtml(user.email)} - ${escapeHtml(user.country || "-")} - ${escapeHtml(user.role)} - ${escapeHtml(adminStatusLabel(user.status))}</small>
         <small>Parrain: ${escapeHtml(user.referrerEmail || user.referrerCode || "-")} - Code: ${escapeHtml(user.refCode || "-")} - Transactions: ${Number(user.transactionsCount || 0).toLocaleString("fr-FR")}</small>
       </span>
-      <strong>${formatUsdt(user.balance)}<small>${formatGrsc(user.grsBalance)} - Trading ${formatUsdt(user.activeInvestmentAmount)} - Staking ${formatGrsc(user.activeStakeAmount)}</small></strong>
+      <strong>${formatUsdt(user.balance)}<small>${formatGrsc(user.grsBalance)} - Trading ${formatAusd(user.activeInvestmentAmount)} - ETF ${formatAusd(user.activeEtfAmount)} - Staking ${formatGrsc(user.activeStakeAmount)}</small></strong>
       <button class="btn primary" type="button" data-admin-open-activity="${escapeHtml(user.email)}">Tracer</button>
       <button class="btn secondary" type="button" data-admin-user-role="${escapeHtml(user.id)}" data-role="${user.role === "admin" ? "user" : "admin"}">${user.role === "admin" ? "User" : "Admin"}</button>
       ${user.status === "blocked"
@@ -2072,8 +2226,8 @@ function renderProgramSummary(program, payload = {}) {
       <div class="admin-stat-grid compact">
         <div><span>Plans actifs</span><strong>${Number(stats.activeCount || 0).toLocaleString("fr-FR")}</strong></div>
         <div><span>Total activations</span><strong>${Number(stats.totalCount || 0).toLocaleString("fr-FR")}</strong></div>
-        <div><span>Capital actif</span><strong>${formatUsdt(stats.activeCapital)}</strong></div>
-        <div><span>Gains distribués</span><strong>${formatUsdt(stats.totalEarned)}</strong></div>
+        <div><span>Capital actif</span><strong>${formatAusd(stats.activeCapital)}</strong></div>
+        <div><span>Gains distribués</span><strong>${formatAusd(stats.totalEarned)}</strong></div>
       </div>
     `;
   } else if (program === "staking") {
@@ -2092,6 +2246,15 @@ function renderProgramSummary(program, payload = {}) {
         <div><span>Total participations</span><strong>${Number(stats.totalCount || 0).toLocaleString("fr-FR")}</strong></div>
         <div><span>GRSC immobilises</span><strong>${formatGrsc(stats.activeLocked)}</strong></div>
         <div><span>Recompenses ciblees</span><strong>${formatGrsc(stats.totalReward)}</strong></div>
+      </div>
+    `;
+  } else if (program === "etf") {
+    target.innerHTML = `
+      <div class="admin-stat-grid compact">
+        <div><span>ETF actifs</span><strong>${Number(stats.activeCount || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>Total participations</span><strong>${Number(stats.totalCount || 0).toLocaleString("fr-FR")}</strong></div>
+        <div><span>Capital actif</span><strong>${formatAusd(stats.activeCapital)}</strong></div>
+        <div><span>Dividendes verses</span><strong>${formatAusd(stats.totalDividends)}</strong></div>
       </div>
     `;
   } else if (program === "swap") {
@@ -2122,7 +2285,7 @@ async function loadAdminProgram(program, page = adminDetailedState.pages[program
   target.innerHTML = `<p class="muted">Chargement du programme...</p>`;
   const payload = await apiRequest(`/admin/programs/${program}?page=${page}&limit=20`, { timeoutMs: 25_000 });
   renderProgramSummary(program, payload);
-  if (program === "trading" || program === "staking" || program === "founders") {
+  if (program === "trading" || program === "staking" || program === "founders" || program === "etf") {
     target.innerHTML = payload.items.length ? payload.items.map((item) => `
       <div class="queue-row admin-detail-row">
         <span>
@@ -2130,7 +2293,7 @@ async function loadAdminProgram(program, page = adminDetailedState.pages[program
           <small>${escapeHtml(item.userName || item.userEmail || "")} - ${escapeHtml(item.userEmail || "")} - ${escapeHtml(adminStatusLabel(item.status))}</small>
           <small>Début: ${escapeHtml(item.activatedAt || item.startedAt || item.createdAt || "-")} - Fin: ${escapeHtml(item.endsAt || "-")} - Durée: ${Number(item.durationDays || 0).toLocaleString("fr-FR")} jours</small>
         </span>
-        <strong>${program === "trading" ? formatUsdt(item.amount) : formatGrsc(item.amount)}<small>${program === "founders" ? `Cible: ${formatGrsc(item.rewardAmount)}` : `Gagné: ${program === "trading" ? formatUsdt(item.earnedAmount) : formatGrsc(item.earnedAmount)}`}</small></strong>
+        <strong>${program === "staking" || program === "founders" ? formatGrsc(item.amount) : formatAssetAmount(item.amount, item.asset || "AUSD")}<small>${program === "founders" ? `Cible: ${formatGrsc(item.rewardAmount)}` : program === "etf" ? `Dividendes: ${formatAusd(item.dividendAmount)}` : `Gagné: ${program === "trading" ? formatAssetAmount(item.earnedAmount, item.asset || "AUSD") : formatGrsc(item.earnedAmount)}`}</small></strong>
         <button class="btn primary" type="button" data-admin-open-activity="${escapeHtml(item.userEmail || "")}">Tracer</button>
       </div>
     `).join("") + renderAdminPagination(program, payload.pagination) : `<p class="muted">Aucune participation.</p>`;
@@ -2170,16 +2333,18 @@ async function lookupAdminActivity(emailOverride = "") {
       <div><span>Solde USDT</span><strong>${formatUsdt(user.balance)}</strong></div>
       <div><span>Solde GRSC</span><strong>${formatGrsc(user.grsBalance)}</strong></div>
       <div><span>Réservé</span><strong>${formatUsdt(user.reservedBalance)}</strong></div>
-      <div><span>Trading actif</span><strong>${formatUsdt(user.activeInvestmentAmount)}</strong></div>
+      <div><span>Trading actif</span><strong>${formatAusd(user.activeInvestmentAmount)}</strong></div>
       <div><span>Staking actif</span><strong>${formatGrsc(user.activeStakeAmount)}</strong></div>
       <div><span>Founders actif</span><strong>${formatGrsc(user.activeFounderAmount)}</strong></div>
+      <div><span>ETF actif</span><strong>${formatAusd(user.activeEtfAmount)}</strong></div>
       <div><span>Parrain</span><strong>${escapeHtml(user.referrerEmail || user.referrerCode || "-")}</strong></div>
       <div><span>Statut</span><strong>${escapeHtml(adminStatusLabel(user.status))}</strong></div>
     </div>
     <article class="admin-sublist admin-timeline"><h2>Timeline unifiée</h2>${(data.timeline || []).map((item) => `<div><span>${escapeHtml(item.title || item.kind || "Activité")}<small>${escapeHtml(item.date || "-")} - ${escapeHtml(item.program || item.kind || "-")} - ${escapeHtml(item.reference || "-")}</small></span><strong>${escapeHtml(item.amount || "-")}<small>${escapeHtml(adminStatusLabel(item.status))}</small></strong></div>`).join("") || `<p class="muted">Aucune activité.</p>`}</article>
-    <article class="admin-sublist"><h2>AFRIX Trading Program</h2>${(data.activePlans || []).map((plan) => `<div><span>${escapeHtml(plan.name || plan.planId || "Plan")}<small>${escapeHtml(plan.status || "")} - ${escapeHtml(plan.startedAt || "-")} - Jours ${Number(plan.daysPaid || 0)}/${Number(plan.durationDays || 0)}</small></span><strong>${formatUsdt(plan.amount)}<small>${formatUsdt(plan.earnedAmount)} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun plan.</p>`}</article>
+    <article class="admin-sublist"><h2>AFRIX Trading Program</h2>${(data.activePlans || []).map((plan) => `<div><span>${escapeHtml(plan.name || plan.planId || "Plan")}<small>${escapeHtml(plan.status || "")} - ${escapeHtml(plan.startedAt || "-")} - Jours ${Number(plan.daysPaid || 0)}/${Number(plan.durationDays || 0)}</small></span><strong>${formatAssetAmount(plan.amount, plan.asset || "AUSD")}<small>${formatAssetAmount(plan.earnedAmount, plan.asset || "AUSD")} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun plan.</p>`}</article>
     <article class="admin-sublist"><h2>AFRIX Staking Program</h2>${(data.activeStakes || []).map((stake) => `<div><span>${escapeHtml(stake.name || stake.planId || "Stake")}<small>${escapeHtml(stake.status || "")} - ${escapeHtml(stake.startedAt || "-")} - Jours ${Number(stake.daysPaid || 0)}/${Number(stake.durationDays || 0)}</small></span><strong>${formatGrsc(stake.amount)}<small>${formatGrsc(stake.earnedAmount)} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun staking.</p>`}</article>
     <article class="admin-sublist"><h2>GRS Core Founders Club</h2>${(data.activeFounders || []).map((item) => `<div><span>${escapeHtml(item.name || item.planId || "Founders")}<small>${escapeHtml(item.status || "")} - ${escapeHtml(item.activatedAt || "-")} - Fin ${escapeHtml(item.endsAt || "-")}</small></span><strong>${formatGrsc(item.amount)}<small>${formatGrsc(item.rewardAmount)} cible</small></strong></div>`).join("") || `<p class="muted">Aucune participation Founders.</p>`}</article>
+    <article class="admin-sublist"><h2>AFRIX ETF PROGRAM</h2>${(data.activeEtfs || []).map((item) => `<div><span>${escapeHtml(item.name || item.planId || "ETF")}<small>${escapeHtml(item.status || "")} - ${escapeHtml(item.activatedAt || "-")} - Fin ${escapeHtml(item.endsAt || "-")}</small></span><strong>${formatAusd(item.amount)}<small>${formatAusd(item.dividendAmount)} dividendes</small></strong></div>`).join("") || `<p class="muted">Aucune participation ETF.</p>`}</article>
     <article class="admin-sublist"><h2>Transactions traçables</h2>${renderAdminDetailedTransactions(txRows)}</article>
     <article class="admin-sublist"><h2>AFRIX Money / CICO</h2>${(data.cicoRequests || []).map((item) => `<div><span>${escapeHtml(item.reference || item.id || "")}<small>${escapeHtml(item.type || "")} - ${escapeHtml(item.method || "")} - ${escapeHtml(item.status || "")}</small></span><strong>${formatUsdt(item.amount)}</strong></div>`).join("") || `<p class="muted">Aucune opération CICO.</p>`}</article>
     <article class="admin-sublist"><h2>Exchange</h2>${(data.exchangeOrders || []).map((item) => `<div><span>${escapeHtml(item.reference || item.id || "")}<small>${escapeHtml(item.type || "")} - ${escapeHtml(item.paymentMethod || "")} - ${escapeHtml(item.status || "")}</small></span><strong>${formatUsdt(item.amount)}</strong></div>`).join("") || `<p class="muted">Aucune opération Exchange.</p>`}</article>
@@ -2194,7 +2359,7 @@ async function loadActiveDetailedAdminSection(section = adminDetailedState.secti
     if (section === "transactions") await loadAdminRecentTransactions();
     if (section === "deposits") await loadAdminDetailedTransactions("deposits");
     if (section === "withdrawals") await loadAdminDetailedTransactions("withdrawals");
-    if (["trading", "staking", "founders", "swap", "money"].includes(section)) await loadAdminProgram(section);
+    if (["trading", "staking", "founders", "etf", "swap", "money"].includes(section)) await loadAdminProgram(section);
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -2256,7 +2421,7 @@ function initDetailedAdmin() {
       if (kind === "users") loadAdminDetailedUsers(page).catch((error) => showToast(error.message, "error"));
       if (kind === "transactions") loadAdminRecentTransactions(page).catch((error) => showToast(error.message, "error"));
       if (kind === "deposits" || kind === "withdrawals") loadAdminDetailedTransactions(kind, page).catch((error) => showToast(error.message, "error"));
-      if (["trading", "staking", "swap", "money"].includes(kind)) loadAdminProgram(kind, page).catch((error) => showToast(error.message, "error"));
+      if (["trading", "staking", "founders", "etf", "swap", "money"].includes(kind)) loadAdminProgram(kind, page).catch((error) => showToast(error.message, "error"));
     }
     const openActivity = event.target.closest("[data-admin-open-activity]");
     if (openActivity) {
@@ -2778,18 +2943,20 @@ function setupActions(user) {
     if (!button) return;
     const article = button.closest("article");
     const amount = Number(article?.querySelector("[data-plan-amount]")?.value || 0);
-    if (!Number.isFinite(amount) || amount < 10) {
-      showToast("Montant minimum investissement: 10 USDT.", "error");
+    const minAmount = Number(button.dataset.planMin || 10);
+    if (!Number.isFinite(amount) || amount < minAmount) {
+      showToast(`Montant minimum investissement: ${formatAusd(minAmount)}.`, "error");
       return;
     }
-    if (amount > Number(user.balance || 0)) {
-      showToast(`Solde insuffisant. Disponible: ${formatUsdt(user.balance)}.`, "error");
+    const costs = tradingActivationCosts(amount);
+    if (costs.total > Number(user.ausdBalance || 0)) {
+      showToast(`Solde AUSD insuffisant. Total requis approximatif: ${formatAusd(costs.total)} incluant ${formatAusd(costs.programFee)} de frais programme. Disponible: ${formatAusd(user.ausdBalance)}.`, "error");
       return;
     }
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
       const response = await apiJson("/plans/activate", { amount, plan: button.dataset.plan }, { timeoutMs: 25_000 });
-      showToast(`Activation ${formatUsdt(amount)} - ${response.activePlan?.name || "plan"} validee.`);
+      showToast(`Activation ${formatAusd(amount)} - ${response.activePlan?.name || "plan"} validee. Total debite: ${formatAusd(costs.total)}.`);
       try {
         const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
         renderProtectedShell(document.body.dataset.page, freshUser);
@@ -2815,14 +2982,15 @@ function setupActions(user) {
       showToast(`Montant minimum ${plan?.name || "staking"}: ${formatGrsc(minAmount)}.`, "error");
       return;
     }
-    if (amount > Number(user.grsBalance || 0)) {
-      showToast(`Solde GRSCOIN insuffisant. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
+    const costs = stakingActivationCosts(amount);
+    if (costs.total > Number(user.grsBalance || 0)) {
+      showToast(`Solde GRSCOIN insuffisant. Total requis: ${formatGrsc(costs.total)} incluant ${formatGrsc(costs.programFee)} de frais programme. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
       return;
     }
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
       const response = await apiJson("/staking/activate", { amount, plan: button.dataset.stakingPlan }, { timeoutMs: 25_000 });
-      showToast(`Staking active: ${formatGrsc(response.activeStake?.amount || amount)}.`);
+      showToast(`Staking active: ${formatGrsc(response.activeStake?.amount || amount)}. Total debite: ${formatGrsc(response.totalDebit || costs.total)}.`);
       const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
       renderProtectedShell(document.body.dataset.page, freshUser);
     } catch (error) {
@@ -2859,13 +3027,14 @@ function setupActions(user) {
       showToast(`Participation minimum ${plan?.name || "Founders Club"}: ${formatGrsc(minAmount)}.`, "error");
       return;
     }
-    const activationFee = Number((amount * FOUNDERS_ACTIVATION_FEE_RATE).toFixed(2));
-    const totalRequired = Number((amount + activationFee).toFixed(2));
+    const costs = foundersActivationCosts(amount);
+    const activationFee = costs.programFee;
+    const totalRequired = costs.total;
     if (totalRequired > Number(user.grsBalance || 0)) {
-      showToast(`Solde GRSCOIN insuffisant. Total requis: ${formatGrsc(totalRequired)} incluant ${formatGrsc(activationFee)} de frais. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
+      showToast(`Solde GRSCOIN insuffisant. Total requis: ${formatGrsc(totalRequired)} incluant ${formatGrsc(activationFee)} de frais programme. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
       return;
     }
-    const confirmed = window.confirm(`Confirmer l'immobilisation de ${formatGrsc(amount)} dans ${plan?.name || "GRS Core Founders Club"} ? Frais activation: ${formatGrsc(activationFee)}. Total debite: ${formatGrsc(totalRequired)}.`);
+    const confirmed = window.confirm(`Confirmer l'immobilisation de ${formatGrsc(amount)} dans ${plan?.name || "GRS Core Founders Club"} ? Frais programme: ${formatGrsc(activationFee)}. Total debite: ${formatGrsc(totalRequired)}.`);
     if (!confirmed) return;
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
@@ -2887,6 +3056,51 @@ function setupActions(user) {
     try {
       const response = await apiJson(`/founders/${encodeURIComponent(button.dataset.founderClaim)}/claim`, {}, { timeoutMs: 25_000 });
       showToast(`Participation Founders reclamee: ${formatGrsc(response.claimedAmount)} credites.`);
+      const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
+      renderProtectedShell(document.body.dataset.page, freshUser);
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
+
+  bindClickOnce("[data-etf-plans-list]", async (event) => {
+    const button = event.target.closest("[data-etf-plan]");
+    if (!button) return;
+    const article = button.closest("article");
+    const amount = Number(article?.querySelector("[data-etf-amount]")?.value || 0);
+    const plan = etfPlans.find((item) => item.id === button.dataset.etfPlan);
+    const minAmount = Number(plan?.minAmount || 100);
+    if (!Number.isFinite(amount) || amount < minAmount) {
+      showToast(`Montant minimum ${plan?.name || "ETF"}: ${formatAusd(minAmount)}.`, "error");
+      return;
+    }
+    const costs = etfActivationCosts(amount);
+    if (costs.total > Number(user.ausdBalance || 0)) {
+      showToast(`Solde AUSD insuffisant. Total requis: ${formatAusd(costs.total)} incluant ${formatAusd(costs.programFee)} de frais programme. Disponible: ${formatAusd(user.ausdBalance)}.`, "error");
+      return;
+    }
+    const restoreButton = setButtonLoading(button, "Activation...");
+    try {
+      const response = await apiJson("/etf/activate", { amount, plan: button.dataset.etfPlan }, { timeoutMs: 25_000 });
+      showToast(`ETF active: ${formatAusd(response.activeEtf?.amount || amount)}. Total debite: ${formatAusd(response.totalDebit || costs.total)}.`);
+      const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
+      renderProtectedShell(document.body.dataset.page, freshUser);
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      restoreButton();
+    }
+  });
+
+  bindClickOnce("[data-active-etf-list]", async (event) => {
+    const button = event.target.closest("[data-etf-claim]");
+    if (!button) return;
+    const restoreButton = setButtonLoading(button, "Retrait...");
+    try {
+      const response = await apiJson(`/etf/${encodeURIComponent(button.dataset.etfClaim)}/claim`, {}, { timeoutMs: 25_000 });
+      showToast(`Capital ETF retire: ${formatAusd(response.claimedAmount)} credites.`);
       const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
       renderProtectedShell(document.body.dataset.page, freshUser);
     } catch (error) {
@@ -3546,6 +3760,7 @@ function renderProtectedShell(page, user) {
   renderPlans(user);
   renderStaking(user);
   renderFounders(user);
+  renderEtf(user);
   renderNetwork(user);
   renderProfile(user);
   renderContact();

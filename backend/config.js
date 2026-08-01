@@ -57,6 +57,7 @@ export const pageRoutes = {
   "/swap": "pages/swap.html",
   "/staking": "pages/staking.html",
   "/founders-club": "pages/founders-club.html",
+  "/etf": "pages/etf.html",
   "/exchange": "pages/exchange.html",
   "/merchant": "pages/merchant.html",
   "/elite": "pages/elite.html",
@@ -84,17 +85,17 @@ export const publicFiles = new Set([
 ]);
 
 export const plans = [
-  { id: "starter", name: "Starter Trading", minAmount: 10, dailyRate: 0.005, durationDays: 90 },
-  { id: "smart", name: "Smart Trading", minAmount: 50, dailyRate: 0.006, durationDays: 180 },
-  { id: "premium", name: "Premium Trading", minAmount: 300, dailyRate: 0.007, durationDays: 270 },
-  { id: "elite", name: "Elite Trading", minAmount: 500, dailyRate: 0.008, durationDays: 365 }
+  { id: "starter", name: "Starter Trading", minAmount: 10, dailyRate: 0.00342, durationDays: 365, dividendRate: 0.0035, asset: "AUSD" },
+  { id: "smart", name: "Smart Trading", minAmount: 250, dailyRate: 0.00356, durationDays: 365, dividendRate: 0.0037, asset: "AUSD" },
+  { id: "premium", name: "Premium Trading", minAmount: 500, dailyRate: 0.00383, durationDays: 365, dividendRate: 0.004, asset: "AUSD" },
+  { id: "elite", name: "Elite Trading", minAmount: 1000, dailyRate: 0.0041, durationDays: 365, dividendRate: 0.0045, asset: "AUSD" }
 ];
 
 export const stakingPlans = [
-  { id: "starter", name: "Starter Staking", minAmount: 100, rewardRate: 0.035, durationDays: 90 },
-  { id: "smart", name: "Smart Staking", minAmount: 500, rewardRate: 0.10, durationDays: 180 },
-  { id: "premium", name: "Premium Staking", minAmount: 2500, rewardRate: 0.17, durationDays: 270 },
-  { id: "elite", name: "Elite Staking", minAmount: 5000, rewardRate: 0.25, durationDays: 365 }
+  { id: "starter", name: "Starter Staking", minAmount: 100, rewardRate: 0.02, durationDays: 90 },
+  { id: "smart", name: "Smart Staking", minAmount: 500, rewardRate: 0.05, durationDays: 180 },
+  { id: "premium", name: "Premium Staking", minAmount: 2500, rewardRate: 0.09, durationDays: 270 },
+  { id: "elite", name: "Elite Staking", minAmount: 5000, rewardRate: 0.15, durationDays: 365 }
 ];
 
 export const foundersPlans = [
@@ -104,6 +105,13 @@ export const foundersPlans = [
   { id: "platinum", name: "Founder Platinum", minAmount: 250000, rewardRate: 0.037, durationYears: 18, durationDays: 6570 },
   { id: "diamond", name: "Founder Diamond", minAmount: 500000, rewardRate: 0.038, durationYears: 20, durationDays: 7300 },
   { id: "legend", name: "Founder Legend", minAmount: 1000000, rewardRate: 0.04, durationYears: 25, durationDays: 9125 }
+];
+
+export const etfPlans = [
+  { id: "stable", name: "AFRIX Stable Portfolio", minAmount: 100, monthlyRate: 0.00835, durationMonths: 36, durationDays: 1095, profile: "Prudent" },
+  { id: "blue-chip", name: "AFRIX Blue Chip Portfolio", minAmount: 2500, monthlyRate: 0.01, durationMonths: 36, durationDays: 1095, profile: "Actifs etablis" },
+  { id: "africa", name: "AFRIX Africa Portfolio", minAmount: 10000, monthlyRate: 0.0125, durationMonths: 36, durationDays: 1095, profile: "Croissance africaine" },
+  { id: "ai-innovation", name: "AFRIX AI & Innovation Portfolio", minAmount: 25000, monthlyRate: 0.015, durationMonths: 36, durationDays: 1095, profile: "Innovation long terme" }
 ];
 
 export const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];

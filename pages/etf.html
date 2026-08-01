@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f5d43">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/assets/pwa-icon.svg">
+  <link rel="shortcut icon" href="/assets/pwa-icon.svg">
+  <link rel="apple-touch-icon" href="/assets/pwa-icon.svg">
+  <meta property="og:image" content="/assets/pwa-icon.svg">
+  <meta name="twitter:image" content="/assets/pwa-icon.svg">
+  <title>AFRIX ETF PROGRAM</title>
+  <link rel="stylesheet" href="../styles.css?v=20260706-1">
+</head>
+<body data-protected data-page="etf">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+
+    <section class="hero-card plans-hero">
+      <span class="pill">Programme officiel d'investissement diversifie du GRS CORE ECOSYSTEM</span>
+      <h1>AFRIX ETF PROGRAM</h1>
+      <p>Gestion intelligente de portefeuilles numeriques diversifies en AUSD, inspiree des ETF, avec capital bloque 36 mois et dividendes mensuels disponibles dans le wallet.</p>
+      <div class="principle-strip" aria-label="Principes ETF">
+        <span>Minimum 100 AUSD</span>
+        <span>Dividendes mensuels</span>
+        <span>Capital bloque 36 mois</span>
+        <span>Frais programme 1%</span>
+      </div>
+    </section>
+
+    <section class="grid three staking-summary">
+      <article class="panel">
+        <span class="muted">Solde AUSD disponible</span>
+        <h1 data-etf-ausd-balance>0.00 AUSD</h1>
+      </article>
+      <article class="panel">
+        <span class="muted">Capital ETF bloque</span>
+        <h1 data-etf-locked-balance>0.00 AUSD</h1>
+      </article>
+      <article class="panel">
+        <span class="muted">Dividendes recus</span>
+        <h1 data-etf-dividends-total>0.00 AUSD</h1>
+      </article>
+    </section>
+
+    <section class="panel active-plans-panel">
+      <div class="panel-head"><h1>Portefeuilles ETF actifs</h1><span class="badge" data-active-etf-count>0</span></div>
+      <div class="active-plans-grid" data-active-etf-list></div>
+    </section>
+
+    <section class="plans" data-etf-plans-list></section>
+
+    <section class="grid two plans-principles">
+      <article class="panel">
+        <span class="pill">Principe</span>
+        <h1>Un portefeuille numerique diversifie en un seul programme.</h1>
+        <p>AFRIX ETF PROGRAM repartit l'exposition entre plusieurs categories d'actifs numeriques selon le profil choisi: stable, blue chip, croissance africaine ou innovation.</p>
+        <p>Les dividendes sont verses mensuellement en AUSD et restent disponibles. Le capital initial reste bloque pendant 36 mois.</p>
+      </article>
+      <article class="panel">
+        <span class="pill">Portefeuilles</span>
+        <div class="principle-list">
+          <span>AFRIX Stable Portfolio: 0,835% par mois</span>
+          <span>AFRIX Blue Chip Portfolio: 1,00% par mois</span>
+          <span>AFRIX Africa Portfolio: 1,25% par mois</span>
+          <span>AFRIX AI & Innovation Portfolio: 1,50% par mois</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid two plans-principles">
+      <article class="panel">
+        <span class="pill">Strategie</span>
+        <div class="principle-list">
+          <span>Diversification des actifs</span>
+          <span>Gestion professionnelle</span>
+          <span>Suivi continu des marches</span>
+          <span>Reequilibrage des portefeuilles</span>
+          <span>Gestion des risques</span>
+          <span>Vision long terme</span>
+        </div>
+      </article>
+      <article class="panel ecosystem-note">
+        <h1>Information importante</h1>
+        <p>Les objectifs de performance sont indicatifs et ne constituent pas une garantie de rendement. Les actifs numeriques comportent des risques de volatilite et de perte en capital.</p>
+      </article>
+    </section>
+  </main>
+  <script src="../app.js?v=20260706-1"></script>
+</body>
+</html>

@@ -943,6 +943,9 @@ body[data-page="dashboard"] .stats article {
 body[data-page="dashboard"] .dashboard-balance-card {
   grid-column: span 2;
 }
+body[data-page="dashboard"] .dashboard-metric-card {
+  grid-column: span 2;
+}
 .dashboard-token-balances {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -962,6 +965,12 @@ body[data-page="dashboard"] .dashboard-balance-card {
 .dashboard-token-balances strong {
   margin-top: 6px;
   overflow-wrap: anywhere;
+}
+.dashboard-metric-values {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.dashboard-metric-card:nth-of-type(3) .dashboard-metric-values {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 body[data-page="merchant"] .stats { grid-template-columns: repeat(5, 1fr); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -2022,7 +2031,14 @@ th { color: var(--muted); font-size: 12px; }
   body[data-page="dashboard"] .dashboard-balance-card {
     grid-column: 1 / -1;
   }
+  body[data-page="dashboard"] .dashboard-metric-card {
+    grid-column: 1 / -1;
+  }
   .dashboard-token-balances {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-metric-values,
+  .dashboard-metric-card:nth-of-type(3) .dashboard-metric-values {
     grid-template-columns: 1fr;
   }
 }

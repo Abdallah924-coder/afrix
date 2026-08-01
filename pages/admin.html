@@ -37,6 +37,7 @@
       <button class="admin-section-tab" type="button" data-admin-section-trigger="trading">Trading</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="staking">Staking</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="founders">Founders</button>
+      <button class="admin-section-tab" type="button" data-admin-section-trigger="etf">ETF</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="swap">Swap GRSCOIN</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="money">AFRIX Money</button>
       <button class="admin-section-tab" type="button" data-admin-section-trigger="operations">Opérations</button>
@@ -68,6 +69,7 @@
             <button class="btn secondary" type="button" data-admin-section-trigger="trading">Trading Program</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="staking">Staking Program</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="founders">GRS CORE FOUNDERS CLUB</button>
+            <button class="btn secondary" type="button" data-admin-section-trigger="etf">AFRIX ETF PROGRAM</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="swap">Swap GRSCOIN</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="money">AFRIX Money</button>
             <button class="btn secondary" type="button" data-admin-section-trigger="tools">Outils admin</button>
@@ -113,6 +115,8 @@
           <div><span>GRSC verrouillés</span><strong data-admin-summary-grsc="programStats.staking.activeLocked">0 GRSC</strong></div>
           <div><span>Founders actifs</span><strong data-admin-summary="programStats.founders.activeCount">0</strong></div>
           <div><span>GRSC Founders</span><strong data-admin-summary-grsc="programStats.founders.activeLocked">0 GRSC</strong></div>
+          <div><span>ETF actifs</span><strong data-admin-summary="programStats.etf.activeCount">0</strong></div>
+          <div><span>Capital ETF actif</span><strong data-admin-summary-ausd="programStats.etf.activeCapital">0 AUSD</strong></div>
           <div><span>GRSC émis</span><strong data-admin-summary-grsc="swap.issuedSupply">0 GRSC</strong></div>
           <div><span>Volume AFRIX Money</span><strong data-admin-summary-usdt="money.volume">0 USDT</strong></div>
         </div>
@@ -330,6 +334,14 @@
         <div class="admin-program-summary" data-admin-program-summary="founders"></div>
         <div class="admin-detail-list" data-admin-program-list="founders"></div>
       </article>
+    </section>
+
+    <section class="admin-section-panel" data-admin-section="etf" hidden>
+      <section class="panel admin-queues">
+        <div class="panel-head"><h1>AFRIX ETF PROGRAM</h1><button class="btn secondary" type="button" data-admin-export="etf">CSV</button></div>
+        <div class="admin-program-summary" data-admin-program-summary="etf"></div>
+        <div class="admin-detail-list" data-admin-program-list="etf"></div>
+      </section>
     </section>
 
     <section class="admin-section-panel" data-admin-section="swap" hidden>
