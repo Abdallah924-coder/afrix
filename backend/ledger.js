@@ -21,7 +21,7 @@ export function money(value) {
 }
 
 export function formatAmount(value, sign = "") {
-  return `${sign}${money(value).toFixed(2)} USDT`;
+  return `${sign}${money(value).toFixed(4)} USDT`;
 }
 
 export function assertAmount(value, label = "Montant") {

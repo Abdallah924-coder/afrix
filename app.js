@@ -27,23 +27,24 @@ const pageTitles = {
 };
 
 const navItems = [
-  ["dashboard", "Dashboard", "/dashboard"],
-  ["wallet", "Wallet AUSD", "/wallet"],
-  ["afrix-money", "AFRIX Money", "/afrix-money"],
-  ["plans", "AFRIX Trading Program", "/plans"],
-  ["staking", "AFRIX Staking Program", "/staking"],
+  ["dashboard", "DASHBOARD", "/dashboard"],
+  ["wallet", "WALLET AUSD", "/wallet"],
+  ["afrix-money", "AFRIX MONEY", "/afrix-money"],
+  ["plans", "AFRIX TRADING PROGRAM", "/plans"],
+  ["staking", "AFRIX STAKING PROGRAM", "/staking"],
   ["founders-club", "GRS CORE FOUNDERS CLUB", "/founders-club"],
   ["etf", "AFRIX ETF PROGRAM", "/etf"],
-  ["swap", "AFRIX Swap GRSCOIN", "/swap"],
-  ["exchange", "Exchange", "/exchange"],
-  ["merchant", "Merchant", "/merchant"],
-  ["network", "Reseau", "/network"],
-  ["profile", "Profil", "/profile"],
-  ["contact", "Support", "/support"],
-  ["elite", "Elite", "/elite"],
-  ["transactions", "Transactions", "/transactions"],
-  ["admin", "Admin", "/admin"]
+  ["swap", "AFRIX SWAP GRSCOIN", "/swap"],
+  ["exchange", "EXCHANGE", "/exchange"],
+  ["merchant", "MERCHANT", "/merchant"],
+  ["network", "RÉSEAU", "/network"],
+  ["profile", "PROFIL", "/profile"],
+  ["contact", "SUPPORT", "/support"],
+  ["elite", "ELITE", "/elite"],
+  ["transactions", "TRANSACTIONS", "/transactions"],
+  ["admin", "ADMIN", "/admin"]
 ];
+const profileOnlyNavItems = new Set(["network", "contact", "elite"]);
 
 const DEPOSIT_MOBILE_RATE = 650;
 const WITHDRAW_MOBILE_RATE = 550;
@@ -56,6 +57,22 @@ const TRADING_PROGRAM_FEE_RATE = 0.0075;
 const STAKING_PROGRAM_FEE_RATE = 0.005;
 const ETF_PROGRAM_FEE_RATE = 0.01;
 const FOUNDERS_ACTIVATION_FEE_RATE = 0.01;
+const defaultFeeSettings = {
+  tradingProgramFeeRate: 0.0075,
+  stakingProgramFeeRate: 0.005,
+  etfProgramFeeRate: 0.01,
+  foundersProgramFeeRate: 0.01,
+  annualManagementFeeRate: 0.01,
+  activationAdminCommissionRate: 0.025,
+  activationDeveloperCommissionRate: 0.025,
+  userRevenueAdminCommissionRate: 0.05,
+  userRevenueDeveloperCommissionRate: 0.05,
+  platformRevenueAdminShare: 0.10,
+  platformRevenueDeveloperShare: 0.10,
+  swapFeeRate: 0.025,
+  withdrawalFeeRate: 0.10,
+  p2pFeeRate: 0.01
+};
 const contactLinks = {
   telegramSupport: "https://t.me/Assistant_grs_core",
   telegramChannel: "https://t.me/ecosysteme_grs",
@@ -155,6 +172,7 @@ const emptyUser = {
   bonusLevelsOverride: 0,
   ausdBalance: 0,
   platformControls: {},
+  feeSettings: defaultFeeSettings,
     swap: {
       grsCoinPriceUsdt: 0.0725,
       grsCoinPerUsdt: 13.79310345,
@@ -170,42 +188,46 @@ const emptyUser = {
   role: "user"
 };
 
-const formatUsdt = (value) => `${Number(value || 0).toFixed(2)} USDT`;
-const formatGrsc = (value) => `${Number(value || 0).toFixed(2)} GRSC`;
-const formatAusd = (value) => `${Number(value || 0).toFixed(2)} AUSD`;
+const formatUsdt = (value) => `${Number(value || 0).toFixed(4)} USDT`;
+const formatGrsc = (value) => `${Number(value || 0).toFixed(4)} GRSC`;
+const formatAusd = (value) => `${Number(value || 0).toFixed(4)} AUSD`;
 const formatCdf = (value) => `${Math.round(Number(value || 0)).toLocaleString("fr-FR")} CDF`;
 const formatAssetAmount = (value, asset = "USDT") => {
   if (asset === "AUSD") return formatAusd(value);
   if (asset === "GRSC") return formatGrsc(value);
   return formatUsdt(value);
 };
-function tradingActivationCosts(amount) {
+function feeRate(user = {}, key, fallback = 0) {
+  const value = Number(user.feeSettings?.[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+function tradingActivationCosts(amount, user = {}) {
   const capital = Number(amount || 0);
-  const programFee = Number((capital * TRADING_PROGRAM_FEE_RATE).toFixed(2));
+  const programFee = Number((capital * feeRate(user, "tradingProgramFeeRate", TRADING_PROGRAM_FEE_RATE)).toFixed(2));
   return {
     programFee,
     total: Number((capital + programFee).toFixed(2))
   };
 }
-function foundersActivationCosts(amount) {
+function foundersActivationCosts(amount, user = {}) {
   const capital = Number(amount || 0);
-  const programFee = Number((capital * FOUNDERS_ACTIVATION_FEE_RATE).toFixed(2));
+  const programFee = Number((capital * feeRate(user, "foundersProgramFeeRate", FOUNDERS_ACTIVATION_FEE_RATE)).toFixed(2));
   return {
     programFee,
     total: Number((capital + programFee).toFixed(2))
   };
 }
-function stakingActivationCosts(amount) {
+function stakingActivationCosts(amount, user = {}) {
   const capital = Number(amount || 0);
-  const programFee = Number((capital * STAKING_PROGRAM_FEE_RATE).toFixed(2));
+  const programFee = Number((capital * feeRate(user, "stakingProgramFeeRate", STAKING_PROGRAM_FEE_RATE)).toFixed(2));
   return {
     programFee,
     total: Number((capital + programFee).toFixed(2))
   };
 }
-function etfActivationCosts(amount) {
+function etfActivationCosts(amount, user = {}) {
   const capital = Number(amount || 0);
-  const programFee = Number((capital * ETF_PROGRAM_FEE_RATE).toFixed(2));
+  const programFee = Number((capital * feeRate(user, "etfProgramFeeRate", ETF_PROGRAM_FEE_RATE)).toFixed(2));
   return {
     programFee,
     total: Number((capital + programFee).toFixed(2))
@@ -218,6 +240,11 @@ const assetBalance = (user = {}, asset = "USDT") => {
 };
 const usdtToAusd = (value) => Number(value || 0) / AUSD_PRICE_USDT;
 const usdtToGrsc = (value, user = {}) => Number(value || 0) * getGrsCoinPerUsdt(user);
+const ausdToUsdt = (value) => Number(value || 0) * AUSD_PRICE_USDT;
+const grscToUsdt = (value, user = {}) => {
+  const price = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
+  return Number(value || 0) * price;
+};
 const formatTokenPrice = (value) => `${Number(value || 0).toFixed(4)} USDT`;
 const getGrsCoinPerUsdt = (user = {}) => {
   const price = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
@@ -443,6 +470,7 @@ function normalizeUser(user) {
     activeEtfs: Array.isArray(user?.activeEtfs) ? user.activeEtfs : [],
     ledgerEntries: Array.isArray(user?.ledgerEntries) ? user.ledgerEntries : [],
     platformControls: user?.platformControls || {},
+    feeSettings: { ...defaultFeeSettings, ...(user?.feeSettings || {}) },
     platformAccount: user?.platformAccount || {},
     country: user?.country || ""
   };
@@ -524,7 +552,7 @@ function showLoadError(message) {
 function renderSidebar(page, user = emptyUser) {
   const sidebar = document.querySelector("[data-sidebar]");
   if (!sidebar) return;
-  const visibleNavItems = navItems.filter(([key]) => key !== "admin" || canUseBackoffice(user));
+  const visibleNavItems = navItems.filter(([key]) => !profileOnlyNavItems.has(key) && (key !== "admin" || canUseBackoffice(user)));
 
   sidebar.innerHTML = `
     <a class="brand" href="/">
@@ -717,7 +745,9 @@ function renderSupportWidget() {
 function renderDashboard(user) {
   const balance = document.querySelector("[data-balance]");
   const ausdBalance = document.querySelector("[data-ausd-balance]");
+  const ausdBalanceUsdt = document.querySelector("[data-ausd-balance-usdt]");
   const grsBalance = document.querySelector("[data-grs-balance]");
+  const grsBalanceUsdt = document.querySelector("[data-grs-balance-usdt]");
   const activity = document.querySelector("[data-activity]");
   const activityGrsc = document.querySelector("[data-activity-grsc]");
   const levelNote = document.querySelector("[data-level-note]");
@@ -725,7 +755,9 @@ function renderDashboard(user) {
   const teamRegistered = document.querySelector("[data-team-registered]");
   const teamActive = document.querySelector("[data-team-active]");
   const bonus = document.querySelector("[data-bonus]");
+  const bonusAusdUsdt = document.querySelector("[data-bonus-ausd-usdt]");
   const bonusGrsc = document.querySelector("[data-bonus-grsc]");
+  const bonusGrscUsdt = document.querySelector("[data-bonus-grsc-usdt]");
   const rank = document.querySelector("[data-rank]");
   const progress = document.querySelector("[data-progress]");
   const progressText = document.querySelector("[data-progress-text]");
@@ -735,18 +767,25 @@ function renderDashboard(user) {
     0,
     Math.min(20, Math.max(Math.floor(Number(user.activity || 0) / 100), Number(user.bonusLevelsOverride || 0)))
   );
+  const networkStats = user.networkStats || {};
+  const totalRegisteredPartners = Number(networkStats.totalRegistered ?? user.registeredPartners ?? user.team ?? 0);
+  const totalActivePartners = Number(networkStats.directActive?.count || 0) + Number(networkStats.indirectActive?.count || 0);
 
   if (balance) balance.textContent = formatUsdt(user.balance);
   if (ausdBalance) ausdBalance.textContent = formatAusd(user.ausdBalance);
+  if (ausdBalanceUsdt) ausdBalanceUsdt.textContent = `≈ ${formatUsdt(ausdToUsdt(user.ausdBalance))}`;
   if (grsBalance) grsBalance.textContent = formatGrsc(user.grsBalance);
+  if (grsBalanceUsdt) grsBalanceUsdt.textContent = `≈ ${formatUsdt(grscToUsdt(user.grsBalance, user))}`;
   if (activity) activity.textContent = formatAusd(usdtToAusd(user.activity));
   if (activityGrsc) activityGrsc.textContent = formatGrsc(user.activityGrsc || usdtToGrsc(user.activity, user));
   if (levelNote) levelNote.textContent = `${activeLevels} niveau${activeLevels > 1 ? "x" : ""} actif${activeLevels > 1 ? "s" : ""}`;
-  if (team) team.textContent = Number(user.registeredPartners ?? user.team ?? 0);
-  if (teamRegistered) teamRegistered.textContent = `${Number(user.registeredPartners ?? user.team ?? 0).toLocaleString("fr-FR")} inscrit${Number(user.registeredPartners ?? user.team ?? 0) > 1 ? "s" : ""}`;
-  if (teamActive) teamActive.textContent = `${Number(user.activePartners || 0).toLocaleString("fr-FR")} actif${Number(user.activePartners || 0) > 1 ? "s" : ""}`;
+  if (team) team.textContent = totalRegisteredPartners.toLocaleString("fr-FR");
+  if (teamRegistered) teamRegistered.textContent = `${totalRegisteredPartners.toLocaleString("fr-FR")} inscrit${totalRegisteredPartners > 1 ? "s" : ""}`;
+  if (teamActive) teamActive.textContent = `${totalActivePartners.toLocaleString("fr-FR")} actif${totalActivePartners > 1 ? "s" : ""}`;
   if (bonus) bonus.textContent = formatAusd(usdtToAusd(user.bonus));
+  if (bonusAusdUsdt) bonusAusdUsdt.textContent = `≈ ${formatUsdt(user.bonus)}`;
   if (bonusGrsc) bonusGrsc.textContent = formatGrsc(user.bonusGrsc || usdtToGrsc(user.bonus, user));
+  if (bonusGrscUsdt) bonusGrscUsdt.textContent = `≈ ${formatUsdt(grscToUsdt(user.bonusGrsc || usdtToGrsc(user.bonus, user), user))}`;
   if (rank) rank.textContent = user.rank || "Niveau 0";
   if (progress) progress.style.width = `${Math.max(0, Math.min(100, Number(user.progress || 0)))}%`;
   if (progressText) progressText.textContent = user.progressText || "Progression calculee selon votre activite validee.";
@@ -1005,28 +1044,28 @@ function renderSwap(user) {
       return;
     }
     if (direction === "USDT_AUSD") {
-      const fee = amount * totalFeeRate;
-      const ausdAmount = (amount - fee) / AUSD_PRICE_USDT;
-      if (preview) preview.textContent = `${formatUsdt(amount)} -> ${formatAusd(ausdAmount)} apres 2.5% de frais.`;
+      const feeGrs = grsCoinPriceUsdt ? (amount * totalFeeRate) / grsCoinPriceUsdt : 0;
+      const ausdAmount = amount / AUSD_PRICE_USDT;
+      if (preview) preview.textContent = `${formatUsdt(amount)} -> ${formatAusd(ausdAmount)}. Frais: ${formatGrsc(feeGrs)}.`;
       return;
     }
     if (direction === "AUSD_USDT") {
       const grossUsdtAmount = amount * AUSD_PRICE_USDT;
-      const fee = grossUsdtAmount * totalFeeRate;
-      if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatUsdt(grossUsdtAmount - fee)} apres 2.5% de frais.`;
+      const feeGrs = grsCoinPriceUsdt ? (grossUsdtAmount * totalFeeRate) / grsCoinPriceUsdt : 0;
+      if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatUsdt(grossUsdtAmount)}. Frais: ${formatGrsc(feeGrs)}.`;
       return;
     }
     if (direction === "AUSD_GRSC") {
       const grossUsdt = amount * AUSD_PRICE_USDT;
-      const feeGrs = grsCoinPriceUsdt ? (grossUsdt * totalFeeRate) / grsCoinPriceUsdt : 0;
-      const grsAmount = grsCoinPriceUsdt ? (grossUsdt / grsCoinPriceUsdt) - feeGrs : 0;
-      if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatGrsc(grsAmount)} apres 2.5% de frais payes en GRSC.`;
+      const feeAusd = amount * totalFeeRate;
+      const grsAmount = grsCoinPriceUsdt ? ((amount - feeAusd) * AUSD_PRICE_USDT) / grsCoinPriceUsdt : 0;
+      if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatGrsc(grsAmount)} apres ${formatAusd(feeAusd)} de frais.`;
       return;
     }
     const grossGrsAmount = amount > 0 && grsCoinPriceUsdt ? amount / grsCoinPriceUsdt : 0;
-    const feeGrs = grossGrsAmount * totalFeeRate;
-    const grsAmount = Math.max(0, grossGrsAmount - feeGrs);
-    if (preview) preview.textContent = grsAmount ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres 2.5% de frais payes en GRSC` : "Saisissez un montant USDT.";
+    const feeUsdt = amount * totalFeeRate;
+    const grsAmount = grsCoinPriceUsdt ? (amount - feeUsdt) / grsCoinPriceUsdt : 0;
+    if (preview) preview.textContent = grsAmount ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres ${formatUsdt(feeUsdt)} de frais.` : "Saisissez un montant USDT.";
   };
   const updateDepositPreview = () => {
     const amount = Number(depositAmountInput?.value || 0);
@@ -1086,7 +1125,7 @@ function renderPlans(user) {
   list.innerHTML = plans.map((plan) => {
     const currentActivity = plan.requiredStakePlan ? stakingActivityByPlan(plan.requiredStakePlan) : 0;
     const isUnlocked = !plan.requiredStakePlan || currentActivity >= Number(plan.requiredStakeAmount || 0);
-    const costs = tradingActivationCosts(plan.minAmount);
+    const costs = tradingActivationCosts(plan.minAmount, user);
     const requirement = plan.requiredStakePlan
       ? `Condition: ${Number(plan.requiredStakeAmount || 0).toLocaleString("fr-FR")} GRSC dans ${plan.requiredStakeName} - Actuel: ${formatGrsc(currentActivity)}`
       : "Condition: ouverture initiale sans staking requis.";
@@ -1104,7 +1143,7 @@ function renderPlans(user) {
       </div>
       <p>${plan.note}</p>
       <small>${requirement}</small>
-      <small>Frais programme: ${formatAusd(costs.programFee)} - Total minimum approximatif: ${formatAusd(costs.total)}</small>
+      <small>Frais programme: ${formatAusd(costs.programFee)} - Total minimum approximatif: ${formatAusd(costs.total)} (${formatUsdt(ausdToUsdt(costs.total))})</small>
       <small>Solde disponible: ${formatAusd(user.ausdBalance)} - Staking cumule: ${formatGrsc(totalStakingActivity)} / 80 000.00 GRSC</small>
       <label class="plan-investment-input">
         Montant a investir
@@ -1187,7 +1226,7 @@ function renderStaking(user) {
 
   if (plansList) {
     plansList.innerHTML = stakingPlans.map((plan) => {
-      const costs = stakingActivationCosts(plan.minAmount);
+      const costs = stakingActivationCosts(plan.minAmount, user);
       const canActivate = Number(user.grsBalance || 0) >= costs.total;
       return `
         <article class="${plan.featured ? "featured" : ""}">
@@ -1201,7 +1240,7 @@ function renderStaking(user) {
             <small><span>Sortie visee</span>${escapeHtml(plan.exitValue)}</small>
           </div>
           <p>Verrouillage temporaire de GRSCOIN avec restitution du capital et du resultat vise a l'issue du cycle.</p>
-          <small>Frais programme: ${formatGrsc(costs.programFee)} - Total requis: ${formatGrsc(costs.total)}</small>
+          <small>Frais programme: ${formatGrsc(costs.programFee)} - Total requis: ${formatGrsc(costs.total)} (${formatUsdt(grscToUsdt(costs.total, user))})</small>
           <small>Solde disponible: ${formatGrsc(user.grsBalance)}</small>
           <label class="plan-investment-input">
             Montant a staker
@@ -1273,7 +1312,7 @@ function renderFounders(user) {
 
   if (plansList) {
     plansList.innerHTML = foundersPlans.map((plan) => {
-      const costs = foundersActivationCosts(plan.minAmount);
+      const costs = foundersActivationCosts(plan.minAmount, user);
       const activationFee = costs.programFee;
       const totalRequired = costs.total;
       const canActivate = Number(user.grsBalance || 0) >= totalRequired;
@@ -1290,7 +1329,7 @@ function renderFounders(user) {
           </div>
           <p>GRSCOIN verrouilles jusqu'a maturite avec restitution du capital et recompense ciblee selon les performances de l'ecosysteme.</p>
           <small>Recompense ciblee sur le cycle: ${Number((maturityRate * 100).toFixed(2)).toLocaleString("fr-FR")}%</small>
-          <small>Frais programme: ${formatGrsc(activationFee)} - Total requis: ${formatGrsc(totalRequired)}</small>
+          <small>Frais programme: ${formatGrsc(activationFee)} - Total requis: ${formatGrsc(totalRequired)} (${formatUsdt(grscToUsdt(totalRequired, user))})</small>
           <small>Solde disponible: ${formatGrsc(user.grsBalance)}</small>
           <label class="plan-investment-input">
             Montant a immobiliser
@@ -1362,7 +1401,7 @@ function renderEtf(user) {
 
   if (plansList) {
     plansList.innerHTML = etfPlans.map((plan) => {
-      const costs = etfActivationCosts(plan.minAmount);
+      const costs = etfActivationCosts(plan.minAmount, user);
       const canActivate = Number(user.ausdBalance || 0) >= costs.total;
       return `
         <article class="${plan.featured ? "featured" : ""}">
@@ -1376,7 +1415,7 @@ function renderEtf(user) {
           </div>
           <p>Capital bloque pendant 36 mois. Les dividendes mensuels sont credites en AUSD et restent retirables depuis le wallet.</p>
           <small>Fourchette indicative: ${escapeHtml(plan.range)}</small>
-          <small>Frais programme: ${formatAusd(costs.programFee)} - Total requis: ${formatAusd(costs.total)}</small>
+          <small>Frais programme: ${formatAusd(costs.programFee)} - Total requis: ${formatAusd(costs.total)} (${formatUsdt(ausdToUsdt(costs.total))})</small>
           <small>Solde disponible: ${formatAusd(user.ausdBalance)}</small>
           <label class="plan-investment-input">
             Montant a investir
@@ -1430,7 +1469,15 @@ function renderNetwork(user) {
   const partnersList = document.querySelector("[data-direct-partners-list]");
   const partnersCount = document.querySelector("[data-direct-partners-count]");
   const refLink = document.querySelector("[data-ref-link]");
+  const networkStats = user.networkStats || {};
   const activeLevels = Math.max(0, Math.min(20, Math.max(Math.floor(Number(user.activity || 0) / 100), Number(user.bonusLevelsOverride || 0))));
+
+  const setText = (selector, value) => {
+    const node = document.querySelector(selector);
+    if (node) node.textContent = value;
+  };
+  const directActive = networkStats.directActive || {};
+  const indirectActive = networkStats.indirectActive || {};
 
   if (levelsList) {
     levelsList.innerHTML = bonusRates.map((rate, index) => {
@@ -1440,12 +1487,26 @@ function renderNetwork(user) {
   }
 
   if (refLink) refLink.value = user.refLink || "";
+  setText("[data-network-total-registered]", `${Number(networkStats.totalRegistered || 0).toLocaleString("fr-FR")} inscrits`);
+  setText("[data-network-total-registered-main]", Number(networkStats.totalRegistered || 0).toLocaleString("fr-FR"));
+  setText("[data-network-direct-registered]", Number(networkStats.directRegistered || 0).toLocaleString("fr-FR"));
+  setText("[data-network-indirect-registered]", Number(networkStats.indirectRegistered || 0).toLocaleString("fr-FR"));
+  setText("[data-network-direct-active-count]", Number(directActive.count || 0).toLocaleString("fr-FR"));
+  setText("[data-network-direct-active-ausd]", `AUSD: ${formatAusd(directActive.activityAusd || 0)}`);
+  setText("[data-network-direct-active-grsc]", `GRSC: ${formatGrsc(directActive.activityGrsc || 0)}`);
+  setText("[data-network-direct-active-usdt]", `Estimation USDT: ${formatUsdt(directActive.activityUsdt || 0)}`);
+  setText("[data-network-indirect-active-count]", Number(indirectActive.count || 0).toLocaleString("fr-FR"));
+  setText("[data-network-indirect-active-ausd]", `AUSD: ${formatAusd(indirectActive.activityAusd || 0)}`);
+  setText("[data-network-indirect-active-grsc]", `GRSC: ${formatGrsc(indirectActive.activityGrsc || 0)}`);
+  setText("[data-network-indirect-active-usdt]", `Estimation USDT: ${formatUsdt(indirectActive.activityUsdt || 0)}`);
+  setText("[data-network-direct-inactive]", Number(networkStats.directInactive?.count || 0).toLocaleString("fr-FR"));
+  setText("[data-network-indirect-inactive]", Number(networkStats.indirectInactive?.count || 0).toLocaleString("fr-FR"));
   if (partnersCount) partnersCount.textContent = user.directPartners.length;
   if (partnersList) {
     partnersList.innerHTML = user.directPartners.length ? user.directPartners.map((partner) => `
       <div>
         <span>${escapeHtml(partner.fullName)}<small>${escapeHtml(partner.email)}</small></span>
-        <strong>${Number(partner.activity || 0).toFixed(0)} USDT</strong>
+        <strong>${formatUsdt(partner.activity || 0)}</strong>
       </div>
     `).join("") : `<p class="muted">Aucun partenaire direct pour le moment.</p>`;
   }
@@ -1769,6 +1830,7 @@ function renderAdmin(user) {
   }).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
   renderAdminUsers(filteredAdminUsers);
   renderAdminUserActivity(user.adminUsers || [], userQuery);
+  renderAdminFeeSettings(user.feeSettings || {});
   bindAdminSections();
   bindAdminUsersPanel();
   initDetailedAdmin();
@@ -1781,6 +1843,18 @@ function renderAdmin(user) {
     if (field.dataset.boundAdminFilter) return;
     field.dataset.boundAdminFilter = "true";
     field.addEventListener("input", () => renderAdmin(user));
+  });
+}
+
+function renderAdminFeeSettings(settings = {}) {
+  const form = document.querySelector("[data-admin-fee-settings-form]");
+  if (!form) return;
+  form.querySelectorAll("input[name]").forEach((input) => {
+    const key = input.name;
+    const value = Number(settings[key]);
+    if (Number.isFinite(value) && document.activeElement !== input) {
+      input.value = Number((value * 100).toFixed(4));
+    }
   });
 }
 
@@ -2293,7 +2367,7 @@ async function loadAdminProgram(program, page = adminDetailedState.pages[program
           <small>${escapeHtml(item.userName || item.userEmail || "")} - ${escapeHtml(item.userEmail || "")} - ${escapeHtml(adminStatusLabel(item.status))}</small>
           <small>Début: ${escapeHtml(item.activatedAt || item.startedAt || item.createdAt || "-")} - Fin: ${escapeHtml(item.endsAt || "-")} - Durée: ${Number(item.durationDays || 0).toLocaleString("fr-FR")} jours</small>
         </span>
-        <strong>${program === "staking" || program === "founders" ? formatGrsc(item.amount) : formatAssetAmount(item.amount, item.asset || "AUSD")}<small>${program === "founders" ? `Cible: ${formatGrsc(item.rewardAmount)}` : program === "etf" ? `Dividendes: ${formatAusd(item.dividendAmount)}` : `Gagné: ${program === "trading" ? formatAssetAmount(item.earnedAmount, item.asset || "AUSD") : formatGrsc(item.earnedAmount)}`}</small></strong>
+        <strong>${program === "staking" || program === "founders" ? formatGrsc(item.amount) : formatAssetAmount(item.amount, program === "trading" ? item.asset || "USDT" : item.asset || "AUSD")}<small>${program === "founders" ? `Cible: ${formatGrsc(item.rewardAmount)}` : program === "etf" ? `Dividendes: ${formatAusd(item.dividendAmount)}` : `Gagné: ${program === "trading" ? formatAssetAmount(item.earnedAmount, item.asset || "USDT") : formatGrsc(item.earnedAmount)}`}</small></strong>
         <button class="btn primary" type="button" data-admin-open-activity="${escapeHtml(item.userEmail || "")}">Tracer</button>
       </div>
     `).join("") + renderAdminPagination(program, payload.pagination) : `<p class="muted">Aucune participation.</p>`;
@@ -2341,7 +2415,7 @@ async function lookupAdminActivity(emailOverride = "") {
       <div><span>Statut</span><strong>${escapeHtml(adminStatusLabel(user.status))}</strong></div>
     </div>
     <article class="admin-sublist admin-timeline"><h2>Timeline unifiée</h2>${(data.timeline || []).map((item) => `<div><span>${escapeHtml(item.title || item.kind || "Activité")}<small>${escapeHtml(item.date || "-")} - ${escapeHtml(item.program || item.kind || "-")} - ${escapeHtml(item.reference || "-")}</small></span><strong>${escapeHtml(item.amount || "-")}<small>${escapeHtml(adminStatusLabel(item.status))}</small></strong></div>`).join("") || `<p class="muted">Aucune activité.</p>`}</article>
-    <article class="admin-sublist"><h2>AFRIX Trading Program</h2>${(data.activePlans || []).map((plan) => `<div><span>${escapeHtml(plan.name || plan.planId || "Plan")}<small>${escapeHtml(plan.status || "")} - ${escapeHtml(plan.startedAt || "-")} - Jours ${Number(plan.daysPaid || 0)}/${Number(plan.durationDays || 0)}</small></span><strong>${formatAssetAmount(plan.amount, plan.asset || "AUSD")}<small>${formatAssetAmount(plan.earnedAmount, plan.asset || "AUSD")} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun plan.</p>`}</article>
+    <article class="admin-sublist"><h2>AFRIX Trading Program</h2>${(data.activePlans || []).map((plan) => `<div><span>${escapeHtml(plan.name || plan.planId || "Plan")}<small>${escapeHtml(plan.status || "")} - ${escapeHtml(plan.startedAt || "-")} - Jours ${Number(plan.daysPaid || 0)}/${Number(plan.durationDays || 0)}</small></span><strong>${formatAssetAmount(plan.amount, plan.asset || "USDT")}<small>${formatAssetAmount(plan.earnedAmount, plan.asset || "USDT")} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun plan.</p>`}</article>
     <article class="admin-sublist"><h2>AFRIX Staking Program</h2>${(data.activeStakes || []).map((stake) => `<div><span>${escapeHtml(stake.name || stake.planId || "Stake")}<small>${escapeHtml(stake.status || "")} - ${escapeHtml(stake.startedAt || "-")} - Jours ${Number(stake.daysPaid || 0)}/${Number(stake.durationDays || 0)}</small></span><strong>${formatGrsc(stake.amount)}<small>${formatGrsc(stake.earnedAmount)} gagnés</small></strong></div>`).join("") || `<p class="muted">Aucun staking.</p>`}</article>
     <article class="admin-sublist"><h2>GRS Core Founders Club</h2>${(data.activeFounders || []).map((item) => `<div><span>${escapeHtml(item.name || item.planId || "Founders")}<small>${escapeHtml(item.status || "")} - ${escapeHtml(item.activatedAt || "-")} - Fin ${escapeHtml(item.endsAt || "-")}</small></span><strong>${formatGrsc(item.amount)}<small>${formatGrsc(item.rewardAmount)} cible</small></strong></div>`).join("") || `<p class="muted">Aucune participation Founders.</p>`}</article>
     <article class="admin-sublist"><h2>AFRIX ETF PROGRAM</h2>${(data.activeEtfs || []).map((item) => `<div><span>${escapeHtml(item.name || item.planId || "ETF")}<small>${escapeHtml(item.status || "")} - ${escapeHtml(item.activatedAt || "-")} - Fin ${escapeHtml(item.endsAt || "-")}</small></span><strong>${formatAusd(item.amount)}<small>${formatAusd(item.dividendAmount)} dividendes</small></strong></div>`).join("") || `<p class="muted">Aucune participation ETF.</p>`}</article>
@@ -2789,6 +2863,15 @@ function setupActions(user) {
         showToast(`Solde ${sourceAsset} insuffisant. Disponible: ${formatAssetAmount(assetBalance(user, sourceAsset), sourceAsset)}.`, "error");
         return;
       }
+      if (direction === "USDT_AUSD" || direction === "AUSD_USDT") {
+        const usdtEquivalent = direction === "AUSD_USDT" ? amount * AUSD_PRICE_USDT : amount;
+        const swapGrsPrice = Number(user.swap?.grsCoinPriceUsdt || 0);
+        const feeGrs = swapGrsPrice ? (usdtEquivalent * Number(user.swap?.swapFeeRate || 0)) / swapGrsPrice : 0;
+        if (!swapGrsPrice || feeGrs > Number(user.grsBalance || 0)) {
+          showToast(`Solde GRSCOIN insuffisant pour les frais: ${formatGrsc(feeGrs)} requis.`, "error");
+          return;
+        }
+      }
       const submitButton = form.querySelector('button[type="submit"]');
       const restoreButton = setButtonLoading(submitButton, "Conversion...");
       try {
@@ -2948,7 +3031,7 @@ function setupActions(user) {
       showToast(`Montant minimum investissement: ${formatAusd(minAmount)}.`, "error");
       return;
     }
-    const costs = tradingActivationCosts(amount);
+    const costs = tradingActivationCosts(amount, user);
     if (costs.total > Number(user.ausdBalance || 0)) {
       showToast(`Solde AUSD insuffisant. Total requis approximatif: ${formatAusd(costs.total)} incluant ${formatAusd(costs.programFee)} de frais programme. Disponible: ${formatAusd(user.ausdBalance)}.`, "error");
       return;
@@ -2982,7 +3065,7 @@ function setupActions(user) {
       showToast(`Montant minimum ${plan?.name || "staking"}: ${formatGrsc(minAmount)}.`, "error");
       return;
     }
-    const costs = stakingActivationCosts(amount);
+    const costs = stakingActivationCosts(amount, user);
     if (costs.total > Number(user.grsBalance || 0)) {
       showToast(`Solde GRSCOIN insuffisant. Total requis: ${formatGrsc(costs.total)} incluant ${formatGrsc(costs.programFee)} de frais programme. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
       return;
@@ -3027,7 +3110,7 @@ function setupActions(user) {
       showToast(`Participation minimum ${plan?.name || "Founders Club"}: ${formatGrsc(minAmount)}.`, "error");
       return;
     }
-    const costs = foundersActivationCosts(amount);
+    const costs = foundersActivationCosts(amount, user);
     const activationFee = costs.programFee;
     const totalRequired = costs.total;
     if (totalRequired > Number(user.grsBalance || 0)) {
@@ -3076,7 +3159,7 @@ function setupActions(user) {
       showToast(`Montant minimum ${plan?.name || "ETF"}: ${formatAusd(minAmount)}.`, "error");
       return;
     }
-    const costs = etfActivationCosts(amount);
+    const costs = etfActivationCosts(amount, user);
     if (costs.total > Number(user.ausdBalance || 0)) {
       showToast(`Solde AUSD insuffisant. Total requis: ${formatAusd(costs.total)} incluant ${formatAusd(costs.programFee)} de frais programme. Disponible: ${formatAusd(user.ausdBalance)}.`, "error");
       return;
@@ -3473,6 +3556,31 @@ function setupActions(user) {
     email: String(data.email || "").trim().toLowerCase(),
     referrerEmail: String(data.referrerEmail || "").trim().toLowerCase()
   }));
+
+  const adminFeeSettingsForm = document.querySelector("[data-admin-fee-settings-form]");
+  if (adminFeeSettingsForm && !adminFeeSettingsForm.dataset.boundSubmit) {
+    adminFeeSettingsForm.dataset.boundSubmit = "true";
+    adminFeeSettingsForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const submitButton = form.querySelector('button[type="submit"]');
+      const restoreButton = setButtonLoading(submitButton, "Enregistrement...");
+      const settings = {};
+      form.querySelectorAll("input[name]").forEach((input) => {
+        settings[input.name] = Number(input.value || 0);
+      });
+      try {
+        await apiJson("/admin/fee-settings", { settings });
+        showToast("Taux enregistres.");
+        const freshUser = await loadCurrentUser();
+        renderProtectedShell(document.body.dataset.page, freshUser);
+      } catch (error) {
+        showToast(error.message, "error");
+      } finally {
+        restoreButton();
+      }
+    });
+  }
 
   document.querySelectorAll("[data-admin-control]").forEach((control) => {
     if (control.dataset.boundAdminControl) return;

@@ -388,6 +388,57 @@
     </section>
 
     <section class="admin-section-panel" data-admin-section="tools" hidden>
+      <article class="panel">
+        <div class="panel-head"><h1>Taux frais et commissions</h1><span class="badge">%</span></div>
+        <form class="admin-fee-settings-form" data-admin-fee-settings-form>
+          <div class="grid three">
+            <label>Trading Program
+              <input name="tradingProgramFeeRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Staking Program
+              <input name="stakingProgramFeeRate" type="number" min="0" step="0.001">
+            </label>
+            <label>ETF Program
+              <input name="etfProgramFeeRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Founders Club
+              <input name="foundersProgramFeeRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Gestion annuelle
+              <input name="annualManagementFeeRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Swap
+              <input name="swapFeeRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Retrait
+              <input name="withdrawalFeeRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Transfert P2P
+              <input name="p2pFeeRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Activation admin
+              <input name="activationAdminCommissionRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Activation developpeur
+              <input name="activationDeveloperCommissionRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Revenus utilisateur admin
+              <input name="userRevenueAdminCommissionRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Revenus utilisateur developpeur
+              <input name="userRevenueDeveloperCommissionRate" type="number" min="0" step="0.001">
+            </label>
+            <label>Part revenus plateforme admin
+              <input name="platformRevenueAdminShare" type="number" min="0" step="0.001">
+            </label>
+            <label>Part revenus plateforme developpeur
+              <input name="platformRevenueDeveloperShare" type="number" min="0" step="0.001">
+            </label>
+          </div>
+          <button class="btn primary" type="submit">Enregistrer les taux</button>
+        </form>
+      </article>
+
       <section class="grid two admin-queues" id="admin-actions">
         <article class="panel">
           <div class="panel-head"><h1>Ajouter des fonds</h1><span class="badge">Crédit USDT</span></div>

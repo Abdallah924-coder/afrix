@@ -966,6 +966,11 @@ body[data-page="dashboard"] .dashboard-metric-card {
   margin-top: 6px;
   overflow-wrap: anywhere;
 }
+.dashboard-token-balances strong + small {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
 .dashboard-metric-values {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -1007,7 +1012,18 @@ body[data-page="wallet"] select {
 .admin-stat-grid div { min-width: 0; padding: 12px; border-radius: 8px; background: var(--panel2); }
 .admin-stat-grid span { display: block; color: var(--muted); font-size: 12px; }
 .admin-stat-grid strong { display: block; margin-top: 6px; color: var(--gold); overflow-wrap: anywhere; }
+.network-partner-stats small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .contact-card h1 { font-size: 24px; }
+.profile-links {
+  display: grid;
+  gap: 10px;
+}
 .profile-avatar-block {
   display: grid;
   place-items: center;

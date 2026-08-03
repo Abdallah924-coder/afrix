@@ -137,6 +137,22 @@ export const defaultDb = {
     merchantWhatsappRequired: true,
     maintenanceMode: false
   },
+  feeSettings: {
+    tradingProgramFeeRate: 0.0075,
+    stakingProgramFeeRate: 0.005,
+    etfProgramFeeRate: 0.01,
+    foundersProgramFeeRate: 0.01,
+    annualManagementFeeRate: 0.01,
+    activationAdminCommissionRate: 0.025,
+    activationDeveloperCommissionRate: 0.025,
+    userRevenueAdminCommissionRate: 0.05,
+    userRevenueDeveloperCommissionRate: 0.05,
+    platformRevenueAdminShare: 0.10,
+    platformRevenueDeveloperShare: 0.10,
+    swapFeeRate: 0.025,
+    withdrawalFeeRate: 0.10,
+    p2pFeeRate: 0.01
+  },
   paymentTargets: {
     trc20: {
       label: "Adresse de depot TRC20",
