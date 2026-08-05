@@ -84,7 +84,7 @@ let mongoReadyPromise = null;
 let storageReadyPromise = null;
 let dailyEarningsPromise = null;
 let dailyEarningsUnavailableUntil = 0;
-const secondaryReadPreference = "primaryPreferred";
+const secondaryReadPreference = "primary";
 const transactionListProjection = { "metadata.proof.dataBase64": 0 };
 const PLAN_EARNINGS_INTERVAL_MS = 15 * 60 * 1000;
 const PLAN_PAYOUT_INTERVAL_MS = 86_400_000;
@@ -1556,11 +1556,60 @@ function partnerActivityStats(partners = []) {
   };
 }
 
+function personalActivityBreakdown(user = {}) {
+  const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
+  const activeStakes = Array.isArray(user.activeStakes) ? user.activeStakes : [];
+  const activeFounders = Array.isArray(user.activeFounders) ? user.activeFounders : [];
+  const activeEtfs = Array.isArray(user.activeEtfs) ? user.activeEtfs : [];
+  const assetTotals = { USDT: 0, AUSD: 0, GRSC: 0 };
+  const addAssetTotal = (amount, asset = "USDT") => {
+    const normalizedAsset = String(asset || "USDT").toUpperCase();
+    const value = money(amount);
+    if (!Number.isFinite(value) || value <= 0) return;
+    if (normalizedAsset === "AUSD") {
+      assetTotals.AUSD = money(assetTotals.AUSD + value);
+      return;
+    }
+    if (normalizedAsset === "GRSC") {
+      assetTotals.GRSC = money(assetTotals.GRSC + value);
+      return;
+    }
+    assetTotals.USDT = money(assetTotals.USDT + value);
+  };
+
+  activePlans
+    .filter((plan) => plan.status === "active" || plan.status === "dividend")
+    .forEach((plan) => addAssetTotal(plan.amount, plan.asset || "USDT"));
+  activeStakes
+    .filter((stake) => stake.status === "active")
+    .forEach((stake) => addAssetTotal(stake.amount, "GRSC"));
+  activeFounders
+    .filter((item) => item.status === "active")
+    .forEach((item) => addAssetTotal(item.amount, "GRSC"));
+  activeEtfs
+    .filter((item) => item.status === "active" || item.status === "matured")
+    .forEach((item) => addAssetTotal(item.amount, "AUSD"));
+
+  const totalUsdt = money(
+    usdtFromAssetAmount(assetTotals.USDT, "USDT") +
+    usdtFromAssetAmount(assetTotals.AUSD, "AUSD") +
+    usdtFromAssetAmount(assetTotals.GRSC, "GRSC")
+  );
+
+  return {
+    totals: assetTotals,
+    totalUsdt,
+    totalAusd: assetTotals.AUSD,
+    totalGrsc: assetTotals.GRSC
+  };
+}
+
 function composeUser(db, user) {
   const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
   const activeStakes = Array.isArray(user.activeStakes) ? user.activeStakes : [];
   const activeFounders = Array.isArray(user.activeFounders) ? user.activeFounders : [];
   const activeEtfs = Array.isArray(user.activeEtfs) ? user.activeEtfs : [];
+  const personalActivity = personalActivityBreakdown(user);
   const activePartnerRecord = (candidate) => ({
     id: candidate.id,
     fullName: candidate.fullName || candidate.email.split("@")[0],
@@ -1599,9 +1648,9 @@ function composeUser(db, user) {
   const activeStakeAmount = money(activeStakes.filter((stake) => stake.status === "active").reduce((total, stake) => total + Number(stake.amount || 0), 0));
   const activeFounderAmount = money(activeFounders.filter((item) => item.status === "active").reduce((total, item) => total + Number(item.amount || 0), 0));
   const activeEtfAmount = money(activeEtfs.filter((item) => item.status === "active" || item.status === "matured").reduce((total, item) => total + Number(item.amount || 0), 0));
-  const personalActivityGrsc = activeStakeAmount > 0 ? activeStakeAmount : grsFromUsdt(user.activity);
-  const personalActivityUsdt = money(personalActivityGrsc * GRSCOIN_PRICE_USDT);
-  const personalActivityAusd = money(personalActivityUsdt / AUSD_PRICE_USDT);
+  const personalActivityGrsc = money(personalActivity.totalGrsc);
+  const personalActivityAusd = money(personalActivity.totalAusd);
+  const personalActivityUsdt = money(personalActivity.totalUsdt);
 
   const approvedMerchants = db.users
     .filter((candidate) => candidate.merchantProfile?.status === "approved")
@@ -1648,6 +1697,8 @@ function composeUser(db, user) {
     personalActivityGrsc,
     personalActivityUsdt,
     personalActivityAusd,
+    personalActivityTotals: personalActivity.totals,
+    personalActivityTotalUsdt: personalActivity.totalUsdt,
     bonusGrsc: grsFromUsdt(user.bonus),
     rank: rankFromActivity(user.activity),
     progress: progressFromActivity(user.activity),
@@ -4290,8 +4341,11 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
     if (result?.error) return res.status(400).json({ message: result.error });
     return res.status(201).json(result);
   } catch (error) {
-    if (result?.error) return res.status(400).json({ message: result.error });
-    throw error;
+    if (result?.error) {
+        return res.status(400).json({ message: result.error });
+    }
+    logger.error({ err: error, userId: req.user?.id, direction, amount }, "Swap conversion failed");
+    res.status(500).json({ message: "Erreur lors du swap" });
   } finally {
     await session.endSession();
   }

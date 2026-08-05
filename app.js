@@ -777,17 +777,21 @@ function renderDashboard(user) {
   const networkStats = user.networkStats || {};
   const totalRegisteredPartners = Number(networkStats.totalRegistered ?? user.registeredPartners ?? user.team ?? 0);
   const totalActivePartners = Number(networkStats.directActive?.count || 0) + Number(networkStats.indirectActive?.count || 0);
+  const activityTotals = user.personalActivityTotals || {};
+  const activityTotalUsdtValue = Number(user.personalActivityTotalUsdt ?? user.personalActivityUsdt ?? 0);
 
   if (balance) balance.textContent = formatUsdt(user.balance);
   if (ausdBalance) ausdBalance.textContent = formatAusd(user.ausdBalance);
   if (ausdBalanceUsdt) ausdBalanceUsdt.textContent = `≈ ${formatUsdt(ausdToUsdt(user.ausdBalance))}`;
   if (grsBalance) grsBalance.textContent = formatGrsc(user.grsBalance);
   if (grsBalanceUsdt) grsBalanceUsdt.textContent = `≈ ${formatUsdt(grscToUsdt(user.grsBalance, user))}`;
-  if (activityUsdt) activityUsdt.textContent = formatUsdt(user.personalActivityUsdt ?? user.activity);
-  if (activityAusd) activityAusd.textContent = formatAusd(user.personalActivityAusd ?? usdtToAusd(user.activity));
-  if (activityAusdUsdt) activityAusdUsdt.textContent = `≈ ${formatUsdt(user.personalActivityUsdt ?? user.activity)}`;
-  if (activityGrsc) activityGrsc.textContent = formatGrsc(user.personalActivityGrsc || user.activityGrsc || usdtToGrsc(user.activity, user));
-  if (activityGrscUsdt) activityGrscUsdt.textContent = `≈ ${formatUsdt(user.personalActivityUsdt ?? user.activity)}`;
+  if (activityUsdt) activityUsdt.textContent = formatUsdt(activityTotals.USDT || 0);
+  if (activityAusd) activityAusd.textContent = formatAusd(activityTotals.AUSD || 0);
+  if (activityAusdUsdt) activityAusdUsdt.textContent = `≈ ${formatUsdt(ausdToUsdt(activityTotals.AUSD || 0))}`;
+  if (activityGrsc) activityGrsc.textContent = formatGrsc(activityTotals.GRSC || 0);
+  if (activityGrscUsdt) activityGrscUsdt.textContent = `≈ ${formatUsdt(grscToUsdt(activityTotals.GRSC || 0, user))}`;
+  const activityTotal = document.querySelector("[data-activity-total-usdt]");
+  if (activityTotal) activityTotal.textContent = formatUsdt(activityTotalUsdtValue);
   if (levelNote) levelNote.textContent = `${activeLevels} niveau${activeLevels > 1 ? "x" : ""} actif${activeLevels > 1 ? "s" : ""}`;
   if (team) team.textContent = totalRegisteredPartners.toLocaleString("fr-FR");
   if (teamRegistered) teamRegistered.textContent = `${totalRegisteredPartners.toLocaleString("fr-FR")} inscrit${totalRegisteredPartners > 1 ? "s" : ""}`;
@@ -1547,7 +1551,10 @@ function renderProfile(user) {
   const activityAusdUsdt = document.querySelector("[data-profile-activity-ausd-usdt]");
   const activityGrsc = document.querySelector("[data-profile-activity-grsc]");
   const activityGrscUsdt = document.querySelector("[data-profile-activity-grsc-usdt]");
+  const activityTotal = document.querySelector("[data-profile-activity-total-usdt]");
   const role = document.querySelector("[data-profile-role]");
+  const activityTotals = user.personalActivityTotals || {};
+  const activityTotalUsdtValue = Number(user.personalActivityTotalUsdt ?? user.personalActivityUsdt ?? 0);
   if (email) email.textContent = user.email || "-";
   if (country) country.textContent = user.country || "-";
   hydrateProfileCountrySelect(countryInput, user.country || "");
@@ -1562,11 +1569,12 @@ function renderProfile(user) {
     avatarFallback.hidden = Boolean(avatarData);
   }
   if (balance) balance.textContent = formatUsdt(user.balance);
-  if (activityUsdt) activityUsdt.textContent = formatUsdt(user.personalActivityUsdt ?? user.activity);
-  if (activityAusd) activityAusd.textContent = formatAusd(user.personalActivityAusd ?? usdtToAusd(user.activity));
-  if (activityAusdUsdt) activityAusdUsdt.textContent = `≈ ${formatUsdt(user.personalActivityUsdt ?? user.activity)}`;
-  if (activityGrsc) activityGrsc.textContent = formatGrsc(user.personalActivityGrsc || user.activityGrsc || usdtToGrsc(user.activity, user));
-  if (activityGrscUsdt) activityGrscUsdt.textContent = `≈ ${formatUsdt(user.personalActivityUsdt ?? user.activity)}`;
+  if (activityUsdt) activityUsdt.textContent = formatUsdt(activityTotals.USDT || 0);
+  if (activityAusd) activityAusd.textContent = formatAusd(activityTotals.AUSD || 0);
+  if (activityAusdUsdt) activityAusdUsdt.textContent = `≈ ${formatUsdt(ausdToUsdt(activityTotals.AUSD || 0))}`;
+  if (activityGrsc) activityGrsc.textContent = formatGrsc(activityTotals.GRSC || 0);
+  if (activityGrscUsdt) activityGrscUsdt.textContent = `≈ ${formatUsdt(grscToUsdt(activityTotals.GRSC || 0, user))}`;
+  if (activityTotal) activityTotal.textContent = formatUsdt(activityTotalUsdtValue);
   if (role) role.textContent = user.role || "user";
 }
 
