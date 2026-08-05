@@ -30,6 +30,7 @@ import {
   PORT,
   PUBLIC_ORIGIN,
   TOKEN_TTL,
+  isConfiguredAdminEmail,
   bonusRates,
   defaultDb,
   etfPlans,
@@ -616,8 +617,21 @@ function sanitizeUser(user) {
   return safeUser;
 }
 
+function isCommissionAccount(user = {}) {
+  const email = normalizeEmail(user?.email);
+  return Boolean(
+    user?.role === "admin" ||
+    user?.role === "developer" ||
+    isConfiguredAdminEmail(email) ||
+    (COMMISSION_DEVELOPER_EMAIL && email === normalizeEmail(COMMISSION_DEVELOPER_EMAIL)) ||
+    (PLATFORM_EMAIL && email === normalizeEmail(PLATFORM_EMAIL))
+  );
+}
+
 function canViewTransaction(user, tx) {
-  if (tx.type === "Commission") return user.role === "admin";
+  if (tx.type === "Commission") {
+    return canUseBackoffice(user) || (tx.userId === user.id && isCommissionAccount(user));
+  }
   return user.role === "admin" || tx.userId === user.id;
 }
 
@@ -945,7 +959,7 @@ function csvEscape(value) {
 
 function transactionExportRows(user, db) {
   return (db.transactions || [])
-    .filter((tx) => tx.type !== "Commission" && canViewTransaction(user, tx))
+    .filter((tx) => canViewTransaction(user, tx))
     .slice()
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 }
@@ -1641,7 +1655,7 @@ function composeUser(db, user) {
     },
     refLink: `${process.env.APP_URL || "http://localhost:" + PORT}/register?ref=${user.refCode}`,
     transactions: db.transactions
-      .filter((tx) => tx.userId === user.id && tx.type !== "Commission")
+      .filter((tx) => tx.userId === user.id && (tx.type !== "Commission" || isCommissionAccount(user)))
       .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       .map((tx) => ({
         id: tx.id,
