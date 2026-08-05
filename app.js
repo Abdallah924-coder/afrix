@@ -752,8 +752,11 @@ function renderDashboard(user) {
   const ausdBalanceUsdt = document.querySelector("[data-ausd-balance-usdt]");
   const grsBalance = document.querySelector("[data-grs-balance]");
   const grsBalanceUsdt = document.querySelector("[data-grs-balance-usdt]");
-  const activity = document.querySelector("[data-activity]");
+  const activityUsdt = document.querySelector("[data-activity-usdt]");
+  const activityAusd = document.querySelector("[data-activity-ausd]");
+  const activityAusdUsdt = document.querySelector("[data-activity-ausd-usdt]");
   const activityGrsc = document.querySelector("[data-activity-grsc]");
+  const activityGrscUsdt = document.querySelector("[data-activity-grsc-usdt]");
   const levelNote = document.querySelector("[data-level-note]");
   const team = document.querySelector("[data-team]");
   const teamRegistered = document.querySelector("[data-team-registered]");
@@ -780,8 +783,11 @@ function renderDashboard(user) {
   if (ausdBalanceUsdt) ausdBalanceUsdt.textContent = `≈ ${formatUsdt(ausdToUsdt(user.ausdBalance))}`;
   if (grsBalance) grsBalance.textContent = formatGrsc(user.grsBalance);
   if (grsBalanceUsdt) grsBalanceUsdt.textContent = `≈ ${formatUsdt(grscToUsdt(user.grsBalance, user))}`;
-  if (activity) activity.textContent = formatAusd(usdtToAusd(user.activity));
-  if (activityGrsc) activityGrsc.textContent = formatGrsc(user.activityGrsc || usdtToGrsc(user.activity, user));
+  if (activityUsdt) activityUsdt.textContent = formatUsdt(user.personalActivityUsdt ?? user.activity);
+  if (activityAusd) activityAusd.textContent = formatAusd(user.personalActivityAusd ?? usdtToAusd(user.activity));
+  if (activityAusdUsdt) activityAusdUsdt.textContent = `≈ ${formatUsdt(user.personalActivityUsdt ?? user.activity)}`;
+  if (activityGrsc) activityGrsc.textContent = formatGrsc(user.personalActivityGrsc || user.activityGrsc || usdtToGrsc(user.activity, user));
+  if (activityGrscUsdt) activityGrscUsdt.textContent = `≈ ${formatUsdt(user.personalActivityUsdt ?? user.activity)}`;
   if (levelNote) levelNote.textContent = `${activeLevels} niveau${activeLevels > 1 ? "x" : ""} actif${activeLevels > 1 ? "s" : ""}`;
   if (team) team.textContent = totalRegisteredPartners.toLocaleString("fr-FR");
   if (teamRegistered) teamRegistered.textContent = `${totalRegisteredPartners.toLocaleString("fr-FR")} inscrit${totalRegisteredPartners > 1 ? "s" : ""}`;
@@ -1536,7 +1542,11 @@ function renderProfile(user) {
   const avatar = document.querySelector("[data-profile-avatar]");
   const avatarFallback = document.querySelector("[data-profile-avatar-fallback]");
   const balance = document.querySelector("[data-profile-balance]");
-  const activity = document.querySelector("[data-profile-activity]");
+  const activityUsdt = document.querySelector("[data-profile-activity-usdt]");
+  const activityAusd = document.querySelector("[data-profile-activity-ausd]");
+  const activityAusdUsdt = document.querySelector("[data-profile-activity-ausd-usdt]");
+  const activityGrsc = document.querySelector("[data-profile-activity-grsc]");
+  const activityGrscUsdt = document.querySelector("[data-profile-activity-grsc-usdt]");
   const role = document.querySelector("[data-profile-role]");
   if (email) email.textContent = user.email || "-";
   if (country) country.textContent = user.country || "-";
@@ -1552,7 +1562,11 @@ function renderProfile(user) {
     avatarFallback.hidden = Boolean(avatarData);
   }
   if (balance) balance.textContent = formatUsdt(user.balance);
-  if (activity) activity.textContent = formatUsdt(user.activity);
+  if (activityUsdt) activityUsdt.textContent = formatUsdt(user.personalActivityUsdt ?? user.activity);
+  if (activityAusd) activityAusd.textContent = formatAusd(user.personalActivityAusd ?? usdtToAusd(user.activity));
+  if (activityAusdUsdt) activityAusdUsdt.textContent = `≈ ${formatUsdt(user.personalActivityUsdt ?? user.activity)}`;
+  if (activityGrsc) activityGrsc.textContent = formatGrsc(user.personalActivityGrsc || user.activityGrsc || usdtToGrsc(user.activity, user));
+  if (activityGrscUsdt) activityGrscUsdt.textContent = `≈ ${formatUsdt(user.personalActivityUsdt ?? user.activity)}`;
   if (role) role.textContent = user.role || "user";
 }
 

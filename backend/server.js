@@ -1557,6 +1557,10 @@ function partnerActivityStats(partners = []) {
 }
 
 function composeUser(db, user) {
+  const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
+  const activeStakes = Array.isArray(user.activeStakes) ? user.activeStakes : [];
+  const activeFounders = Array.isArray(user.activeFounders) ? user.activeFounders : [];
+  const activeEtfs = Array.isArray(user.activeEtfs) ? user.activeEtfs : [];
   const activePartnerRecord = (candidate) => ({
     id: candidate.id,
     fullName: candidate.fullName || candidate.email.split("@")[0],
@@ -1591,6 +1595,13 @@ function composeUser(db, user) {
   const directInactivePartners = directPartners.filter((partner) => !partner.hasActiveInvestment);
   const indirectActivePartners = indirectPartners.filter((partner) => partner.hasActiveInvestment);
   const indirectInactivePartners = indirectPartners.filter((partner) => !partner.hasActiveInvestment);
+  const activeInvestmentAmount = money(activePlans.filter((plan) => plan.status === "active" || plan.status === "dividend").reduce((total, plan) => total + Number(plan.amount || 0), 0));
+  const activeStakeAmount = money(activeStakes.filter((stake) => stake.status === "active").reduce((total, stake) => total + Number(stake.amount || 0), 0));
+  const activeFounderAmount = money(activeFounders.filter((item) => item.status === "active").reduce((total, item) => total + Number(item.amount || 0), 0));
+  const activeEtfAmount = money(activeEtfs.filter((item) => item.status === "active" || item.status === "matured").reduce((total, item) => total + Number(item.amount || 0), 0));
+  const personalActivityGrsc = activeStakeAmount > 0 ? activeStakeAmount : grsFromUsdt(user.activity);
+  const personalActivityUsdt = money(personalActivityGrsc * GRSCOIN_PRICE_USDT);
+  const personalActivityAusd = money(personalActivityUsdt / AUSD_PRICE_USDT);
 
   const approvedMerchants = db.users
     .filter((candidate) => candidate.merchantProfile?.status === "approved")
@@ -1616,6 +1627,10 @@ function composeUser(db, user) {
     grsBalance: money(user.grsBalance),
     reservedBalance: money(user.reservedBalance),
     activity: money(user.activity),
+    activeInvestmentAmount,
+    activeStakeAmount,
+    activeFounderAmount,
+    activeEtfAmount,
     team: registeredPartners,
     registeredPartners,
     activePartners,
@@ -1630,6 +1645,9 @@ function composeUser(db, user) {
     },
     bonus: money(user.bonus),
     activityGrsc: grsFromUsdt(user.activity),
+    personalActivityGrsc,
+    personalActivityUsdt,
+    personalActivityAusd,
     bonusGrsc: grsFromUsdt(user.bonus),
     rank: rankFromActivity(user.activity),
     progress: progressFromActivity(user.activity),
