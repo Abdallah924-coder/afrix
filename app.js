@@ -1,7 +1,7 @@
 const API_BASE = window.AFRIX_API_BASE || "/api";
 const APP_VERSION = "20260706-1";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
-const API_TIMEOUT_MS = 120_000;
+const API_TIMEOUT_MS = 20_000;
 const MAX_PROOF_FILE_BYTES = 5 * 1024 * 1024;
 let registerCountryOptionsHtml = null;
 
@@ -203,10 +203,12 @@ function feeRate(user = {}, key, fallback = 0) {
 }
 function tradingActivationCosts(amount, user = {}) {
   const capital = Number(amount || 0);
-  const programFee = Number((capital * feeRate(user, "tradingProgramFeeRate", TRADING_PROGRAM_FEE_RATE)).toFixed(2));
+  const capitalUsdt = ausdToUsdt(capital);
+  const programFeeGrs = usdtToGrsc(capitalUsdt * feeRate(user, "tradingProgramFeeRate", TRADING_PROGRAM_FEE_RATE), user);
   return {
-    programFee,
-    total: Number((capital + programFee).toFixed(2))
+    programFee: Number(programFeeGrs.toFixed(4)),
+    totalGrsFees: Number(programFeeGrs.toFixed(4)),
+    total: capital
   };
 }
 function foundersActivationCosts(amount, user = {}) {
@@ -227,10 +229,12 @@ function stakingActivationCosts(amount, user = {}) {
 }
 function etfActivationCosts(amount, user = {}) {
   const capital = Number(amount || 0);
-  const programFee = Number((capital * feeRate(user, "etfProgramFeeRate", ETF_PROGRAM_FEE_RATE)).toFixed(2));
+  const capitalUsdt = ausdToUsdt(capital);
+  const programFeeGrs = usdtToGrsc(capitalUsdt * feeRate(user, "etfProgramFeeRate", ETF_PROGRAM_FEE_RATE), user);
   return {
-    programFee,
-    total: Number((capital + programFee).toFixed(2))
+    programFee: Number(programFeeGrs.toFixed(4)),
+    totalGrsFees: Number(programFeeGrs.toFixed(4)),
+    total: capital
   };
 }
 const assetBalance = (user = {}, asset = "USDT") => {
@@ -442,7 +446,7 @@ function hydrateInvitationLinks() {
 }
 
 async function loadCurrentUser() {
-  const data = await apiRequest("/me");
+  const data = await apiRequest("/me", { timeoutMs: 20_000 });
   return normalizeUser(data.user || data);
 }
 
@@ -541,10 +545,12 @@ function setButtonLoading(button, label) {
 function showLoadError(message) {
   const app = document.querySelector(".app");
   if (!app) return;
+  app.querySelector(".app-error")?.remove();
   app.insertAdjacentHTML("afterbegin", `
     <section class="panel app-error">
       <h1>Connexion aux donnees impossible</h1>
       <p class="muted">${escapeHtml(message)}</p>
+      <button class="btn primary" type="button" data-retry-load>Réessayer</button>
     </section>
   `);
 }
@@ -1046,12 +1052,28 @@ function renderSwap(user) {
     if (direction === "USDT_AUSD") {
       const feeGrs = grsCoinPriceUsdt ? (amount * totalFeeRate) / grsCoinPriceUsdt : 0;
       const ausdAmount = amount / AUSD_PRICE_USDT;
+      if (feeGrs > Number(user.grsBalance || 0)) {
+        if (swapSubmit) {
+          swapSubmit.disabled = true;
+          swapSubmit.textContent = "GRSC insuffisant";
+        }
+        if (preview) preview.textContent = `Solde GRSCOIN insuffisant pour les frais: ${formatGrsc(feeGrs)} requis.`;
+        return;
+      }
       if (preview) preview.textContent = `${formatUsdt(amount)} -> ${formatAusd(ausdAmount)}. Frais: ${formatGrsc(feeGrs)}.`;
       return;
     }
     if (direction === "AUSD_USDT") {
       const grossUsdtAmount = amount * AUSD_PRICE_USDT;
       const feeGrs = grsCoinPriceUsdt ? (grossUsdtAmount * totalFeeRate) / grsCoinPriceUsdt : 0;
+      if (feeGrs > Number(user.grsBalance || 0)) {
+        if (swapSubmit) {
+          swapSubmit.disabled = true;
+          swapSubmit.textContent = "GRSC insuffisant";
+        }
+        if (preview) preview.textContent = `Solde GRSCOIN insuffisant pour les frais: ${formatGrsc(feeGrs)} requis.`;
+        return;
+      }
       if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatUsdt(grossUsdtAmount)}. Frais: ${formatGrsc(feeGrs)}.`;
       return;
     }
@@ -1143,8 +1165,9 @@ function renderPlans(user) {
       </div>
       <p>${plan.note}</p>
       <small>${requirement}</small>
-      <small>Frais programme: ${formatAusd(costs.programFee)} - Total minimum approximatif: ${formatAusd(costs.total)} (${formatUsdt(ausdToUsdt(costs.total))})</small>
-      <small>Solde disponible: ${formatAusd(user.ausdBalance)} - Staking cumule: ${formatGrsc(totalStakingActivity)} / 80 000.00 GRSC</small>
+      <small>Capital minimum: ${formatAusd(costs.total)} (${formatUsdt(ausdToUsdt(costs.total))})</small>
+      <small>Frais programme en GRSC: ${formatGrsc(costs.totalGrsFees)}</small>
+      <small>Solde disponible: ${formatAusd(user.ausdBalance)} - GRSC disponible: ${formatGrsc(user.grsBalance)} - Staking cumule: ${formatGrsc(totalStakingActivity)} / 80 000.00 GRSC</small>
       <label class="plan-investment-input">
         Montant a investir
         <input type="number" min="${plan.minAmount}" step="0.01" value="${plan.minAmount}" data-plan-amount>
@@ -1402,7 +1425,7 @@ function renderEtf(user) {
   if (plansList) {
     plansList.innerHTML = etfPlans.map((plan) => {
       const costs = etfActivationCosts(plan.minAmount, user);
-      const canActivate = Number(user.ausdBalance || 0) >= costs.total;
+      const canActivate = Number(user.ausdBalance || 0) >= costs.total && Number(user.grsBalance || 0) >= costs.totalGrsFees;
       return `
         <article class="${plan.featured ? "featured" : ""}">
           <span class="plan-tier">${escapeHtml(plan.tier)}</span>
@@ -1415,8 +1438,9 @@ function renderEtf(user) {
           </div>
           <p>Capital bloque pendant 36 mois. Les dividendes mensuels sont credites en AUSD et restent retirables depuis le wallet.</p>
           <small>Fourchette indicative: ${escapeHtml(plan.range)}</small>
-          <small>Frais programme: ${formatAusd(costs.programFee)} - Total requis: ${formatAusd(costs.total)} (${formatUsdt(ausdToUsdt(costs.total))})</small>
-          <small>Solde disponible: ${formatAusd(user.ausdBalance)}</small>
+          <small>Capital requis: ${formatAusd(costs.total)} (${formatUsdt(ausdToUsdt(costs.total))})</small>
+          <small>Frais programme en GRSC: ${formatGrsc(costs.totalGrsFees)}</small>
+          <small>Solde disponible: ${formatAusd(user.ausdBalance)} - GRSC disponible: ${formatGrsc(user.grsBalance)}</small>
           <label class="plan-investment-input">
             Montant a investir
             <input type="number" min="${plan.minAmount}" step="0.01" value="${plan.minAmount}" data-etf-amount>
@@ -3033,13 +3057,17 @@ function setupActions(user) {
     }
     const costs = tradingActivationCosts(amount, user);
     if (costs.total > Number(user.ausdBalance || 0)) {
-      showToast(`Solde AUSD insuffisant. Total requis approximatif: ${formatAusd(costs.total)} incluant ${formatAusd(costs.programFee)} de frais programme. Disponible: ${formatAusd(user.ausdBalance)}.`, "error");
+      showToast(`Solde AUSD insuffisant. Capital requis: ${formatAusd(costs.total)}. Disponible: ${formatAusd(user.ausdBalance)}.`, "error");
+      return;
+    }
+    if (costs.totalGrsFees > Number(user.grsBalance || 0)) {
+      showToast(`Solde GRSCOIN insuffisant pour les frais Trading. Requis: ${formatGrsc(costs.totalGrsFees)}. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
       return;
     }
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
       const response = await apiJson("/plans/activate", { amount, plan: button.dataset.plan }, { timeoutMs: 25_000 });
-      showToast(`Activation ${formatAusd(amount)} - ${response.activePlan?.name || "plan"} validee. Total debite: ${formatAusd(costs.total)}.`);
+      showToast(`Activation ${formatAusd(amount)} - ${response.activePlan?.name || "plan"} validee. Frais GRSC: ${formatGrsc(response.totalGrsFees || costs.totalGrsFees)}.`);
       try {
         const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
         renderProtectedShell(document.body.dataset.page, freshUser);
@@ -3161,13 +3189,17 @@ function setupActions(user) {
     }
     const costs = etfActivationCosts(amount, user);
     if (costs.total > Number(user.ausdBalance || 0)) {
-      showToast(`Solde AUSD insuffisant. Total requis: ${formatAusd(costs.total)} incluant ${formatAusd(costs.programFee)} de frais programme. Disponible: ${formatAusd(user.ausdBalance)}.`, "error");
+      showToast(`Solde AUSD insuffisant. Capital requis: ${formatAusd(costs.total)}. Disponible: ${formatAusd(user.ausdBalance)}.`, "error");
+      return;
+    }
+    if (costs.totalGrsFees > Number(user.grsBalance || 0)) {
+      showToast(`Solde GRSCOIN insuffisant pour les frais ETF. Requis: ${formatGrsc(costs.totalGrsFees)}. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
       return;
     }
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
       const response = await apiJson("/etf/activate", { amount, plan: button.dataset.etfPlan }, { timeoutMs: 25_000 });
-      showToast(`ETF active: ${formatAusd(response.activeEtf?.amount || amount)}. Total debite: ${formatAusd(response.totalDebit || costs.total)}.`);
+      showToast(`ETF active: ${formatAusd(response.activeEtf?.amount || amount)}. Frais GRSC: ${formatGrsc(response.totalGrsFees || costs.totalGrsFees)}.`);
       const freshUser = await apiRequest("/me", { timeoutMs: 15_000 }).then((data) => normalizeUser(data.user || data));
       renderProtectedShell(document.body.dataset.page, freshUser);
     } catch (error) {
@@ -3920,13 +3952,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
-  try {
+  const loadProtectedPage = async () => {
     const user = await loadCurrentUser();
     if (page === "admin" && !canUseBackoffice(user)) {
       window.location.href = "/dashboard";
       return;
     }
     renderProtectedShell(page, user);
+  };
+
+  document.addEventListener("click", async (event) => {
+    const retryButton = event.target.closest("[data-retry-load]");
+    if (!retryButton) return;
+    const restoreButton = setButtonLoading(retryButton, "Chargement...");
+    try {
+      await loadProtectedPage();
+    } catch (error) {
+      showLoadError(error.message);
+    } finally {
+      restoreButton();
+    }
+  });
+
+  try {
+    await loadProtectedPage();
   } catch (error) {
     showLoadError(error.message);
   }

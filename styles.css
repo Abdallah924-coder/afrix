@@ -1898,6 +1898,9 @@ th { color: var(--muted); font-size: 12px; }
   margin-bottom: 18px;
   border-color: rgba(251, 113, 133, .38);
 }
+.app-error .btn {
+  margin-top: 12px;
+}
 
 .maintenance-page {
   display: grid;

@@ -82,8 +82,10 @@ import {
 let mongoReadyPromise = null;
 let storageReadyPromise = null;
 let dailyEarningsPromise = null;
+let dailyEarningsUnavailableUntil = 0;
+const secondaryReadPreference = "primaryPreferred";
 const transactionListProjection = { "metadata.proof.dataBase64": 0 };
-const PLAN_EARNINGS_INTERVAL_MS = 60 * 1000;
+const PLAN_EARNINGS_INTERVAL_MS = 15 * 60 * 1000;
 const PLAN_PAYOUT_INTERVAL_MS = 86_400_000;
 const GRSCOIN_SWAP_FEE_RATE = 0.025;
 const GRSCOIN_WITHDRAWAL_FEE_RATE = 0.10;
@@ -138,7 +140,9 @@ function normalizeFeeSettings(settings = {}) {
 
 async function getFeeSettings(session = null) {
   await ensureStorage();
-  const setting = await SettingModel.findOne({ key: "feeSettings" }, null, session ? { session } : {}).lean();
+  const query = SettingModel.findOne({ key: "feeSettings" }, null, session ? { session } : {});
+  if (!session) query.read(secondaryReadPreference);
+  const setting = await query.lean();
   return normalizeFeeSettings(setting?.value);
 }
 
@@ -245,18 +249,28 @@ async function ensureStorage() {
         if (!mongoReadyPromise) {
           mongoose.set("strictQuery", true);
           mongoReadyPromise = mongoose.connect(MONGODB_URI, {
-            serverSelectionTimeoutMS: 10000
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 15000,
+            connectTimeoutMS: 5000,
+            maxPoolSize: 20,
+            minPoolSize: 0,
+            readPreference: secondaryReadPreference
           }).then(() => logger.info("MongoDB Atlas connected"));
         }
         await mongoReadyPromise;
-        await Promise.all([
-          SettingModel.updateOne({ key: "platformControls" }, { $setOnInsert: { value: defaultDb.platformControls } }, { upsert: true }),
-          SettingModel.updateOne({ key: "paymentTargets" }, { $setOnInsert: { value: defaultDb.paymentTargets } }, { upsert: true }),
-          SettingModel.updateOne({ key: "feeSettings" }, { $setOnInsert: { value: defaultDb.feeSettings } }, { upsert: true }),
-          SettingModel.updateOne({ key: "passwordResetTokens" }, { $setOnInsert: { value: defaultDb.passwordResetTokens } }, { upsert: true }),
-          SettingModel.updateOne({ key: "dailyPlanEarningsLock" }, { $setOnInsert: { value: null } }, { upsert: true }),
-          PlatformAccountModel.updateOne({ id: "platform" }, { $setOnInsert: { ...defaultDb.platformAccount, createdAt: nowIso() } }, { upsert: true })
-        ]);
+        try {
+          await Promise.all([
+            SettingModel.updateOne({ key: "platformControls" }, { $setOnInsert: { value: defaultDb.platformControls } }, { upsert: true }),
+            SettingModel.updateOne({ key: "paymentTargets" }, { $setOnInsert: { value: defaultDb.paymentTargets } }, { upsert: true }),
+            SettingModel.updateOne({ key: "feeSettings" }, { $setOnInsert: { value: defaultDb.feeSettings } }, { upsert: true }),
+            SettingModel.updateOne({ key: "passwordResetTokens" }, { $setOnInsert: { value: defaultDb.passwordResetTokens } }, { upsert: true }),
+            SettingModel.updateOne({ key: "dailyPlanEarningsLock" }, { $setOnInsert: { value: null } }, { upsert: true }),
+            PlatformAccountModel.updateOne({ id: "platform" }, { $setOnInsert: { ...defaultDb.platformAccount, createdAt: nowIso() } }, { upsert: true })
+          ]);
+        } catch (error) {
+          if (!isMongoTransientError(error)) throw error;
+          logger.warn({ err: error }, "Mongo bootstrap writes skipped temporarily");
+        }
       })();
     }
     await storageReadyPromise;
@@ -294,16 +308,16 @@ async function readDb(session = null) {
     platformAccount = await PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).lean();
   } else {
     [users, transactions, cicoRequests, exchangeAds, exchangeOrders, merchantApplications, disputes, ledgerEntries, settings, platformAccount] = await Promise.all([
-      UserModel.find({}, null, queryOptions).lean(),
-      TransactionModel.find({}, transactionListProjection, queryOptions).lean(),
-      CicoRequestModel.find({}, null, queryOptions).lean(),
-      ExchangeAdModel.find({}, null, queryOptions).lean(),
-      ExchangeOrderModel.find({}, null, queryOptions).lean(),
-      MerchantApplicationModel.find({}, null, queryOptions).lean(),
-      DisputeModel.find({}, null, queryOptions).lean(),
-      LedgerEntryModel.find({}, null, queryOptions).lean(),
-      SettingModel.find({}, null, queryOptions).lean(),
-      PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).lean()
+      UserModel.find({}, null, queryOptions).read(secondaryReadPreference).lean(),
+      TransactionModel.find({}, transactionListProjection, queryOptions).read(secondaryReadPreference).lean(),
+      CicoRequestModel.find({}, null, queryOptions).read(secondaryReadPreference).lean(),
+      ExchangeAdModel.find({}, null, queryOptions).read(secondaryReadPreference).lean(),
+      ExchangeOrderModel.find({}, null, queryOptions).read(secondaryReadPreference).lean(),
+      MerchantApplicationModel.find({}, null, queryOptions).read(secondaryReadPreference).lean(),
+      DisputeModel.find({}, null, queryOptions).read(secondaryReadPreference).lean(),
+      LedgerEntryModel.find({}, null, queryOptions).read(secondaryReadPreference).lean(),
+      SettingModel.find({}, null, queryOptions).read(secondaryReadPreference).lean(),
+      PlatformAccountModel.findOne({ id: "platform" }, null, queryOptions).read(secondaryReadPreference).lean()
     ]);
   }
   const settingMap = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
@@ -348,12 +362,12 @@ async function readUserViewDb(user) {
     issuedGrsTotals,
     grsTradeStats
   ] = await Promise.all([
-    directPartnerQuery.$or.length ? UserModel.find(directPartnerQuery).lean() : [],
-    TransactionModel.find({ userId: user.id }, transactionListProjection).sort({ createdAt: -1 }).lean(),
+    directPartnerQuery.$or.length ? UserModel.find(directPartnerQuery).read(secondaryReadPreference).lean() : [],
+    TransactionModel.find({ userId: user.id }, transactionListProjection).sort({ createdAt: -1 }).read(secondaryReadPreference).lean(),
     TransactionModel.aggregate([
       { $match: issuedGrsQuery },
       { $group: { _id: null, issuedSupply: { $sum: { $toDouble: { $ifNull: ["$metadata.grsAmount", 0] } } } } }
-    ]),
+    ]).read(secondaryReadPreference),
     TransactionModel.aggregate([
       { $match: issuedGrsQuery },
       {
@@ -371,7 +385,7 @@ async function readUserViewDb(user) {
           }
         }
       }
-    ])
+    ]).read(secondaryReadPreference)
   ]);
 
   const userMap = new Map();
@@ -420,16 +434,16 @@ async function readAdminViewDb() {
     settings,
     platformAccount
   ] = await Promise.all([
-    UserModel.find({}, safeUserProjection).lean(),
-    TransactionModel.find({}, transactionListProjection).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
-    CicoRequestModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
-    ExchangeAdModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
-    ExchangeOrderModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
-    MerchantApplicationModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
-    DisputeModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).lean(),
-    LedgerEntryModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_LEDGER_LIMIT).lean(),
-    SettingModel.find({}).lean(),
-    PlatformAccountModel.findOne({ id: "platform" }).lean()
+    UserModel.find({}, safeUserProjection).read(secondaryReadPreference).lean(),
+    TransactionModel.find({}, transactionListProjection).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).read(secondaryReadPreference).lean(),
+    CicoRequestModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).read(secondaryReadPreference).lean(),
+    ExchangeAdModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).read(secondaryReadPreference).lean(),
+    ExchangeOrderModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).read(secondaryReadPreference).lean(),
+    MerchantApplicationModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).read(secondaryReadPreference).lean(),
+    DisputeModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).read(secondaryReadPreference).lean(),
+    LedgerEntryModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_LEDGER_LIMIT).read(secondaryReadPreference).lean(),
+    SettingModel.find({}).read(secondaryReadPreference).lean(),
+    PlatformAccountModel.findOne({ id: "platform" }).read(secondaryReadPreference).lean()
   ]);
   const settingMap = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
 
@@ -1739,7 +1753,7 @@ async function authenticate(req, res, next) {
   try {
     const payload = jwt.verify(token, jwtSecret);
     await ensureStorage();
-    const user = normalizeUserRecord(await UserModel.findOne({ id: payload.sub }).lean());
+    const user = normalizeUserRecord(await UserModel.findOne({ id: payload.sub }).read(secondaryReadPreference).lean());
     if (!user || user.status === "blocked") return res.status(401).json({ message: "Session invalide." });
     req.user = user;
     next();
@@ -1781,6 +1795,11 @@ function isBusinessRuleError(error) {
   ].includes(error?.message);
 }
 
+function isMongoTransientError(error) {
+  const text = `${error?.name || ""} ${error?.message || ""}`;
+  return /MongoServerSelectionError|MongoNetworkTimeoutError|PoolClearedOnNetworkError|timed out|ReplicaSetNoPrimary|MongoDB temporairement indisponible/i.test(text);
+}
+
 function requirePlatformAccess({ cico = false } = {}) {
   return async (req, res, next) => {
     try {
@@ -1809,50 +1828,6 @@ function validate(schema) {
     req.body = result.data;
     next();
   };
-}
-
-function distributeHouseCommissions(db, sourceUser, amount) {
-  const recipients = [
-    {
-      email: ADMIN_EMAIL,
-      rate: ACTIVATION_ADMIN_COMMISSION_RATE,
-      label: "Commission activation",
-      source: "admin_activation_commission"
-    },
-    {
-      email: COMMISSION_DEVELOPER_EMAIL,
-      rate: ACTIVATION_DEVELOPER_COMMISSION_RATE,
-      label: "Commission activation",
-      source: "developer_activation_commission"
-    }
-  ];
-
-  recipients.forEach((recipient) => {
-    if (!recipient.email) return;
-    const account = db.users.find((user) => String(user.email || "").toLowerCase() === recipient.email);
-    if (!account) return;
-    const commission = money(amount * recipient.rate);
-    if (commission <= 0) return;
-    debitPlatform(db, commission, `${recipient.label} activation plan`, {
-      source: `${recipient.source}_payout`,
-      referenceId: sourceUser.id,
-      extra: { sourceUserId: sourceUser.id, rate: recipient.rate }
-    });
-    creditUser(db, account, commission, `${recipient.label} activation plan`, {
-      source: recipient.source,
-      referenceId: sourceUser.id,
-      extra: { sourceUserId: sourceUser.id, rate: recipient.rate }
-    });
-    addTransaction(db, {
-      userId: account.id,
-      type: "Commission",
-      description: `${recipient.label} activation plan`,
-      amount: commission,
-      displayAmount: formatAmount(commission, "+"),
-      status: "Completed",
-      metadata: { sourceUserId: sourceUser.id, rate: recipient.rate, source: recipient.source }
-    });
-  });
 }
 
 function completePlanWithCapitalReturn(db, user, plan, payoutDate) {
@@ -2863,14 +2838,21 @@ async function releaseDailyEarningsLock(owner) {
 }
 
 async function ensureDailyPlanEarnings() {
+  if (Date.now() < dailyEarningsUnavailableUntil) return { skipped: true, reason: "daily_earnings_mongo_backoff" };
   if (dailyEarningsPromise) return dailyEarningsPromise;
   dailyEarningsPromise = (async () => {
-    const lockOwner = await acquireDailyEarningsLock();
-    if (!lockOwner) return { skipped: true, reason: "daily_earnings_locked" };
+    let lockOwner;
     try {
+      lockOwner = await acquireDailyEarningsLock();
+      if (!lockOwner) return { skipped: true, reason: "daily_earnings_locked" };
       return await processDailyPlanEarnings();
+    } catch (error) {
+      if (isMongoTransientError(error)) {
+        dailyEarningsUnavailableUntil = Date.now() + 60_000;
+      }
+      throw error;
     } finally {
-      await releaseDailyEarningsLock(lockOwner);
+      if (lockOwner) await releaseDailyEarningsLock(lockOwner);
     }
   })().finally(() => {
     dailyEarningsPromise = null;
@@ -3179,7 +3161,7 @@ app.post("/api/auth/login", validate(z.object({
 })), async (req, res) => {
   const normalizedEmail = req.body.email.trim().toLowerCase();
   await ensureStorage();
-  const user = normalizeUserRecord(await UserModel.findOne({ email: normalizedEmail }).sort({ updatedAt: -1, createdAt: -1 }).lean());
+  const user = normalizeUserRecord(await UserModel.findOne({ email: normalizedEmail }).sort({ updatedAt: -1, createdAt: -1 }).read(secondaryReadPreference).lean());
   if (!user || !(await bcrypt.compare(req.body.password, user.passwordHash))) {
     return res.status(401).json({ message: "Identifiants invalides." });
   }
@@ -3311,12 +3293,6 @@ app.get("/api/me", authenticate, async (req, res, next) => {
     const db = await readUserViewDb(req.user);
     const user = db.users.find((candidate) => candidate.id === req.user.id);
     if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
-    void ensureDailyPlanEarnings()
-      .then((earningsResult) => {
-        if (earningsResult.creditedUsers) logger.info(earningsResult, "Daily plan earnings processed");
-        if (earningsResult.skippedInvalidPlans) logger.error(earningsResult, "Invalid active plans skipped");
-      })
-      .catch((error) => logger.error({ err: error }, "Daily plan earnings failed"));
     res.json({ user: composeUser(db, user) });
   } catch (error) {
     next(error);
@@ -4362,7 +4338,7 @@ app.post("/api/plans/activate", authenticate, requirePlatformAccess(), validate(
   const result = await activatePlanDirect({ userId: req.user.id, plan, amount: investmentAmount });
 
   if (result.error) return res.status(400).json({ message: result.error });
-  res.json({ user: sanitizeUser(result.user), activePlan: result.activePlan });
+  res.json({ user: sanitizeUser(result.user), activePlan: result.activePlan, programFee: result.programFee, programFeeAsset: "GRSC", totalGrsFees: result.totalGrsFees });
   notifyPlanActivation(result.user, result.activePlan, investmentAmount);
 });
 
@@ -4381,8 +4357,7 @@ app.post("/api/etf/activate", authenticate, requirePlatformAccess(), validate(z.
   const programFeeUsdtEquivalent = money(usdtFromAssetAmount(etfAmount, "AUSD") * feeSettings.etfProgramFeeRate);
   const programFeeGrs = grsFromUsdt(programFeeUsdtEquivalent);
   const programFeeSplit = splitPlatformRevenue(programFeeGrs, feeSettings);
-  const activationAdminCommission = money(etfAmount * feeSettings.activationAdminCommissionRate);
-  const activationDeveloperCommission = money(etfAmount * feeSettings.activationDeveloperCommissionRate);
+  const totalGrsFees = roundedAmount(programFeeGrs, 4);
   const totalDebit = etfAmount;
   const activatedAt = nowIso();
   const activeEtf = {
@@ -4418,14 +4393,14 @@ app.post("/api/etf/activate", authenticate, requirePlatformAccess(), validate(z.
           $expr: {
             $and: [
               { $gte: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, totalDebit] },
-              { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, programFeeGrs] }
+              { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, totalGrsFees] }
             ]
           }
         },
         [{
           $set: {
             ausdBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, totalDebit] }, 2] },
-            grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, programFeeGrs] }, 2] },
+            grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, totalGrsFees] }, 4] },
             activity: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$activity", 0] } }, etfAmount] }, 2] },
             activeEtfs: { $concatArrays: [{ $ifNull: ["$activeEtfs", []] }, [activeEtf]] }
           }
@@ -4433,7 +4408,7 @@ app.post("/api/etf/activate", authenticate, requirePlatformAccess(), validate(z.
         { new: true, session, lean: true }
       );
       if (!updatedUser) {
-        result = { error: `Solde insuffisant. Capital requis: ${totalDebit.toFixed(4)} AUSD et frais programme: ${programFeeGrs.toFixed(4)} GRSC.` };
+        result = { error: `Solde insuffisant. Capital requis: ${totalDebit.toFixed(4)} AUSD et frais ETF: ${totalGrsFees.toFixed(4)} GRSC.` };
         return;
       }
 
@@ -4448,7 +4423,7 @@ app.post("/api/etf/activate", authenticate, requirePlatformAccess(), validate(z.
         accountType: "user_grs",
         accountId: req.user.id,
         direction: "debit",
-        amount: programFeeGrs,
+        amount: totalGrsFees,
         balanceAfter: updatedUser.grsBalance,
         description: `Frais programme ${plan.name}`
       }, {
@@ -4458,7 +4433,7 @@ app.post("/api/etf/activate", authenticate, requirePlatformAccess(), validate(z.
         amount: etfAmount,
         balanceAfter: etfAmount,
         description: `Capital ETF bloque ${plan.name}`
-      }], { source: "etf_activation", referenceId: activeEtf.id, extra: { planId: plan.id, etfAmount, programFee: programFeeGrs, programFeeAsset: "GRSC", programFeeUsdtEquivalent, totalDebit, asset: "AUSD" } });
+      }], { source: "etf_activation", referenceId: activeEtf.id, extra: { planId: plan.id, etfAmount, programFee: programFeeGrs, programFeeAsset: "GRSC", programFeeUsdtEquivalent, totalGrsFees, totalDebit, asset: "AUSD" } });
       if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
 
       const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
@@ -4467,8 +4442,6 @@ app.post("/api/etf/activate", authenticate, requirePlatformAccess(), validate(z.
       await payDirectCommission({ session, accountId: adminAccount?.id, amount: programFeeSplit.admin, label: "Commission frais programme ETF", source: "admin_program_fee_commission", referenceId: activeEtf.id, extra: { sourceUserId: req.user.id, activeEtfId: activeEtf.id, feeRate: feeSettings.etfProgramFeeRate, usdtEquivalent: programFeeUsdtEquivalent }, asset: "GRSC" });
       await payDirectCommission({ session, accountId: developerAccount?.id, amount: programFeeSplit.developer, label: "Commission frais programme ETF", source: "developer_program_fee_commission", referenceId: activeEtf.id, extra: { sourceUserId: req.user.id, activeEtfId: activeEtf.id, feeRate: feeSettings.etfProgramFeeRate, usdtEquivalent: programFeeUsdtEquivalent }, asset: "GRSC" });
       await payDirectCommission({ session, accountId: platformAccount?.id, amount: programFeeSplit.platform, label: "Frais programme ETF plateforme", source: "platform_program_fee", referenceId: activeEtf.id, extra: { sourceUserId: req.user.id, activeEtfId: activeEtf.id, feeRate: feeSettings.etfProgramFeeRate, usdtEquivalent: programFeeUsdtEquivalent }, asset: "GRSC" });
-      await payDirectCommission({ session, accountId: adminAccount?.id, amount: activationAdminCommission, label: "Commission activation ETF", source: "admin_activation_commission", referenceId: activeEtf.id, extra: { sourceUserId: req.user.id, activeEtfId: activeEtf.id, rate: feeSettings.activationAdminCommissionRate }, asset: "AUSD" });
-      await payDirectCommission({ session, accountId: developerAccount?.id, amount: activationDeveloperCommission, label: "Commission activation ETF", source: "developer_activation_commission", referenceId: activeEtf.id, extra: { sourceUserId: req.user.id, activeEtfId: activeEtf.id, rate: feeSettings.activationDeveloperCommissionRate }, asset: "AUSD" });
 
       await TransactionModel.create([{
         id: nanoid(),
@@ -4479,13 +4452,13 @@ app.post("/api/etf/activate", authenticate, requirePlatformAccess(), validate(z.
         displayAmount: formatAssetAmount(totalDebit, "AUSD", "-"),
         status: "Active",
         createdAt: nowIso(),
-        metadata: { source: "etf_activation", planId: plan.id, activeEtfId: activeEtf.id, etfAmount, programFee: programFeeGrs, programFeeAsset: "GRSC", programFeeUsdtEquivalent, totalDebit, endsAt: activeEtf.endsAt, asset: "AUSD" }
+        metadata: { source: "etf_activation", planId: plan.id, activeEtfId: activeEtf.id, etfAmount, programFee: programFeeGrs, programFeeAsset: "GRSC", programFeeUsdtEquivalent, totalGrsFees, totalDebit, endsAt: activeEtf.endsAt, asset: "AUSD" }
       }], { session });
-      result = { user: normalizeUserRecord(updatedUser), activeEtf, programFee: programFeeGrs, programFeeUsdtEquivalent, totalDebit };
+      result = { user: normalizeUserRecord(updatedUser), activeEtf, programFee: programFeeGrs, programFeeUsdtEquivalent, totalGrsFees, totalDebit };
     });
 
     if (result?.error) return res.status(400).json({ message: result.error });
-    res.status(201).json({ user: sanitizeUser(result.user), activeEtf: result.activeEtf, programFee: result.programFee, programFeeAsset: "GRSC", programFeeUsdtEquivalent: result.programFeeUsdtEquivalent, totalDebit: result.totalDebit });
+    res.status(201).json({ user: sanitizeUser(result.user), activeEtf: result.activeEtf, programFee: result.programFee, programFeeAsset: "GRSC", programFeeUsdtEquivalent: result.programFeeUsdtEquivalent, totalGrsFees: result.totalGrsFees, totalDebit: result.totalDebit });
   } finally {
     await session.endSession();
   }
@@ -4578,8 +4551,6 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
   const feeSettings = await getFeeSettings();
   const programFee = money(stakeAmount * feeSettings.stakingProgramFeeRate);
   const programFeeSplit = splitPlatformRevenue(programFee, feeSettings);
-  const activationAdminCommission = money(stakeAmount * feeSettings.activationAdminCommissionRate);
-  const activationDeveloperCommission = money(stakeAmount * feeSettings.activationDeveloperCommissionRate);
   const totalDebit = money(stakeAmount + programFee);
   const rewardAmount = money(stakeAmount * plan.rewardRate);
   const maturityAmount = money(stakeAmount + rewardAmount);
@@ -4713,23 +4684,6 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
         accountType: "platform_user_grs",
         extra: { sourceUserId: req.user.id, rate: platformRevenueShares(feeSettings).platformShare, feeRate: feeSettings.stakingProgramFeeRate }
       });
-      await creditGrsBenefit({
-        account: adminAccount,
-        amount: activationAdminCommission,
-        label: "Commission activation Staking",
-        source: "staking_activation_commission",
-        accountType: "admin_grs",
-        extra: { sourceUserId: req.user.id, rate: feeSettings.activationAdminCommissionRate }
-      });
-      await creditGrsBenefit({
-        account: developerAccount,
-        amount: activationDeveloperCommission,
-        label: "Commission activation Staking",
-        source: "staking_activation_commission",
-        accountType: "developer_grs",
-        extra: { sourceUserId: req.user.id, rate: feeSettings.activationDeveloperCommissionRate }
-      });
-
       if (benefitRows.length) {
         const benefitEntries = buildLedgerEntries(benefitRows.map((row) => ({
           accountType: row.accountType,
@@ -4859,8 +4813,6 @@ app.post("/api/founders/activate", authenticate, requirePlatformAccess(), valida
   const feeSettings = await getFeeSettings();
   const activationFee = money(founderAmount * feeSettings.foundersProgramFeeRate);
   const programFeeSplit = splitPlatformRevenue(activationFee, feeSettings);
-  const activationAdminCommission = money(founderAmount * feeSettings.activationAdminCommissionRate);
-  const activationDeveloperCommission = money(founderAmount * feeSettings.activationDeveloperCommissionRate);
   const totalDebit = money(founderAmount + activationFee);
   const rewardAmount = money(founderAmount * plan.rewardRate * plan.durationYears);
   const maturityAmount = money(founderAmount + rewardAmount);
@@ -4950,28 +4902,6 @@ app.post("/api/founders/activate", authenticate, requirePlatformAccess(), valida
       await creditFeeRecipient({ email: ADMIN_EMAIL, amount: programFeeSplit.admin, accountType: "admin_grs", label: "Commission frais programme Founders", share: shares.adminShare });
       await creditFeeRecipient({ email: COMMISSION_DEVELOPER_EMAIL, amount: programFeeSplit.developer, accountType: "developer_grs", label: "Commission frais programme Founders", share: shares.developerShare });
       await creditFeeRecipient({ email: PLATFORM_EMAIL, amount: programFeeSplit.platform, accountType: "platform_user_grs", label: "Frais programme Founders plateforme", share: shares.platformShare });
-      const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
-      const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
-      await payDirectCommission({
-        session,
-        accountId: adminAccount?.id,
-        amount: activationAdminCommission,
-        label: "Commission activation Founders",
-        source: "admin_activation_commission",
-        referenceId: req.user.id,
-        extra: { sourceUserId: req.user.id, rate: feeSettings.activationAdminCommissionRate, activeFounderId: activeFounder.id },
-        asset: "GRSC"
-      });
-      await payDirectCommission({
-        session,
-        accountId: developerAccount?.id,
-        amount: activationDeveloperCommission,
-        label: "Commission activation Founders",
-        source: "developer_activation_commission",
-        referenceId: req.user.id,
-        extra: { sourceUserId: req.user.id, rate: feeSettings.activationDeveloperCommissionRate, activeFounderId: activeFounder.id },
-        asset: "GRSC"
-      });
 
       const entries = buildLedgerEntries([{
         accountType: "user_grs",
@@ -4987,7 +4917,7 @@ app.post("/api/founders/activate", authenticate, requirePlatformAccess(), valida
         amount: founderAmount,
         balanceAfter: founderAmount,
         description: `GRSCOIN verrouille ${plan.name}`
-      }, ...feeRows], { source: "founders_activation", referenceId: activeFounder.id, extra: { planId: plan.id, rewardAmount, maturityAmount, activationFee, programFee: activationFee, platformFee: programFeeSplit.platform, activationCommissionTotal: money(activationAdminCommission + activationDeveloperCommission), totalDebit } });
+      }, ...feeRows], { source: "founders_activation", referenceId: activeFounder.id, extra: { planId: plan.id, rewardAmount, maturityAmount, activationFee, programFee: activationFee, platformFee: programFeeSplit.platform, totalDebit } });
       if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
       if (feeTransactions.length) await TransactionModel.insertMany(feeTransactions, { session });
 
@@ -6387,8 +6317,7 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
   const programFeeUsdtEquivalent = money(usdtFromAssetAmount(investmentAmount, planAsset) * feeSettings.tradingProgramFeeRate);
   const programFeeGrs = grsFromUsdt(programFeeUsdtEquivalent);
   const programFeeSplit = splitPlatformRevenue(programFeeGrs, feeSettings);
-  const activationAdminCommission = money(investmentAmount * feeSettings.activationAdminCommissionRate);
-  const activationDeveloperCommission = money(investmentAmount * feeSettings.activationDeveloperCommissionRate);
+  const totalGrsFees = roundedAmount(programFeeGrs, 4);
   const totalDebit = investmentAmount;
   if (investmentAmount < money(plan.minAmount)) {
     return { error: `Montant minimum ${plan.name}: ${formatAssetAmount(plan.minAmount, planAsset)}.` };
@@ -6445,14 +6374,14 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
           $expr: {
             $and: [
               { $gte: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, totalDebit] },
-              { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, programFeeGrs] }
+              { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, totalGrsFees] }
             ]
           }
         },
         [{
           $set: {
             [balanceField]: { $round: [{ $subtract: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, totalDebit] }, 2] },
-            grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, programFeeGrs] }, 2] },
+            grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, totalGrsFees] }, 4] },
             activity: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$activity", 0] } }, investmentAmount] }, 2] },
             activePlans: { $concatArrays: [{ $ifNull: ["$activePlans", []] }, [activePlan]] }
           }
@@ -6460,7 +6389,7 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         { new: true, session, lean: true }
       );
       if (!updatedUser) {
-        result = { error: `Solde insuffisant. Capital requis: ${formatAssetAmount(totalDebit, planAsset)} et frais programme: ${programFeeGrs.toFixed(4)} GRSC.` };
+        result = { error: `Solde insuffisant. Capital requis: ${formatAssetAmount(totalDebit, planAsset)} et frais Trading: ${totalGrsFees.toFixed(4)} GRSC.` };
         return;
       }
 
@@ -6475,7 +6404,7 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         accountType: "user_grs",
         accountId: user.id,
         direction: "debit",
-        amount: programFeeGrs,
+        amount: totalGrsFees,
         balanceAfter: updatedUser.grsBalance,
         description: `Frais programme ${plan.name}`
       }];
@@ -6494,7 +6423,7 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
           description: `Activation ${plan.name}`
         });
       }
-      const activationLedger = buildLedgerEntries(ledgerInputs, { source: "plan_activation", referenceId: activePlan.id, extra: { planId: plan.id, initiatedBy, asset: planAsset, investmentAmount, programFee: programFeeGrs, programFeeAsset: "GRSC", programFeeUsdtEquivalent, activationCommissionTotal: money(activationAdminCommission + activationDeveloperCommission), totalDebit } });
+      const activationLedger = buildLedgerEntries(ledgerInputs, { source: "plan_activation", referenceId: activePlan.id, extra: { planId: plan.id, initiatedBy, asset: planAsset, investmentAmount, programFee: programFeeGrs, programFeeAsset: "GRSC", programFeeUsdtEquivalent, totalGrsFees, totalDebit } });
       if (activationLedger.length) await LedgerEntryModel.insertMany(activationLedger, { session });
       await TransactionModel.create([{
         id: nanoid(),
@@ -6505,7 +6434,7 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         displayAmount: formatAssetAmount(totalDebit, planAsset, "-"),
         status: "Active",
         createdAt: nowIso(),
-        metadata: { planId: plan.id, activePlanId: activePlan.id, initiatedBy, asset: planAsset, investmentAmount, programFee: programFeeGrs, programFeeAsset: "GRSC", programFeeUsdtEquivalent, totalDebit }
+        metadata: { planId: plan.id, activePlanId: activePlan.id, initiatedBy, asset: planAsset, investmentAmount, programFee: programFeeGrs, programFeeAsset: "GRSC", programFeeUsdtEquivalent, totalGrsFees, totalDebit }
       }], { session });
 
       const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
@@ -6541,28 +6470,8 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
         extra: { sourceUserId: user.id, rate: platformRevenueShares(feeSettings).platformShare, feeRate: feeSettings.tradingProgramFeeRate, activePlanId: activePlan.id, usdtEquivalent: programFeeUsdtEquivalent },
         asset: "GRSC"
       });
-      await payDirectCommission({
-        session,
-        accountId: adminAccount?.id,
-        amount: activationAdminCommission,
-        label: "Commission activation plan",
-        source: "admin_activation_commission",
-        referenceId: user.id,
-        extra: { sourceUserId: user.id, rate: feeSettings.activationAdminCommissionRate, activePlanId: activePlan.id },
-        asset: planAsset
-      });
-      await payDirectCommission({
-        session,
-        accountId: developerAccount?.id,
-        amount: activationDeveloperCommission,
-        label: "Commission activation plan",
-        source: "developer_activation_commission",
-        referenceId: user.id,
-        extra: { sourceUserId: user.id, rate: feeSettings.activationDeveloperCommissionRate, activePlanId: activePlan.id },
-        asset: planAsset
-      });
 
-      result = { user: normalizeUserRecord(updatedUser), activePlan };
+      result = { user: normalizeUserRecord(updatedUser), activePlan, programFee: programFeeGrs, totalGrsFees };
     });
     return result;
   } finally {
@@ -7533,6 +7442,10 @@ app.use((err, _req, res, _next) => {
   if (isBusinessRuleError(err)) {
     return res.status(400).json({ message: err.message });
   }
+  if (isMongoTransientError(err)) {
+    logger.warn({ err }, "Mongo transient API error");
+    return res.status(503).json({ message: "Base de données temporairement indisponible. Réessayez dans quelques secondes." });
+  }
   if (err instanceof multer.MulterError) {
     if (err.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({ message: "Preuve de paiement trop lourde. Taille maximale: 5 Mo." });
@@ -7555,12 +7468,17 @@ function runDailyPlanEarnings() {
 async function bootstrapServer() {
   const skipStorageBoot = !isProduction && process.env.AFRIX_TEST_SKIP_STORAGE_BOOT === "1";
   if (!skipStorageBoot) {
-    await ensureStorage();
-    await ensureAdminUser();
-    await ensurePlatformUser();
-    await ensureCommissionAccounts();
-    await ensureReferralCodes();
-    await reconcileReferralLinks();
+    try {
+      await ensureStorage();
+      await ensureAdminUser();
+      await ensurePlatformUser();
+      await ensureCommissionAccounts();
+      await ensureReferralCodes();
+      await reconcileReferralLinks();
+    } catch (error) {
+      if (!isMongoTransientError(error)) throw error;
+      logger.warn({ err: error }, "Storage bootstrap deferred because MongoDB primary is temporarily unavailable");
+    }
   } else {
     logger.warn("Storage bootstrap skipped for local smoke test");
   }
@@ -7569,7 +7487,8 @@ async function bootstrapServer() {
     logger.info(`AFRIX server listening on http://localhost:${PORT}`);
   });
 
-  runDailyPlanEarnings();
+  const firstPlanEarningsTimer = setTimeout(runDailyPlanEarnings, 2 * 60 * 1000);
+  firstPlanEarningsTimer.unref?.();
   const referralReconcileTimer = setInterval(() => {
     reconcileReferralLinks().catch((error) => logger.error({ err: error }, "Referral reconciliation failed"));
   }, 5 * 60 * 1000);
