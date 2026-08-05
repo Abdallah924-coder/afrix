@@ -93,8 +93,6 @@ const USDT_WITHDRAWAL_FEE_RATE = 0.10;
 const GRSCOIN_SWAP_ADMIN_RATE = 0.0025;
 const GRSCOIN_SWAP_DEVELOPER_RATE = 0.0025;
 const GRSCOIN_SWAP_PLATFORM_RATE = 0.02;
-const GRSCOIN_SWAP_BONUS_RATES = [0.05, 0.02, 0.01, 0.01, 0.01];
-const GRSCOIN_REFERRAL_RATES = [0.05, 0.02, 0.01, 0.01, 0.01];
 const AUSD_PRICE_USDT = 3.25;
 const AUSD_SWAP_FEE_RATE = 0.025;
 const AUSD_SWAP_ADMIN_SHARE = 0.10;
@@ -619,7 +617,7 @@ function sanitizeUser(user) {
 }
 
 function canViewTransaction(user, tx) {
-  if (tx.type === "Commission") return tx.userId === user.id;
+  if (tx.type === "Commission") return user.role === "admin";
   return user.role === "admin" || tx.userId === user.id;
 }
 
@@ -947,7 +945,7 @@ function csvEscape(value) {
 
 function transactionExportRows(user, db) {
   return (db.transactions || [])
-    .filter((tx) => canViewTransaction(user, tx))
+    .filter((tx) => tx.type !== "Commission" && canViewTransaction(user, tx))
     .slice()
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 }
@@ -1632,8 +1630,6 @@ function composeUser(db, user) {
       grsDepositAddress: GRSCOIN_DEPOSIT_ADDRESS,
       usdtBep20DepositAddress: GRSCOIN_USDT_BEP20_DEPOSIT_ADDRESS,
       swapFeeRate: normalizeFeeSettings(db.feeSettings).swapFeeRate,
-      bonusRate: money(GRSCOIN_SWAP_BONUS_RATES.reduce((total, rate) => total + rate, 0)),
-      bonusLevelsCount: GRSCOIN_SWAP_BONUS_RATES.length,
       market: {
         totalSupply: GRSCOIN_TOTAL_SUPPLY,
         issuedSupply: issuedGrsSupply,
@@ -1645,7 +1641,7 @@ function composeUser(db, user) {
     },
     refLink: `${process.env.APP_URL || "http://localhost:" + PORT}/register?ref=${user.refCode}`,
     transactions: db.transactions
-      .filter((tx) => tx.userId === user.id)
+      .filter((tx) => tx.userId === user.id && tx.type !== "Commission")
       .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       .map((tx) => ({
         id: tx.id,
@@ -3778,7 +3774,6 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
   const developerCommission = swapFeeSplit.developer;
   const platformCommission = swapFeeSplit.platform;
   const platformFee = money(adminCommission + developerCommission + platformCommission);
-  const bonusPool = money(GRSCOIN_SWAP_BONUS_RATES.reduce((total, rate) => total + usdtAmount * rate, 0));
   const grossGrsAmount = grsFromUsdt(usdtAmount);
   const adminCommissionGrs = grsFromUsdt(adminCommission);
   const developerCommissionGrs = grsFromUsdt(developerCommission);
@@ -3851,7 +3846,6 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
         }],
         { new: true, session, lean: true }
       ) : null;
-      let platformBalanceAfterDebits = money(platform.balance);
       const commissionRows = [];
       const commissionTransactions = [];
       if (adminAccount && adminCommissionGrs > 0) {
@@ -3918,66 +3912,6 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
         });
       }
 
-      const referralRows = [];
-      const referralTransactions = [];
-      let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
-      for (let level = 0; level < GRSCOIN_SWAP_BONUS_RATES.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
-        const referrerQuery = [];
-        if (currentReferrer.id) referrerQuery.push({ id: currentReferrer.id });
-        if (currentReferrer.email) referrerQuery.push({ email: normalizeEmail(currentReferrer.email) });
-        if (currentReferrer.code) referrerQuery.push({ refCode: normalizeInvitationCode(currentReferrer.code) });
-        const referrer = referrerQuery.length ? normalizeUserRecord(await UserModel.findOne({ $or: referrerQuery }, null, { session }).lean()) : null;
-        if (!referrer) break;
-        if (unlockedReferralLevels(referrer) <= level) {
-          currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
-          continue;
-        }
-        const bonus = money(usdtAmount * GRSCOIN_SWAP_BONUS_RATES[level]);
-        if (bonus > 0) {
-          const updatedReferrer = await UserModel.findOneAndUpdate(
-            { id: referrer.id },
-            [{
-              $set: {
-                balance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$balance", 0] } }, bonus] }, 2] },
-                bonus: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$bonus", 0] } }, bonus] }, 2] }
-              }
-            }],
-            { new: true, session, lean: true }
-          );
-          platformBalanceAfterDebits = money(platformBalanceAfterDebits - bonus);
-          referralRows.push({
-            accountType: "platform",
-            accountId: "platform",
-            direction: "debit",
-            amount: bonus,
-            balanceAfter: platformBalanceAfterDebits,
-            description: `Bonus swap niveau ${level + 1}`
-          }, {
-            accountType: "user",
-            accountId: referrer.id,
-            direction: "credit",
-            amount: bonus,
-            balanceAfter: updatedReferrer?.balance || money(referrer.balance + bonus),
-            description: `Bonus swap niveau ${level + 1}`
-          });
-          referralTransactions.push({
-            id: nanoid(),
-            userId: referrer.id,
-            type: "Bonus",
-            description: `Bonus swap niveau ${level + 1}`,
-            amount: bonus,
-            displayAmount: formatAmount(bonus, "+"),
-            status: "Completed",
-            createdAt: nowIso(),
-            metadata: { sourceUserId: user.id, source: "afrix_swap_referral", level: level + 1, rate: GRSCOIN_SWAP_BONUS_RATES[level], swapId: referenceId }
-          });
-        }
-        currentReferrer = { id: referrer.referrerId, email: referrer.referrerEmail, code: referrer.referrerCode };
-      }
-      if (platformBalanceAfterDebits !== money(platform.balance)) {
-        await PlatformAccountModel.updateOne({ id: "platform" }, { $set: { balance: platformBalanceAfterDebits } }, { session });
-      }
-
       const ledgerEntries = buildLedgerEntries([{
         accountType: "user",
         accountId: user.id,
@@ -3999,7 +3933,7 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
         amount: grsAmount,
         balanceAfter: updatedUser.grsBalance,
         description: "AFRIX Swap GRSCOIN credite"
-      }, ...commissionRows, ...referralRows], {
+      }, ...commissionRows], {
         source: "afrix_swap",
         referenceId,
         extra: {
@@ -4007,7 +3941,7 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
           usdtAmount,
           grossGrsAmount,
           fee: platformFee,
-          feeAsset: "USDT",
+          feeAsset: "GRSC",
           feeUsdtAmount: platformFee,
           feeGrsAmount,
           platformFee,
@@ -4017,13 +3951,11 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
           adminCommissionGrs,
           developerCommissionGrs,
           platformCommissionGrs,
-          bonusPool,
           grsAmount
         }
       });
       if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
       if (commissionTransactions.length) await TransactionModel.insertMany(commissionTransactions, { session });
-      if (referralTransactions.length) await TransactionModel.insertMany(referralTransactions, { session });
 
       const tx = {
         id: referenceId,
@@ -4039,7 +3971,7 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
           usdtAmount,
           grossGrsAmount,
           fee: platformFee,
-          feeAsset: "USDT",
+          feeAsset: "GRSC",
           feeUsdtAmount: platformFee,
           feeGrsAmount,
           platformFee,
@@ -4049,7 +3981,6 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
           adminCommissionGrs,
           developerCommissionGrs,
           platformCommissionGrs,
-          bonusPool,
           grsAmount,
           direction: "USDT_GRSC"
         }
@@ -4060,7 +3991,7 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
         user: normalizeUserRecord(updatedUser),
         usdtAmount,
         grossGrsAmount,
-        feeAsset: "USDT",
+        feeAsset: "GRSC",
         feeGrsAmount,
         grsAmount,
         platformFee,
@@ -4070,7 +4001,6 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
         adminCommissionGrs,
         developerCommissionGrs,
         platformCommissionGrs,
-        bonusPool,
         priceUsdt: GRSCOIN_PRICE_USDT
       };
     }));
@@ -4257,29 +4187,40 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
 
       if (direction === "AUSD_GRSC") {
         const usdtEquivalent = money(amount * AUSD_PRICE_USDT);
-        const feeAusdAmount = money(amount * feeSettings.swapFeeRate);
-        const netAusdAmount = money(amount - feeAusdAmount);
-        const netUsdtEquivalent = money(netAusdAmount * AUSD_PRICE_USDT);
         const grossGrsAmount = grsFromUsdt(usdtEquivalent);
-        const grsAmount = grsFromUsdt(netUsdtEquivalent);
-        const feeUsdt = money(feeAusdAmount * AUSD_PRICE_USDT);
-        const feeSplit = splitPlatformRevenue(feeUsdt, feeSettings);
+        const feeUsdtEquivalent = money(usdtEquivalent * feeSettings.swapFeeRate);
+        const feeGrsAmount = grsFromUsdt(feeUsdtEquivalent);
+        const grsAmount = grossGrsAmount;
+        const feeSplit = splitPlatformRevenue(feeGrsAmount, feeSettings);
         const adminCommissionGrs = grsFromUsdt(feeSplit.admin);
         const developerCommissionGrs = grsFromUsdt(feeSplit.developer);
         const platformCommissionGrs = grsFromUsdt(feeSplit.platform);
-        const feeGrsAmount = money(adminCommissionGrs + developerCommissionGrs + platformCommissionGrs);
         const updatedUser = await UserModel.findOneAndUpdate(
-          { id: user.id, $expr: { $gte: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, amount] } },
+          {
+            id: user.id,
+            $expr: {
+              $and: [
+                { $gte: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, amount] },
+                { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }
+              ]
+            }
+          },
           [{
             $set: {
               ausdBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$ausdBalance", 0] } }, amount] }, 2] },
-              grsBalance: { $round: [{ $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, grsAmount] }, 2] }
+              grsBalance: {
+                $round: [{
+                  $add: [{
+                    $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount]
+                  }, grsAmount]
+                }, 2]
+              }
             }
           }],
           { new: true, session, lean: true }
         );
         if (!updatedUser) {
-          result = { error: "Solde AUSD insuffisant." };
+          result = { error: `Solde insuffisant. Il faut ${amount.toFixed(4)} AUSD et ${feeGrsAmount.toFixed(4)} GRSC pour les frais.` };
           return;
         }
         const commissionRows = [];
@@ -4297,19 +4238,20 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
           );
           if (!creditedUser) continue;
           commissionRows.push({ accountType: target.accountType, accountId: creditedUser.id, direction: "credit", amount: target.amount, balanceAfter: creditedUser.grsBalance, description: target.description });
-          commissionTransactions.push({ id: nanoid(), userId: creditedUser.id, type: "Commission", description: target.description, amount: target.amount, displayAmount: `+${target.amount.toFixed(4)} GRSC`, status: "Completed", createdAt: nowIso(), metadata: { source: "ausd_grs_swap_commission", swapId: referenceId, rate: target.rate, feeAsset: "AUSD", feeAusdAmount } });
+          commissionTransactions.push({ id: nanoid(), userId: creditedUser.id, type: "Commission", description: target.description, amount: target.amount, displayAmount: `+${target.amount.toFixed(4)} GRSC`, status: "Completed", createdAt: nowIso(), metadata: { source: "ausd_grs_swap_commission", swapId: referenceId, rate: target.rate, feeAsset: "GRSC", feeGrsAmount, feeUsdtEquivalent } });
         }
-        const metadata = { direction, ausdPriceUsdt: AUSD_PRICE_USDT, grsPriceUsdt: GRSCOIN_PRICE_USDT, ausdAmount: amount, netAusdAmount, usdtEquivalent, netUsdtEquivalent, grossGrsAmount, grsAmount, fee: feeAusdAmount, feeAsset: "AUSD", feeAusdAmount, feeGrsAmount };
+        const metadata = { direction, ausdPriceUsdt: AUSD_PRICE_USDT, grsPriceUsdt: GRSCOIN_PRICE_USDT, ausdAmount: amount, usdtEquivalent, grossGrsAmount, grsAmount, fee: feeGrsAmount, feeAsset: "GRSC", feeGrsAmount, feeUsdtEquivalent };
         const tx = { id: referenceId, userId: user.id, type: "Swap", description: "AFRIX Swap AUSD vers GRSCOIN", amount, displayAmount: `-${amount.toFixed(4)} AUSD -> +${grsAmount.toFixed(4)} GRSC`, status: "Completed", createdAt: nowIso(), metadata };
         const entries = buildLedgerEntries([
           { accountType: "user_ausd", accountId: user.id, direction: "debit", amount, balanceAfter: updatedUser.ausdBalance, description: "AFRIX Swap AUSD vers GRSCOIN" },
+          { accountType: "user_grs", accountId: user.id, direction: "debit", amount: feeGrsAmount, balanceAfter: money(updatedUser.grsBalance - grsAmount), description: "Frais swap en GRSC" },
           { accountType: "user_grs", accountId: user.id, direction: "credit", amount: grsAmount, balanceAfter: updatedUser.grsBalance, description: "GRSCOIN credite" },
           ...commissionRows
         ], { source: "ausd_grs_swap", referenceId, extra: metadata });
         if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
         if (commissionTransactions.length) await TransactionModel.insertMany(commissionTransactions, { session });
         await TransactionModel.create([tx], { session });
-        result = { direction, transaction: tx, user: normalizeUserRecord(updatedUser), ausdAmount: amount, grsAmount, fee: feeAusdAmount, feeAusdAmount };
+        result = { direction, transaction: tx, user: normalizeUserRecord(updatedUser), ausdAmount: amount, grsAmount, fee: feeGrsAmount, feeGrsAmount };
       }
     });
 

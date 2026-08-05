@@ -173,18 +173,16 @@ const emptyUser = {
   ausdBalance: 0,
   platformControls: {},
   feeSettings: defaultFeeSettings,
-    swap: {
-      grsCoinPriceUsdt: 0.0725,
-      grsCoinPerUsdt: 13.79310345,
-      contractAddress: "",
-      grsDepositAddress: "",
-      usdtBep20DepositAddress: "",
-      swapFeeRate: 0.025,
-      bonusRate: 0.10,
-      bonusLevelsCount: 5,
-      direction: "USDT_GRSC",
-      market: { totalSupply: 4200000, issuedSupply: 0, remainingSupply: 4200000, issuedPercent: 0 }
-    },
+  swap: {
+    grsCoinPriceUsdt: 0.0725,
+    grsCoinPerUsdt: 13.79310345,
+    contractAddress: "",
+    grsDepositAddress: "",
+    usdtBep20DepositAddress: "",
+    swapFeeRate: 0.025,
+    direction: "USDT_GRSC",
+    market: { totalSupply: 4200000, issuedSupply: 0, remainingSupply: 4200000, issuedPercent: 0 }
+  },
   role: "user"
 };
 
@@ -1000,11 +998,6 @@ function renderSwap(user) {
   if (!usdtBalances.length && !grsBalances.length && !rates.length && !amountInput && !depositAmountInput) return;
 
   const grsCoinPriceUsdt = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
-  const bonusRate = Number.isFinite(Number(user.swap?.bonusRate))
-    ? Number(user.swap.bonusRate)
-    : Array.isArray(user.swap?.bonusRates)
-    ? user.swap.bonusRates.reduce((total, rate) => total + Number(rate || 0), 0)
-    : 0.10;
   const totalFeeRate = Number(user.swap?.swapFeeRate || 0);
   const market = { ...emptyUser.swap.market, ...(user.swap?.market || {}) };
   const issuedPercent = Math.max(0, Math.min(100, Number(market.issuedPercent || 0)));
@@ -1060,7 +1053,7 @@ function renderSwap(user) {
         if (preview) preview.textContent = `Solde GRSCOIN insuffisant pour les frais: ${formatGrsc(feeGrs)} requis.`;
         return;
       }
-      if (preview) preview.textContent = `${formatUsdt(amount)} -> ${formatAusd(ausdAmount)}. Frais: ${formatGrsc(feeGrs)}.`;
+      if (preview) preview.textContent = `${formatUsdt(amount)} -> ${formatAusd(ausdAmount)}. Frais en GRSC: ${formatGrsc(feeGrs)}.`;
       return;
     }
     if (direction === "AUSD_USDT") {
@@ -1074,20 +1067,20 @@ function renderSwap(user) {
         if (preview) preview.textContent = `Solde GRSCOIN insuffisant pour les frais: ${formatGrsc(feeGrs)} requis.`;
         return;
       }
-      if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatUsdt(grossUsdtAmount)}. Frais: ${formatGrsc(feeGrs)}.`;
+      if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatUsdt(grossUsdtAmount)}. Frais en GRSC: ${formatGrsc(feeGrs)}.`;
       return;
     }
     if (direction === "AUSD_GRSC") {
       const grossUsdt = amount * AUSD_PRICE_USDT;
-      const feeAusd = amount * totalFeeRate;
-      const grsAmount = grsCoinPriceUsdt ? ((amount - feeAusd) * AUSD_PRICE_USDT) / grsCoinPriceUsdt : 0;
-      if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatGrsc(grsAmount)} apres ${formatAusd(feeAusd)} de frais.`;
+      const grossGrsAmount = grsCoinPriceUsdt ? grossUsdt / grsCoinPriceUsdt : 0;
+      const feeGrs = grsCoinPriceUsdt ? (grossUsdt * totalFeeRate) / grsCoinPriceUsdt : 0;
+      if (preview) preview.textContent = `${formatAusd(amount)} -> ${formatGrsc(grossGrsAmount)}. Frais en GRSC: ${formatGrsc(feeGrs)}.`;
       return;
     }
     const grossGrsAmount = amount > 0 && grsCoinPriceUsdt ? amount / grsCoinPriceUsdt : 0;
     const feeUsdt = amount * totalFeeRate;
     const grsAmount = grsCoinPriceUsdt ? (amount - feeUsdt) / grsCoinPriceUsdt : 0;
-    if (preview) preview.textContent = grsAmount ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)} apres ${formatUsdt(feeUsdt)} de frais.` : "Saisissez un montant USDT.";
+    if (preview) preview.textContent = grsAmount ? `${formatUsdt(amount)} -> ${formatGrsc(grsAmount)}. Frais en GRSC: ${formatGrsc(grsCoinPriceUsdt ? (feeUsdt / grsCoinPriceUsdt) : 0)}.` : "Saisissez un montant USDT.";
   };
   const updateDepositPreview = () => {
     const amount = Number(depositAmountInput?.value || 0);
