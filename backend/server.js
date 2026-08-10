@@ -338,8 +338,18 @@ async function readDb(session = null) {
 }
 
 async function readUserViewDb(user) {
-  if (canUseBackoffice(user)) return readAdminViewDb();
   await ensureStorage();
+
+  if (canUseBackoffice(user)) {
+    const [adminDb, userTransactionsAll] = await Promise.all([
+      readAdminViewDb(),
+      TransactionModel.find({ userId: user.id }, transactionListProjection).sort({ createdAt: -1 }).read(secondaryReadPreference).lean()
+    ]);
+    return {
+      ...adminDb,
+      userTransactionsAll
+    };
+  }
 
   const directPartnerQuery = {
     $or: [
@@ -399,6 +409,7 @@ async function readUserViewDb(user) {
   return normalizeDb({
     users: Array.from(userMap.values()),
     transactions: Array.from(transactionMap.values()),
+    userTransactionsAll: userTransactions,
     marketStats: {
       issuedGrsSupply: money(issuedGrsTotals[0]?.issuedSupply || 0),
       totalTrades: Number(grsTradeStats[0]?.totalTrades || 0),
@@ -1604,12 +1615,76 @@ function personalActivityBreakdown(user = {}) {
   };
 }
 
+function transactionAsset(tx = {}) {
+  const metadataAsset = String(tx.metadata?.asset || "").toUpperCase();
+  if (metadataAsset === "AUSD" || metadataAsset === "GRSC" || metadataAsset === "USDT") return metadataAsset;
+  const feeAsset = String(tx.metadata?.feeAsset || "").toUpperCase();
+  if (feeAsset === "AUSD" || feeAsset === "GRSC" || feeAsset === "USDT") return feeAsset;
+  const displayAsset = String(tx.displayAmount || "").toUpperCase().match(/\b(AUSD|GRSC|USDT)\b/);
+  return displayAsset ? displayAsset[1] : "USDT";
+}
+
+function isDashboardBonusTransaction(tx = {}, user = {}) {
+  if (tx.userId !== user.id || tx.status !== "Completed") return false;
+  if (tx.type === "Bonus") return true;
+  return false;
+}
+
+function bonusBreakdown(transactions = [], user = {}) {
+  const assetTotals = { USDT: 0, AUSD: 0, GRSC: 0 };
+  transactions
+    .filter((tx) => isDashboardBonusTransaction(tx, user))
+    .forEach((tx) => {
+      const asset = transactionAsset(tx);
+      const amount = networkBonusMoney(tx.amount);
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      assetTotals[asset] = networkBonusMoney(Number(assetTotals[asset] || 0) + amount);
+    });
+
+  return {
+    totals: assetTotals,
+    totalUsdt: money(
+      usdtFromAssetAmount(assetTotals.USDT, "USDT") +
+      usdtFromAssetAmount(assetTotals.AUSD, "AUSD") +
+      usdtFromAssetAmount(assetTotals.GRSC, "GRSC")
+    )
+  };
+}
+
+function commissionBreakdown(transactions = [], user = {}) {
+  const assetTotals = { USDT: 0, AUSD: 0, GRSC: 0 };
+  if (!isCommissionAccount(user)) {
+    return { totals: assetTotals, totalUsdt: 0 };
+  }
+
+  transactions
+    .filter((tx) => tx.userId === user.id && tx.type === "Commission" && tx.status === "Completed")
+    .forEach((tx) => {
+      const asset = transactionAsset(tx);
+      const amount = networkBonusMoney(tx.amount);
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      assetTotals[asset] = networkBonusMoney(Number(assetTotals[asset] || 0) + amount);
+    });
+
+  return {
+    totals: assetTotals,
+    totalUsdt: money(
+      usdtFromAssetAmount(assetTotals.USDT, "USDT") +
+      usdtFromAssetAmount(assetTotals.AUSD, "AUSD") +
+      usdtFromAssetAmount(assetTotals.GRSC, "GRSC")
+    )
+  };
+}
+
 function composeUser(db, user) {
   const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
   const activeStakes = Array.isArray(user.activeStakes) ? user.activeStakes : [];
   const activeFounders = Array.isArray(user.activeFounders) ? user.activeFounders : [];
   const activeEtfs = Array.isArray(user.activeEtfs) ? user.activeEtfs : [];
+  const userTransactionsAll = Array.isArray(db.userTransactionsAll) ? db.userTransactionsAll : db.transactions;
   const personalActivity = personalActivityBreakdown(user);
+  const bonusActivity = bonusBreakdown(userTransactionsAll, user);
+  const commissionActivity = commissionBreakdown(userTransactionsAll, user);
   const activePartnerRecord = (candidate) => ({
     id: candidate.id,
     fullName: candidate.fullName || candidate.email.split("@")[0],
@@ -1699,6 +1774,11 @@ function composeUser(db, user) {
     personalActivityAusd,
     personalActivityTotals: personalActivity.totals,
     personalActivityTotalUsdt: personalActivity.totalUsdt,
+    bonusTotals: bonusActivity.totals,
+    bonusTotalUsdt: bonusActivity.totalUsdt,
+    canViewCommissionSummary: isCommissionAccount(user),
+    commissionTotals: commissionActivity.totals,
+    commissionTotalUsdt: commissionActivity.totalUsdt,
     bonusGrsc: grsFromUsdt(user.bonus),
     rank: rankFromActivity(user.activity),
     progress: progressFromActivity(user.activity),

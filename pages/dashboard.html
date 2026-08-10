@@ -11,7 +11,7 @@
   <meta property="og:image" content="/assets/pwa-icon.svg">
   <meta name="twitter:image" content="/assets/pwa-icon.svg">
   <title>Tableau de bord - AFRIX</title>
-  <link rel="stylesheet" href="../styles.css?v=20260706-1">
+  <link rel="stylesheet" href="../styles.css?v=20260810-2">
 </head>
 <body data-protected data-page="dashboard">
   <aside class="sidebar" data-sidebar></aside>
@@ -56,10 +56,22 @@
       <article class="dashboard-metric-card">
         <span>Bonus reçus</span>
         <div class="dashboard-token-balances dashboard-metric-values">
-          <div><small>AUSD</small><strong data-bonus>0.00 AUSD</strong><small data-bonus-ausd-usdt>≈ 0.0000 USDT</small></div>
-          <div><small>GRSCOIN</small><strong data-bonus-grsc>0.00 GRSC</strong><small data-bonus-grsc-usdt>≈ 0.0000 USDT</small></div>
+          <div><small>Total USDT</small><strong data-bonus-total-usdt>0.0000 USDT</strong></div>
+          <div><small>USDT</small><strong data-bonus-usdt>0.0000 USDT</strong></div>
+          <div><small>AUSD</small><strong data-bonus-ausd>0.0000 AUSD</strong><small data-bonus-ausd-usdt>≈ 0.0000 USDT</small></div>
+          <div><small>GRSCOIN</small><strong data-bonus-grsc>0.0000 GRSC</strong><small data-bonus-grsc-usdt>≈ 0.0000 USDT</small></div>
         </div>
         <small>Récompenses réseau</small>
+      </article>
+      <article class="dashboard-metric-card" data-commission-summary-card hidden>
+        <span>Commissions reçues</span>
+        <div class="dashboard-token-balances dashboard-metric-values">
+          <div><small>Total USDT</small><strong data-commission-total-usdt>0.0000 USDT</strong></div>
+          <div><small>USDT</small><strong data-commission-usdt>0.0000 USDT</strong></div>
+          <div><small>AUSD</small><strong data-commission-ausd>0.0000 AUSD</strong><small data-commission-ausd-usdt>≈ 0.0000 USDT</small></div>
+          <div><small>GRSCOIN</small><strong data-commission-grsc>0.0000 GRSC</strong><small data-commission-grsc-usdt>≈ 0.0000 USDT</small></div>
+        </div>
+        <small>Commissions admin, dev et plateforme</small>
       </article>
     </section>
     <section class="grid two">
@@ -75,6 +87,6 @@
       </article>
     </section>
   </main>
-  <script src="../app.js?v=20260706-1"></script>
+  <script src="../app.js?v=20260810-2"></script>
 </body>
 </html>
