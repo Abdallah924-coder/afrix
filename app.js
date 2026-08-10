@@ -794,8 +794,8 @@ function renderDashboard(user) {
   if (activityTotal) activityTotal.textContent = formatUsdt(activityTotalUsdtValue);
   if (levelNote) levelNote.textContent = `${activeLevels} niveau${activeLevels > 1 ? "x" : ""} actif${activeLevels > 1 ? "s" : ""}`;
   if (team) team.textContent = totalRegisteredPartners.toLocaleString("fr-FR");
-  if (teamRegistered) teamRegistered.textContent = `${totalRegisteredPartners.toLocaleString("fr-FR")} inscrit${totalRegisteredPartners > 1 ? "s" : ""}`;
-  if (teamActive) teamActive.textContent = `${totalActivePartners.toLocaleString("fr-FR")} actif${totalActivePartners > 1 ? "s" : ""}`;
+  if (teamRegistered) teamRegistered.textContent = totalRegisteredPartners.toLocaleString("fr-FR");
+  if (teamActive) teamActive.textContent = totalActivePartners.toLocaleString("fr-FR");
   if (bonus) bonus.textContent = formatAusd(usdtToAusd(user.bonus));
   if (bonusAusdUsdt) bonusAusdUsdt.textContent = `≈ ${formatUsdt(user.bonus)}`;
   if (bonusGrsc) bonusGrsc.textContent = formatGrsc(user.bonusGrsc || usdtToGrsc(user.bonus, user));
