@@ -1,5 +1,5 @@
 const API_BASE = window.AFRIX_API_BASE || "/api";
-const APP_VERSION = "20260810-2";
+const APP_VERSION = "20260812-1";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
 const API_TIMEOUT_MS = 20_000;
 const MAX_PROOF_FILE_BYTES = 5 * 1024 * 1024;
@@ -45,6 +45,26 @@ const navItems = [
   ["admin", "ADMIN", "/admin"]
 ];
 const profileOnlyNavItems = new Set(["network", "contact", "elite"]);
+const mobilePrimaryNavItems = [
+  ["dashboard", "Accueil", "/dashboard", "⌂"],
+  ["wallet", "Wallet", "/wallet", "◈"],
+  ["afrix-money", "Money", "/afrix-money", "◆", true],
+  ["transactions", "Activite", "/transactions", "↗"]
+];
+const mobileMoreNavKeys = [
+  "plans",
+  "staking",
+  "swap",
+  "founders-club",
+  "etf",
+  "exchange",
+  "merchant",
+  "network",
+  "profile",
+  "contact",
+  "elite",
+  "admin"
+];
 
 const DEPOSIT_MOBILE_RATE = 650;
 const WITHDRAW_MOBILE_RATE = 550;
@@ -95,6 +115,7 @@ const supportChannels = [
   }
 ];
 let deferredInstallPrompt = null;
+let mobileNavEscapeBound = false;
 const bonusRates = [10, 5, 5, 5, 5, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 const plans = [
   { id: "starter", tier: "Starter", name: "Starter Trading", minAmount: 10, amount: "10 AUSD et plus", daily: "0,342%", duration: "365 jours", cycle: "Objectif cycle: 125%", dividend: "0,35% / trimestre apres cycle", note: "Accessible a tous les nouveaux utilisateurs souhaitant decouvrir les solutions d'investissement de la plateforme." },
@@ -573,6 +594,145 @@ function renderSidebar(page, user = emptyUser) {
       <button class="btn secondary side-logout" type="button" data-logout>Se deconnecter</button>
     </div>
   `;
+}
+
+function getNavItemByKey(key) {
+  return navItems.find(([itemKey]) => itemKey === key);
+}
+
+function renderMobileNavItem([key, label, href, icon, isPrimaryAction], page) {
+  const isActive = page === key;
+  return `
+    <a class="mobile-bottom-item${isActive ? " is-active" : ""}${isPrimaryAction ? " is-primary-action" : ""}" href="${href}" aria-current="${isActive ? "page" : "false"}">
+      <span class="mobile-bottom-icon">${icon}</span>
+      <span class="mobile-bottom-label">${label}</span>
+    </a>
+  `;
+}
+
+function renderMobileMoreItem([key, label, href], page) {
+  const isActive = page === key;
+  return `
+    <a class="mobile-more-link${isActive ? " is-active" : ""}" href="${href}" aria-current="${isActive ? "page" : "false"}">
+      <span class="mobile-more-icon">${getMobileNavIcon(key)}</span>
+      <strong>${label}</strong>
+    </a>
+  `;
+}
+
+function getMobileNavIcon(key) {
+  const icons = {
+    plans: "▦",
+    staking: "◍",
+    "founders-club": "★",
+    etf: "▧",
+    swap: "⇄",
+    exchange: "⇆",
+    merchant: "▣",
+    network: "◎",
+    profile: "◐",
+    contact: "☎",
+    elite: "♛",
+    admin: "⚙"
+  };
+  return icons[key] || "•";
+}
+
+function getMobileMoreItems(user = emptyUser) {
+  return mobileMoreNavKeys
+    .map(getNavItemByKey)
+    .filter(Boolean)
+    .filter(([key]) => key !== "admin" || canUseBackoffice(user));
+}
+
+function renderMobileNavigation(page, user = emptyUser) {
+  document.querySelector("[data-mobile-nav-shell]")?.remove();
+
+  const moreItems = getMobileMoreItems(user);
+  const isMoreActive = moreItems.some(([key]) => key === page);
+  const shell = document.createElement("div");
+  shell.className = "mobile-nav-shell";
+  shell.dataset.mobileNavShell = "true";
+  shell.innerHTML = `
+    <div class="mobile-nav-backdrop" data-mobile-more-close hidden></div>
+    <section class="mobile-more-sheet" aria-label="Navigation secondaire" aria-hidden="true">
+      <div class="mobile-more-handle"></div>
+      <div class="mobile-more-head">
+        <div>
+          <span>Navigation</span>
+          <strong>Plus d'options</strong>
+        </div>
+        <button class="mobile-more-close" type="button" data-mobile-more-close aria-label="Fermer le menu">×</button>
+      </div>
+      <div class="mobile-more-grid">
+        ${moreItems.map((item) => renderMobileMoreItem(item, page)).join("")}
+      </div>
+      <button class="mobile-more-logout" type="button" data-logout>Se deconnecter</button>
+    </section>
+    <nav class="mobile-bottom-nav" aria-label="Navigation mobile principale">
+      ${mobilePrimaryNavItems.map((item) => renderMobileNavItem(item, page)).join("")}
+      <button class="mobile-bottom-item mobile-more-trigger${isMoreActive ? " is-active" : ""}" type="button" data-mobile-more-open aria-expanded="false">
+        <span class="mobile-bottom-icon">☰</span>
+        <span class="mobile-bottom-label">Plus</span>
+      </button>
+    </nav>
+  `;
+
+  document.body.appendChild(shell);
+  document.body.classList.add("has-mobile-bottom-nav");
+
+  const openSheet = () => {
+    const backdrop = shell.querySelector(".mobile-nav-backdrop");
+    const sheet = shell.querySelector(".mobile-more-sheet");
+    const trigger = shell.querySelector("[data-mobile-more-open]");
+    backdrop.hidden = false;
+    requestAnimationFrame(() => {
+      shell.classList.add("is-more-open");
+      sheet.setAttribute("aria-hidden", "false");
+      trigger.setAttribute("aria-expanded", "true");
+    });
+  };
+
+  const closeSheet = () => {
+    const backdrop = shell.querySelector(".mobile-nav-backdrop");
+    const sheet = shell.querySelector(".mobile-more-sheet");
+    const trigger = shell.querySelector("[data-mobile-more-open]");
+    shell.classList.remove("is-more-open");
+    sheet.setAttribute("aria-hidden", "true");
+    trigger.setAttribute("aria-expanded", "false");
+    window.setTimeout(() => {
+      if (!shell.classList.contains("is-more-open")) backdrop.hidden = true;
+    }, 260);
+  };
+
+  shell.querySelector("[data-mobile-more-open]")?.addEventListener("click", openSheet);
+  shell.querySelectorAll("[data-mobile-more-close], .mobile-more-link").forEach((element) => {
+    element.addEventListener("click", closeSheet);
+  });
+  shell.querySelector(".mobile-more-logout")?.addEventListener("click", () => {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    window.location.href = "/login";
+  });
+  if (!mobileNavEscapeBound) {
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeMobileMoreSheet();
+    });
+    mobileNavEscapeBound = true;
+  }
+}
+
+function closeMobileMoreSheet() {
+  const shell = document.querySelector("[data-mobile-nav-shell]");
+  if (!shell) return;
+  const backdrop = shell.querySelector(".mobile-nav-backdrop");
+  const sheet = shell.querySelector(".mobile-more-sheet");
+  const trigger = shell.querySelector("[data-mobile-more-open]");
+  shell.classList.remove("is-more-open");
+  sheet?.setAttribute("aria-hidden", "true");
+  trigger?.setAttribute("aria-expanded", "false");
+  window.setTimeout(() => {
+    if (!shell.classList.contains("is-more-open") && backdrop) backdrop.hidden = true;
+  }, 260);
 }
 
 function renderTopbar(page, user = emptyUser) {
@@ -3930,6 +4090,7 @@ async function handleAdminClick(event) {
 function renderProtectedShell(page, user) {
   renderSidebar(page, user);
   renderTopbar(page, user);
+  renderMobileNavigation(page, user);
   renderDashboard(user);
   renderTransactions(user);
   renderWallet(user);
@@ -3983,6 +4144,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   renderSidebar(page);
   renderTopbar(page);
+  renderMobileNavigation(page);
 
   if (!getAuthToken()) {
     window.location.href = "/login";
