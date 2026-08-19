@@ -115,6 +115,8 @@ const FOUNDERS_ACTIVATION_DEVELOPER_SHARE = 0.10;
 const GRSCOIN_TOTAL_SUPPLY = 4_200_000;
 const ADMIN_RECENT_TRANSACTIONS_LIMIT = 500;
 const ADMIN_RECENT_LEDGER_LIMIT = 500;
+const ADMIN_INITIAL_USERS_LIMIT = 100;
+const ALLOWED_PROOF_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const safeUserProjection = {
   passwordHash: 0,
   password: 0,
@@ -123,6 +125,35 @@ const safeUserProjection = {
 };
 
 const feeSettingKeys = Object.keys(defaultDb.feeSettings || {});
+
+function proofFileSignature(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return "";
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) return "image/png";
+  if (
+    buffer.length >= 12 &&
+    buffer.slice(0, 4).toString("ascii") === "RIFF" &&
+    buffer.slice(8, 12).toString("ascii") === "WEBP"
+  ) return "image/webp";
+  return "";
+}
+
+function validateProofFile(file) {
+  if (!file?.buffer?.length) {
+    return { error: "Preuve de paiement requise." };
+  }
+  const declaredMime = String(file.mimetype || "").toLowerCase();
+  const detectedMime = proofFileSignature(file.buffer);
+  if (!ALLOWED_PROOF_MIME_TYPES.has(declaredMime) || detectedMime !== declaredMime) {
+    return { error: "Format de preuve invalide. Formats acceptes: JPG, PNG ou WEBP." };
+  }
+  return null;
+}
 
 function normalizeRate(value, fallback = 0) {
   const rate = Number(value);
@@ -160,6 +191,15 @@ function splitPlatformRevenue(amount, settings = {}) {
   const developer = money(revenue * shares.developerShare);
   const platform = money(revenue - admin - developer);
   return { admin, developer, platform };
+}
+
+function splitActivationCommissions(amount, settings = {}) {
+  const baseAmount = money(amount);
+  if (baseAmount <= 0) return { admin: 0, developer: 0 };
+  return {
+    admin: money(baseAmount * normalizeRate(settings.activationAdminCommissionRate, ACTIVATION_ADMIN_COMMISSION_RATE)),
+    developer: money(baseAmount * normalizeRate(settings.activationDeveloperCommissionRate, ACTIVATION_DEVELOPER_COMMISSION_RATE))
+  };
 }
 
 function dueAnnualManagementFees(item = {}, settings = {}) {
@@ -6548,6 +6588,27 @@ async function activatePlanDirect({ userId, plan, amount, bypassUnlock = false, 
       const adminAccount = ADMIN_EMAIL ? await UserModel.findOne({ email: ADMIN_EMAIL }, null, { session }).lean() : null;
       const developerAccount = COMMISSION_DEVELOPER_EMAIL ? await UserModel.findOne({ email: COMMISSION_DEVELOPER_EMAIL }, null, { session }).lean() : null;
       const platformAccount = PLATFORM_EMAIL ? await UserModel.findOne({ email: PLATFORM_EMAIL }, null, { session }).lean() : null;
+      const activationCommissions = splitActivationCommissions(investmentAmount, feeSettings);
+      await payDirectCommission({
+        session,
+        accountId: adminAccount?.id,
+        amount: activationCommissions.admin,
+        label: `Commission activation ${plan.name}`,
+        source: "admin_activation_commission",
+        referenceId: activePlan.id,
+        extra: { sourceUserId: user.id, rate: feeSettings.activationAdminCommissionRate, activePlanId: activePlan.id, planId: plan.id, investmentAmount },
+        asset: planAsset
+      });
+      await payDirectCommission({
+        session,
+        accountId: developerAccount?.id,
+        amount: activationCommissions.developer,
+        label: `Commission activation ${plan.name}`,
+        source: "developer_activation_commission",
+        referenceId: activePlan.id,
+        extra: { sourceUserId: user.id, rate: feeSettings.activationDeveloperCommissionRate, activePlanId: activePlan.id, planId: plan.id, investmentAmount },
+        asset: planAsset
+      });
       await payDirectCommission({
         session,
         accountId: adminAccount?.id,
