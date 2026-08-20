@@ -85,7 +85,7 @@ export const publicFiles = new Set([
 ]);
 
 export const plans = [
-  { id: "starter", name: "Starter Trading", minAmount: 10, dailyRate: 0.00342, durationDays: 365, dividendRate: 0.0035, asset: "AUSD" },
+  { id: "starter", name: "Starter Trading", minAmount: 5, dailyRate: 0.00342, durationDays: 365, dividendRate: 0.0035, asset: "AUSD" },
   { id: "smart", name: "Smart Trading", minAmount: 250, dailyRate: 0.00356, durationDays: 365, dividendRate: 0.0037, asset: "AUSD" },
   { id: "premium", name: "Premium Trading", minAmount: 500, dailyRate: 0.00383, durationDays: 365, dividendRate: 0.004, asset: "AUSD" },
   { id: "elite", name: "Elite Trading", minAmount: 1000, dailyRate: 0.0041, durationDays: 365, dividendRate: 0.0045, asset: "AUSD" }
