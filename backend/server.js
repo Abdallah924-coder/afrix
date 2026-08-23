@@ -1303,6 +1303,11 @@ function prunePasswordResetTokens(db) {
   db.passwordResetTokens = (db.passwordResetTokens || []).filter((item) => !item.usedAt && Date.parse(item.expiresAt) > now);
 }
 
+function prunePasswordResetTokenList(tokens = []) {
+  const now = Date.now();
+  return (Array.isArray(tokens) ? tokens : []).filter((item) => !item.usedAt && Date.parse(item.expiresAt) > now);
+}
+
 function normalizeInvitationCode(value = "") {
   let code = String(value || "").trim();
   if (!code) return "";
@@ -3423,17 +3428,17 @@ app.patch("/api/profile", authenticate, upload.single("avatar"), async (req, res
 app.post("/api/auth/forgot-password", validate(z.object({
   email: z.string().email()
 })), async (req, res) => {
+  await ensureStorage();
   const normalizedEmail = req.body.email.trim().toLowerCase();
   let otpCode = "";
+  const user = await UserModel.findOne({ email: normalizedEmail }, { id: 1, email: 1 }).lean();
 
-  await updateDb(async (db) => {
-    prunePasswordResetTokens(db);
-    const user = db.users.find((candidate) => candidate.email === normalizedEmail);
-    if (!user) return null;
-
+  if (user) {
     otpCode = String(randomBytes(4).readUInt32BE(0) % 1000000).padStart(6, "0");
-    db.passwordResetTokens = db.passwordResetTokens.filter((item) => item.userId !== user.id);
-    db.passwordResetTokens.push({
+    const setting = await SettingModel.findOne({ key: "passwordResetTokens" }).lean();
+    const tokens = prunePasswordResetTokenList(setting?.value)
+      .filter((item) => item.userId !== user.id);
+    tokens.push({
       id: nanoid(),
       userId: user.id,
       tokenHash: hashResetToken(otpCode),
@@ -3441,8 +3446,8 @@ app.post("/api/auth/forgot-password", validate(z.object({
       expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       createdAt: nowIso()
     });
-    return null;
-  });
+    await SettingModel.updateOne({ key: "passwordResetTokens" }, { $set: { value: tokens } }, { upsert: true });
+  }
 
   if (otpCode) {
     sendBrevoMail({
@@ -3466,25 +3471,31 @@ app.post("/api/auth/reset-password", validate(z.object({
   otp: z.string().regex(/^\d{6}$/),
   password: z.string().min(10)
 })), async (req, res) => {
+  await ensureStorage();
   const normalizedEmail = req.body.email.trim().toLowerCase();
-  const result = await updateDb(async (db) => {
-    prunePasswordResetTokens(db);
-    const user = db.users.find((candidate) => candidate.email === normalizedEmail);
-    if (!user) return { error: "Compte introuvable." };
+  const user = await UserModel.findOne({ email: normalizedEmail }).lean();
+  if (!user) return res.status(400).json({ message: "Compte introuvable." });
 
-    const tokenHash = hashResetToken(req.body.otp);
-    const resetToken = db.passwordResetTokens.find((item) => item.userId === user.id && item.tokenHash === tokenHash);
-    if (!resetToken) return { error: "Code OTP invalide ou expire." };
+  const tokenHash = hashResetToken(req.body.otp);
+  const setting = await SettingModel.findOne({ key: "passwordResetTokens" }).lean();
+  const tokens = prunePasswordResetTokenList(setting?.value);
+  const resetToken = tokens.find((item) => item.userId === user.id && item.tokenHash === tokenHash);
+  if (!resetToken) {
+    await SettingModel.updateOne({ key: "passwordResetTokens" }, { $set: { value: tokens } }, { upsert: true });
+    return res.status(400).json({ message: "Code OTP invalide ou expire." });
+  }
 
-    user.passwordHash = await bcrypt.hash(req.body.password, 12);
-    user.passwordUpdatedAt = nowIso();
-    resetToken.usedAt = nowIso();
-    db.passwordResetTokens = db.passwordResetTokens.filter((item) => item.id !== resetToken.id);
-    return { user };
-  });
+  const passwordHash = await bcrypt.hash(req.body.password, 12);
+  const passwordUpdatedAt = nowIso();
+  const updatedUser = normalizeUserRecord(await UserModel.findOneAndUpdate(
+    { id: user.id },
+    { $set: { passwordHash, passwordUpdatedAt } },
+    { new: true, lean: true }
+  ));
+  const remainingTokens = tokens.filter((item) => item.id !== resetToken.id);
+  await SettingModel.updateOne({ key: "passwordResetTokens" }, { $set: { value: remainingTokens } }, { upsert: true });
 
-  if (result.error) return res.status(400).json({ message: result.error });
-  res.json({ token: signToken(result.user), user: sanitizeUser(result.user) });
+  res.json({ token: signToken(updatedUser), user: sanitizeUser(updatedUser) });
 });
 
 app.get("/api/me", authenticate, async (req, res, next) => {
