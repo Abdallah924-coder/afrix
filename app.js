@@ -1,6 +1,7 @@
 const API_BASE = window.AFRIX_API_BASE || "/api";
 const APP_VERSION = "20260812-1";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
+const DISMISSED_NOTIFICATIONS_KEY = "afrix_dismissed_notifications";
 const API_TIMEOUT_MS = 20_000;
 const MAX_PROOF_FILE_BYTES = 5 * 1024 * 1024;
 let registerCountryOptionsHtml = null;
@@ -735,21 +736,155 @@ function closeMobileMoreSheet() {
   }, 260);
 }
 
+function userAvatarData(user = emptyUser) {
+  return user.avatar?.dataBase64
+    ? `data:${user.avatar.mimeType || "image/jpeg"};base64,${user.avatar.dataBase64}`
+    : "";
+}
+
+function userInitials(user = emptyUser) {
+  return String(user.fullName || user.email || "AF").trim().slice(0, 2).toUpperCase();
+}
+
+function notificationId(item = {}) {
+  return String(item.id || item.reference || `${item.createdAt || ""}:${item.type || ""}:${item.description || ""}`);
+}
+
+function dismissedNotificationIds(user = emptyUser) {
+  try {
+    const allDismissed = JSON.parse(localStorage.getItem(DISMISSED_NOTIFICATIONS_KEY) || "{}");
+    const userKey = user.id || user.email || "default";
+    return new Set(Array.isArray(allDismissed[userKey]) ? allDismissed[userKey] : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function dismissNotification(user = emptyUser, id = "") {
+  if (!id) return;
+  try {
+    const allDismissed = JSON.parse(localStorage.getItem(DISMISSED_NOTIFICATIONS_KEY) || "{}");
+    const userKey = user.id || user.email || "default";
+    const next = new Set(Array.isArray(allDismissed[userKey]) ? allDismissed[userKey] : []);
+    next.add(id);
+    allDismissed[userKey] = Array.from(next).slice(-80);
+    localStorage.setItem(DISMISSED_NOTIFICATIONS_KEY, JSON.stringify(allDismissed));
+  } catch {
+    // Local notification dismissal is a convenience only.
+  }
+}
+
+function topbarNotificationItems(user = emptyUser) {
+  const dismissed = dismissedNotificationIds(user);
+  return (Array.isArray(user.transactions) ? user.transactions : [])
+    .filter((item) => !dismissed.has(notificationId(item)))
+    .slice(0, 4);
+}
+
 function renderTopbar(page, user = emptyUser) {
   const topbar = document.querySelector("[data-topbar]");
   if (!topbar) return;
+  const avatarData = userAvatarData(user);
+  const displayName = String(user.fullName || user.email || "Compte AFRIX").trim();
+  const email = String(user.email || "compte@afrix").trim();
+  const notifications = topbarNotificationItems(user);
+  const notificationCount = notifications.length;
 
   topbar.innerHTML = `
     <button class="btn secondary menu-btn" type="button" data-menu-toggle aria-label="Ouvrir le menu" aria-expanded="false">☰</button>
-    <div class="topbar-title">
-      <p>Wallet • Trading • Staking • Blockchain</p>
-      <h1>${pageTitles[page] || "AFRIX"}</h1>
+    <div class="topbar-user">
+      <div class="topbar-avatar" aria-hidden="true">
+        ${avatarData ? `<img src="${avatarData}" alt="">` : `<span>${escapeHtml(userInitials(user))}</span>`}
+      </div>
+      <div class="topbar-identity">
+        <strong>${escapeHtml(displayName)}</strong>
+        <span>${escapeHtml(email)}</span>
+        <small>AUSD</small>
+      </div>
     </div>
-    <div class="user-box">
-      <span>${escapeHtml(user.email || "Compte AFRIX")}</span>
-      <strong>AUSD</strong>
+    <div class="topbar-notification-wrap">
+      <button class="topbar-notification" type="button" aria-label="Notifications" aria-expanded="false" data-notification-toggle>
+        <span aria-hidden="true">&#128276;</span>
+        ${notificationCount ? `<small>${notificationCount}</small>` : ""}
+      </button>
+      <div class="topbar-notification-panel" data-notification-panel hidden>
+        <strong>Notifications</strong>
+        <div>
+          ${notifications.length ? notifications.map((item) => `
+            <a href="/transactions" data-notification-item data-notification-id="${escapeHtml(notificationId(item))}">
+              <span>${escapeHtml(item.type || "Operation")}</span>
+              <small>${escapeHtml(item.description || item.status || "Activite AFRIX")}</small>
+            </a>
+          `).join("") : `<p>Aucune notification recente.</p>`}
+        </div>
+        <a class="topbar-notification-all" href="/transactions">Voir l'historique</a>
+      </div>
     </div>
   `;
+
+  const notificationButton = topbar.querySelector("[data-notification-toggle]");
+  const notificationPanel = topbar.querySelector("[data-notification-panel]");
+  if (notificationButton && notificationPanel) {
+    const closeNotifications = () => {
+      notificationPanel.hidden = true;
+      notificationButton.setAttribute("aria-expanded", "false");
+      document.removeEventListener("click", closeNotifications);
+    };
+    notificationButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const isOpen = notificationPanel.hidden;
+      notificationPanel.hidden = !isOpen;
+      notificationButton.setAttribute("aria-expanded", String(isOpen));
+      document.removeEventListener("click", closeNotifications);
+      if (isOpen) document.addEventListener("click", closeNotifications);
+    });
+    notificationPanel.addEventListener("click", (event) => event.stopPropagation());
+    topbar.querySelectorAll("[data-notification-item]").forEach((item) => {
+      let startX = 0;
+      let deltaX = 0;
+      let dragged = false;
+      item.addEventListener("pointerdown", (event) => {
+        startX = event.clientX;
+        deltaX = 0;
+        dragged = false;
+        item.classList.add("is-dragging");
+        item.setPointerCapture?.(event.pointerId);
+      });
+      item.addEventListener("pointermove", (event) => {
+        if (!startX) return;
+        deltaX = event.clientX - startX;
+        if (Math.abs(deltaX) < 8) return;
+        dragged = true;
+        item.style.transform = `translateX(${Math.max(-120, Math.min(120, deltaX))}px)`;
+      });
+      item.addEventListener("pointerup", (event) => {
+        item.releasePointerCapture?.(event.pointerId);
+        item.classList.remove("is-dragging");
+        if (Math.abs(deltaX) >= 72) {
+          dismissNotification(user, item.dataset.notificationId);
+          item.classList.add("is-dismissed");
+          window.setTimeout(() => {
+            item.remove();
+            const remaining = topbar.querySelectorAll("[data-notification-item]").length;
+            const badge = notificationButton.querySelector("small");
+            if (badge) badge.textContent = String(remaining);
+            if (!remaining) {
+              notificationPanel.querySelector("div").innerHTML = `<p>Aucune notification recente.</p>`;
+              badge?.remove();
+            }
+          }, 180);
+          return;
+        }
+        item.style.transform = "";
+      });
+      item.addEventListener("click", (event) => {
+        if (!dragged) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dragged = false;
+      });
+    });
+  }
 
   const menuButton = topbar.querySelector("[data-menu-toggle]");
   const sidebar = document.querySelector("[data-sidebar]");
