@@ -1,5 +1,5 @@
 const API_BASE = window.AFRIX_API_BASE || "/api";
-const APP_VERSION = "20260812-1";
+const APP_VERSION = "20260825-1";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
 const DISMISSED_NOTIFICATIONS_KEY = "afrix_dismissed_notifications";
 const API_TIMEOUT_MS = 20_000;
@@ -747,7 +747,21 @@ function userInitials(user = emptyUser) {
 }
 
 function notificationId(item = {}) {
-  return String(item.id || item.reference || `${item.createdAt || ""}:${item.type || ""}:${item.description || ""}`);
+  return [
+    item.date || item.createdAt || "",
+    item.type || "",
+    item.description || "",
+    item.amount || item.displayAmount || "",
+    item.status || ""
+  ].map((part) => String(part).trim()).join("|");
+}
+
+function notificationKeys(item = {}) {
+  return [
+    item.id,
+    item.reference,
+    notificationId(item)
+  ].filter(Boolean).map((key) => String(key));
 }
 
 function dismissedNotificationIds(user = emptyUser) {
@@ -761,13 +775,18 @@ function dismissedNotificationIds(user = emptyUser) {
 }
 
 function dismissNotification(user = emptyUser, id = "") {
-  if (!id) return;
+  dismissNotificationKeys(user, [id]);
+}
+
+function dismissNotificationKeys(user = emptyUser, keys = []) {
+  const validKeys = keys.filter(Boolean).map((key) => String(key));
+  if (!validKeys.length) return;
   try {
     const allDismissed = JSON.parse(localStorage.getItem(DISMISSED_NOTIFICATIONS_KEY) || "{}");
     const userKey = user.id || user.email || "default";
     const next = new Set(Array.isArray(allDismissed[userKey]) ? allDismissed[userKey] : []);
-    next.add(id);
-    allDismissed[userKey] = Array.from(next).slice(-80);
+    validKeys.forEach((key) => next.add(key));
+    allDismissed[userKey] = Array.from(next).slice(-240);
     localStorage.setItem(DISMISSED_NOTIFICATIONS_KEY, JSON.stringify(allDismissed));
   } catch {
     // Local notification dismissal is a convenience only.
@@ -777,7 +796,7 @@ function dismissNotification(user = emptyUser, id = "") {
 function topbarNotificationItems(user = emptyUser) {
   const dismissed = dismissedNotificationIds(user);
   return (Array.isArray(user.transactions) ? user.transactions : [])
-    .filter((item) => !dismissed.has(notificationId(item)))
+    .filter((item) => !notificationKeys(item).some((key) => dismissed.has(key)))
     .slice(0, 4);
 }
 
@@ -811,7 +830,7 @@ function renderTopbar(page, user = emptyUser) {
         <strong>Notifications</strong>
         <div>
           ${notifications.length ? notifications.map((item) => `
-            <a href="/transactions" data-notification-item data-notification-id="${escapeHtml(notificationId(item))}">
+            <a href="/transactions" data-notification-item data-notification-id="${escapeHtml(notificationId(item))}" data-notification-keys="${escapeHtml(JSON.stringify(notificationKeys(item)))}">
               <span>${escapeHtml(item.type || "Operation")}</span>
               <small>${escapeHtml(item.description || item.status || "Activite AFRIX")}</small>
             </a>
@@ -861,7 +880,13 @@ function renderTopbar(page, user = emptyUser) {
         item.releasePointerCapture?.(event.pointerId);
         item.classList.remove("is-dragging");
         if (Math.abs(deltaX) >= 72) {
-          dismissNotification(user, item.dataset.notificationId);
+          let keys = [item.dataset.notificationId];
+          try {
+            keys = JSON.parse(item.dataset.notificationKeys || "[]");
+          } catch {
+            keys = [item.dataset.notificationId];
+          }
+          dismissNotificationKeys(user, keys);
           item.classList.add("is-dismissed");
           window.setTimeout(() => {
             item.remove();
