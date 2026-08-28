@@ -399,9 +399,11 @@ async function readUserViewDb(user) {
     ].filter((clause) => Object.values(clause)[0])
   };
   const issuedGrsQuery = {
+    status: { $in: ["Completed", "Active"] },
     $or: [
-      { type: "Swap", status: { $in: ["Completed", "Active"] } },
-      { "metadata.asset": "GRSC_PURCHASE", status: { $in: ["Completed", "Active"] } }
+      { "metadata.asset": "GRSC_PURCHASE" },
+      { type: "Swap", "metadata.direction": { $in: ["USDT_GRSC", "AUSD_GRSC"] } },
+      { type: "Swap", description: /GRSCOIN/i }
     ]
   };
 
@@ -1426,10 +1428,16 @@ function grsIssuedSupply(db = {}) {
   }
   return money((db.transactions || []).reduce((total, tx) => {
     const isCompleted = tx.status === "Completed" || tx.status === "Active";
-    const isIssued = tx.type === "Swap" || tx.metadata?.asset === "GRSC_PURCHASE";
-    if (!isCompleted || !isIssued) return total;
+    if (!isCompleted || !isGrsCoinMarketTransaction(tx)) return total;
     return total + Number(tx.metadata?.grsAmount || 0);
   }, 0));
+}
+
+function isGrsCoinMarketTransaction(tx = {}) {
+  const direction = String(tx.metadata?.direction || "");
+  const asset = String(tx.metadata?.asset || "");
+  if (asset === "GRSC_PURCHASE") return true;
+  return tx.type === "Swap" && (["USDT_GRSC", "AUSD_GRSC"].includes(direction) || String(tx.description || "").toUpperCase().includes("GRSCOIN"));
 }
 
 function grsMarketStats(db = {}) {
@@ -1442,7 +1450,7 @@ function grsMarketStats(db = {}) {
   const todayPrefix = nowIso().slice(0, 10);
   const rows = (db.transactions || []).filter((tx) => {
     const isCompleted = tx.status === "Completed" || tx.status === "Active";
-    const isGrsTrade = tx.type === "Swap" || tx.metadata?.asset === "GRSC_PURCHASE";
+    const isGrsTrade = isGrsCoinMarketTransaction(tx);
     return isCompleted && isGrsTrade;
   });
   return {
