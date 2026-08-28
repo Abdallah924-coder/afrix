@@ -484,7 +484,8 @@ async function readAdminViewDb() {
     disputes,
     ledgerEntries,
     settings,
-    platformAccount
+    platformAccount,
+    marketStatsRows
   ] = await Promise.all([
     UserModel.find({}, safeUserProjection).read(secondaryReadPreference).lean(),
     TransactionModel.find({}, transactionListProjection).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).read(secondaryReadPreference).lean(),
@@ -495,7 +496,35 @@ async function readAdminViewDb() {
     DisputeModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_TRANSACTIONS_LIMIT).read(secondaryReadPreference).lean(),
     LedgerEntryModel.find({}).sort({ createdAt: -1 }).limit(ADMIN_RECENT_LEDGER_LIMIT).read(secondaryReadPreference).lean(),
     SettingModel.find({}).read(secondaryReadPreference).lean(),
-    PlatformAccountModel.findOne({ id: "platform" }).read(secondaryReadPreference).lean()
+    PlatformAccountModel.findOne({ id: "platform" }).read(secondaryReadPreference).lean(),
+    TransactionModel.aggregate([
+      {
+        $match: {
+          status: { $in: ["Completed", "Active"] },
+          $or: [
+            { "metadata.asset": "GRSC_PURCHASE" },
+            { type: "Swap", "metadata.direction": { $in: ["USDT_GRSC", "AUSD_GRSC"] } },
+            { type: "Swap", description: /GRSCOIN/i }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          issuedSupply: { $sum: { $toDouble: { $ifNull: ["$metadata.grsAmount", 0] } } },
+          totalTrades: { $sum: 1 },
+          todayTrades: {
+            $sum: {
+              $cond: [
+                { $eq: [{ $substr: [{ $ifNull: ["$createdAt", ""] }, 0, 10] }, nowIso().slice(0, 10)] },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      }
+    ]).read(secondaryReadPreference)
   ]);
   const settingMap = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
 
