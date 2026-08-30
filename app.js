@@ -2153,8 +2153,10 @@ function updateP2pFeePreview() {
   const preview = document.querySelector("[data-p2p-fee-preview]");
   if (label?.firstChild) label.firstChild.textContent = `Montant minimum 1 ${asset}`;
   if (!preview) return;
-  const fee = Number((Math.max(0, amount) * P2P_FEE_RATE).toFixed(2));
-  preview.textContent = `Frais 1%: ${formatAssetAmount(fee, asset)}. Total debite: ${formatAssetAmount(amount + fee, asset)}.`;
+  const feeUsdtEquivalent = amount * (asset === "AUSD" ? AUSD_PRICE_USDT : asset === "GRSC" ? grscToUsdt(1, {}) : 1) * P2P_FEE_RATE;
+  const feeGrsAmount = usdtToGrsc(feeUsdtEquivalent, {});
+  const total = asset === "GRSC" ? amount + feeGrsAmount : amount;
+  preview.textContent = `Frais 1%: ${formatGrsc(feeGrsAmount)}. Total debite: ${formatAssetAmount(total, asset)}${asset === "GRSC" ? "" : " + frais en GRSC"}.`;
 }
 
 function renderAdmin(user) {
@@ -3639,21 +3641,24 @@ function setupActions(user) {
     const data = formToObject(form);
     const amount = Number(data.amount || 0);
     const asset = String(data.asset || "USDT").toUpperCase();
-    const fee = Number((amount * P2P_FEE_RATE).toFixed(2));
-    const total = Number((amount + fee).toFixed(2));
+    const feeUsdtEquivalent = amount * (asset === "AUSD" ? AUSD_PRICE_USDT : asset === "GRSC" ? grscToUsdt(1, user) : 1) * P2P_FEE_RATE;
+    const feeGrsAmount = Number(usdtToGrsc(feeUsdtEquivalent, user).toFixed(4));
+    const total = asset === "GRSC" ? Number((amount + feeGrsAmount).toFixed(4)) : amount;
     if (!Number.isFinite(amount) || amount < 1) {
       showToast(`Montant minimum transfert: 1 ${asset}.`, "error");
       return;
     }
-    if (total > assetBalance(user, asset)) {
-      showToast(`Solde ${asset} insuffisant. Total requis: ${formatAssetAmount(total, asset)}.`, "error");
+    if (amount > assetBalance(user, asset) || (asset !== "GRSC" && feeGrsAmount > assetBalance(user, "GRSC"))) {
+      showToast(asset === "GRSC"
+        ? `Solde GRSC insuffisant. Total requis: ${formatGrsc(total)}.`
+        : `Solde insuffisant. Il faut ${formatAssetAmount(amount, asset)} et ${formatGrsc(feeGrsAmount)} pour les frais.`, "error");
       return;
     }
     if (!p2pRecipient || p2pRecipient.email !== String(data.recipient || "").trim().toLowerCase()) {
       const recipient = await lookupP2pRecipient();
       if (!recipient) return;
     }
-    const confirmed = window.confirm(`Confirmer l'envoi de ${formatAssetAmount(amount, asset)} a ${p2pRecipient.displayName || p2pRecipient.email} ? Frais: ${formatAssetAmount(fee, asset)}. Total debite: ${formatAssetAmount(total, asset)}.`);
+    const confirmed = window.confirm(`Confirmer l'envoi de ${formatAssetAmount(amount, asset)} a ${p2pRecipient.displayName || p2pRecipient.email} ? Frais: ${formatGrsc(feeGrsAmount)} en GRSC. Total debite: ${formatAssetAmount(total, asset)}.`);
     if (!confirmed) return;
     const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Envoi...");

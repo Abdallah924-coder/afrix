@@ -5245,8 +5245,9 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
   const amount = money(req.body.amount);
   const asset = String(req.body.asset || "USDT").toUpperCase();
   const feeSettings = await getFeeSettings();
-  const fee = money(amount * feeSettings.p2pFeeRate);
-  const total = money(amount + fee);
+  const feeUsdtEquivalent = money(usdtFromAssetAmount(amount, asset) * feeSettings.p2pFeeRate);
+  const feeGrsAmount = grsFeeFromAssetAmount(amount, asset, feeSettings.p2pFeeRate);
+  const total = asset === "GRSC" ? money(amount + feeGrsAmount) : amount;
   const note = String(req.body.note || "").trim().slice(0, 180);
   const recipientEmail = req.body.recipient.trim().toLowerCase();
   const assetConfig = {
@@ -5282,9 +5283,24 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
         return;
       }
       const balanceField = assetConfig.field;
+      const debitAmount = total;
+      const balanceRequirements = asset === "GRSC"
+        ? { $gte: [{ $toDouble: { $ifNull: ["$" + balanceField, 0] } }, debitAmount] }
+        : {
+            $and: [
+              { $gte: [{ $toDouble: { $ifNull: ["$" + balanceField, 0] } }, amount] },
+              { $gte: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }
+            ]
+          };
+      const senderUpdate = asset === "GRSC"
+        ? { [balanceField]: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$" + balanceField, 0] } }, debitAmount] }, 2] } }
+        : {
+            [balanceField]: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$" + balanceField, 0] } }, amount] }, 2] },
+            grsBalance: { $round: [{ $subtract: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, feeGrsAmount] }, 2] }
+          };
       updatedSender = await UserModel.findOneAndUpdate(
-        { id: sender.id, $expr: { $gte: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, total] } },
-        [{ $set: { [balanceField]: { $round: [{ $subtract: [{ $toDouble: { $ifNull: [`$${balanceField}`, 0] } }, total] }, 2] } } }],
+        { id: sender.id, $expr: balanceRequirements },
+        [{ $set: senderUpdate }],
         { new: true, session, lean: true }
       );
       if (!updatedSender) {
@@ -5300,29 +5316,14 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
         result = { error: "Destinataire introuvable.", status: 404 };
         return;
       }
-      if (asset === "USDT") {
-        await PlatformAccountModel.findOneAndUpdate(
-          { id: "platform" },
-          { $inc: { balance: fee, fees: fee }, $setOnInsert: { createdAt: nowIso() } },
-          { upsert: true, new: true, session, lean: true }
-        );
-        await creditPlatformUserFee({
-          amount: fee,
-          description: "Frais transfert AFRIX Money",
-          source: "p2p_fee",
-          referenceId: reference,
-          extra: { senderId: sender.id, recipientId: recipient.id, asset },
-          session,
-          settings: feeSettings
-        });
-      } else if (fee > 0) {
+      if (feeGrsAmount > 0) {
         await creditPlatformRevenue({
-          amount: fee,
-          asset,
+          amount: feeGrsAmount,
+          asset: "GRSC",
           description: "Frais transfert AFRIX Money",
           source: "p2p_fee",
           referenceId: reference,
-          extra: { senderId: sender.id, recipientId: recipient.id, asset },
+          extra: { senderId: sender.id, recipientId: recipient.id, asset, feeAsset: "GRSC", feeGrsAmount, feeUsdtEquivalent },
           session,
           settings: feeSettings
         });
@@ -5331,18 +5332,25 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
         accountType: assetConfig.accountType,
         accountId: sender.id,
         direction: "debit",
-        amount: total,
+        amount: debitAmount,
         balanceAfter: updatedSender[balanceField],
-        description: `Transfert ${asset} vers ${recipient.email}`
-      }, {
+        description: "Transfert " + asset + " vers " + recipient.email
+      }, ...(asset === "GRSC" ? [] : [{
+        accountType: "user_grs",
+        accountId: sender.id,
+        direction: "debit",
+        amount: feeGrsAmount,
+        balanceAfter: updatedSender.grsBalance,
+        description: "Frais transfert AFRIX Money en GRSC"
+      }]), {
         accountType: assetConfig.accountType,
         accountId: recipient.id,
         direction: "credit",
         amount,
         balanceAfter: updatedRecipient[balanceField],
-        description: `Reception ${asset} depuis ${sender.email}`
+        description: "Reception " + asset + " depuis " + sender.email
       }];
-      const ledgerEntries = buildLedgerEntries(ledgerRows, { source: "p2p_transfer", referenceId: reference, extra: { senderId: sender.id, recipientId: recipient.id, amount, fee, total, asset, note } });
+      const ledgerEntries = buildLedgerEntries(ledgerRows, { source: "p2p_transfer", referenceId: reference, extra: { senderId: sender.id, recipientId: recipient.id, amount, fee: feeGrsAmount, feeGrsAmount, feeUsdtEquivalent, feeAsset: "GRSC", total, asset, note } });
       if (ledgerEntries.length) await LedgerEntryModel.insertMany(ledgerEntries, { session });
       await TransactionModel.insertMany([{
         id: nanoid(),
@@ -5353,7 +5361,7 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
         displayAmount: assetConfig.format(total, "-"),
         status: "Completed",
         createdAt: nowIso(),
-        metadata: { reference, amount, fee, total, asset, recipientEmail: recipient.email, note }
+        metadata: { reference, amount, fee: feeGrsAmount, feeGrsAmount, feeUsdtEquivalent, feeAsset: "GRSC", total, asset, recipientEmail: recipient.email, note }
       }, {
         id: nanoid(),
         userId: recipient.id,
@@ -5375,7 +5383,10 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
   const result = {
     reference,
     amount,
-    fee,
+    fee: feeGrsAmount,
+    feeGrsAmount,
+    feeUsdtEquivalent,
+    feeAsset: "GRSC",
     total,
     asset,
     recipient: { email: recipient.email, displayName: maskDisplayName(recipient.fullName || recipient.email) }
