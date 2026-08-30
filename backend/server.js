@@ -5405,8 +5405,9 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
       rows: [
         { label: "Destinataire", value: recipient.email },
         { label: "Montant envoye", value: assetConfig.format(amount) },
-        { label: "Frais", value: assetConfig.format(fee) },
-        { label: "Total debite", value: assetConfig.format(total) },
+        { label: "Frais", value: formatGrsc(feeGrsAmount) },
+        { label: "Equivalent frais", value: formatAmount(feeUsdtEquivalent) },
+        { label: "Total debite", value: asset === "GRSC" ? assetConfig.format(total) : assetConfig.format(amount) },
         { label: "Reference", value: reference }
       ]
     }),
