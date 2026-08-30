@@ -31,7 +31,7 @@ export const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
 export const BREVO_API_KEY = String(process.env.BREVO_API_KEY || "");
 export const BREVO_SENDER_EMAIL = String(process.env.BREVO_SENDER_EMAIL || "");
 export const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || "AFRIX";
-export const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || BREVO_SENDER_EMAIL;
+export const SUPPORT_EMAIL = String(process.env.SUPPORT_EMAIL || "").trim();
 export const ADMIN_ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL || ADMIN_EMAIL;
 export const isProduction = process.env.NODE_ENV === "production";
 export const jwtSecret = JWT_SECRET || "dev-only-change-this-secret-before-production";
