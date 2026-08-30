@@ -28,11 +28,11 @@ export const GRSCOIN_CONTRACT_ADDRESS = String(process.env.GRSCOIN_CONTRACT_ADDR
 export const GRSCOIN_DEPOSIT_ADDRESS = String(process.env.GRSCOIN_DEPOSIT_ADDRESS || "").trim();
 export const GRSCOIN_USDT_BEP20_DEPOSIT_ADDRESS = String(process.env.GRSCOIN_USDT_BEP20_DEPOSIT_ADDRESS || process.env.BEP20_DEPOSIT_ADDRESS || "").trim();
 export const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
-export const BREVO_API_KEY = String(process.env.BREVO_API_KEY || "");
-export const BREVO_SENDER_EMAIL = String(process.env.BREVO_SENDER_EMAIL || "");
-export const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || "AFRIX";
-export const SUPPORT_EMAIL = String(process.env.SUPPORT_EMAIL || "").trim();
-export const ADMIN_ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL || ADMIN_EMAIL;
+export const BREVO_API_KEY = String(process.env.BREVO_API_KEY || "").trim();
+export const BREVO_SENDER_EMAIL = String(process.env.BREVO_SENDER_EMAIL || "").trim().toLowerCase();
+export const BREVO_SENDER_NAME = String(process.env.BREVO_SENDER_NAME || "AFRIX").trim() || "AFRIX";
+export const SUPPORT_EMAIL = String(process.env.SUPPORT_EMAIL || BREVO_SENDER_EMAIL).trim().toLowerCase();
+export const ADMIN_ALERT_EMAIL = String(process.env.ADMIN_ALERT_EMAIL || ADMIN_EMAIL).trim().toLowerCase();
 export const isProduction = process.env.NODE_ENV === "production";
 export const jwtSecret = JWT_SECRET || "dev-only-change-this-secret-before-production";
 
