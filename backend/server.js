@@ -702,8 +702,6 @@ function sanitizeUser(user) {
 function isCommissionAccount(user = {}) {
   const email = normalizeEmail(user?.email);
   return Boolean(
-    user?.role === "admin" ||
-    user?.role === "developer" ||
     isConfiguredAdminEmail(email) ||
     (COMMISSION_DEVELOPER_EMAIL && email === normalizeEmail(COMMISSION_DEVELOPER_EMAIL)) ||
     (PLATFORM_EMAIL && email === normalizeEmail(PLATFORM_EMAIL))
