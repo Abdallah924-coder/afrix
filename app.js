@@ -205,7 +205,10 @@ const emptyUser = {
     direction: "USDT_GRSC",
     market: { totalSupply: 4200000, issuedSupply: 0, remainingSupply: 4200000, issuedPercent: 0 }
   },
-  role: "user"
+  role: "user",
+  canViewCommissionSummary: false,
+  commissionTotals: { USDT: 0, AUSD: 0, GRSC: 0 },
+  commissionTotalUsdt: 0
 };
 
 const formatUsdt = (value) => `${Number(value || 0).toFixed(4)} USDT`;
@@ -1135,7 +1138,7 @@ function renderDashboard(user) {
   if (bonusAusdUsdt) bonusAusdUsdt.textContent = `≈ ${formatUsdt(ausdToUsdt(bonusTotals.AUSD || 0))}`;
   if (bonusGrsc) bonusGrsc.textContent = formatGrsc(bonusTotals.GRSC || 0);
   if (bonusGrscUsdt) bonusGrscUsdt.textContent = `≈ ${formatUsdt(grscToUsdt(bonusTotals.GRSC || 0, user))}`;
-  if (commissionSummaryCard) commissionSummaryCard.hidden = !user.canViewCommissionSummary;
+  if (commissionSummaryCard) commissionSummaryCard.hidden = user.canViewCommissionSummary !== true;
   if (commissionTotalUsdt) commissionTotalUsdt.textContent = formatUsdt(commissionTotalUsdtValue);
   if (commissionUsdt) commissionUsdt.textContent = formatUsdt(commissionTotals.USDT || 0);
   if (commissionAusd) commissionAusd.textContent = formatAusd(commissionTotals.AUSD || 0);

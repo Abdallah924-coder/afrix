@@ -708,9 +708,14 @@ function isCommissionAccount(user = {}) {
   );
 }
 
+function canViewCommissionSummary(user = {}) {
+  const email = normalizeEmail(user?.email);
+  return Boolean(canUseBackoffice(user) || (PLATFORM_EMAIL && email === normalizeEmail(PLATFORM_EMAIL)));
+}
+
 function canViewTransaction(user, tx) {
   if (tx.type === "Commission") {
-    return canUseBackoffice(user) || (tx.userId === user.id && isCommissionAccount(user));
+    return canUseBackoffice(user) || (tx.userId === user.id && canViewCommissionSummary(user));
   }
   return user.role === "admin" || tx.userId === user.id;
 }
@@ -1733,7 +1738,7 @@ function bonusBreakdown(transactions = [], user = {}) {
 
 function commissionBreakdown(transactions = [], user = {}) {
   const assetTotals = { USDT: 0, AUSD: 0, GRSC: 0 };
-  if (!isCommissionAccount(user)) {
+  if (!canViewCommissionSummary(user)) {
     return { totals: assetTotals, totalUsdt: 0 };
   }
 
@@ -1806,6 +1811,7 @@ function composeUser(db, user) {
   const personalActivityGrsc = money(personalActivity.totalGrsc);
   const personalActivityAusd = money(personalActivity.totalAusd);
   const personalActivityUsdt = money(personalActivity.totalUsdt);
+  const canAccessCommissionSummary = canViewCommissionSummary(user);
 
   const approvedMerchants = db.users
     .filter((candidate) => candidate.merchantProfile?.status === "approved")
@@ -1856,9 +1862,9 @@ function composeUser(db, user) {
     personalActivityTotalUsdt: personalActivity.totalUsdt,
     bonusTotals: bonusActivity.totals,
     bonusTotalUsdt: bonusActivity.totalUsdt,
-    canViewCommissionSummary: isCommissionAccount(user),
-    commissionTotals: commissionActivity.totals,
-    commissionTotalUsdt: commissionActivity.totalUsdt,
+    canViewCommissionSummary: canAccessCommissionSummary,
+    commissionTotals: canAccessCommissionSummary ? commissionActivity.totals : { USDT: 0, AUSD: 0, GRSC: 0 },
+    commissionTotalUsdt: canAccessCommissionSummary ? commissionActivity.totalUsdt : 0,
     bonusGrsc: grsFromUsdt(user.bonus),
     rank: rankFromActivity(user.activity),
     progress: progressFromActivity(user.activity),
@@ -1884,7 +1890,7 @@ function composeUser(db, user) {
     },
     refLink: `${process.env.APP_URL || "http://localhost:" + PORT}/register?ref=${user.refCode}`,
     transactions: db.transactions
-      .filter((tx) => tx.userId === user.id && (tx.type !== "Commission" || isCommissionAccount(user)))
+      .filter((tx) => tx.userId === user.id && (tx.type !== "Commission" || canAccessCommissionSummary))
       .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       .map((tx) => ({
         id: tx.id,
