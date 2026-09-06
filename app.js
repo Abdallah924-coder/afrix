@@ -196,8 +196,8 @@ const emptyUser = {
   platformControls: {},
   feeSettings: defaultFeeSettings,
   swap: {
-    grsCoinPriceUsdt: 0.0725,
-    grsCoinPerUsdt: 13.79310345,
+    grsCoinPriceUsdt: 0.357142857143,
+    grsCoinPerUsdt: 2.8,
     contractAddress: "",
     grsDepositAddress: "",
     usdtBep20DepositAddress: "",
@@ -269,12 +269,12 @@ const usdtToAusd = (value) => Number(value || 0) / AUSD_PRICE_USDT;
 const usdtToGrsc = (value, user = {}) => Number(value || 0) * getGrsCoinPerUsdt(user);
 const ausdToUsdt = (value) => Number(value || 0) * AUSD_PRICE_USDT;
 const grscToUsdt = (value, user = {}) => {
-  const price = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
+  const price = Number(user.swap?.grsCoinPriceUsdt || 0.357142857143);
   return Number(value || 0) * price;
 };
 const formatTokenPrice = (value) => `${Number(value || 0).toFixed(4)} USDT`;
 const getGrsCoinPerUsdt = (user = {}) => {
-  const price = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
+  const price = Number(user.swap?.grsCoinPriceUsdt || 0.357142857143);
   return price > 0 ? 1 / price : 0;
 };
 const formatTransactionFee = (metadata = {}) => {
@@ -1352,7 +1352,7 @@ function renderSwap(user) {
   const usdtDepositPreview = document.querySelector("[data-grs-usdt-deposit-preview]");
   if (!usdtBalances.length && !grsBalances.length && !rates.length && !amountInput && !depositAmountInput) return;
 
-  const grsCoinPriceUsdt = Number(user.swap?.grsCoinPriceUsdt || 0.0725);
+  const grsCoinPriceUsdt = Number(user.swap?.grsCoinPriceUsdt || 0.357142857143);
   const totalFeeRate = Number(user.swap?.swapFeeRate || 0);
   const market = { ...emptyUser.swap.market, ...(user.swap?.market || {}) };
   const issuedPercent = Math.max(0, Math.min(100, Number(market.issuedPercent || 0)));
