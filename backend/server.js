@@ -19,6 +19,9 @@ import {
   COMMISSION_DEVELOPER_EMAIL,
   COMMISSION_DEVELOPER_NAME,
   COMMISSION_DEVELOPER_PASSWORD,
+  TEST_ACCOUNT_EMAIL,
+  TEST_ACCOUNT_NAME,
+  TEST_ACCOUNT_PASSWORD,
   GRSCOIN_CONTRACT_ADDRESS,
   GRSCOIN_DEPOSIT_ADDRESS,
   GRSCOIN_PRICE_USDT,
@@ -527,10 +530,12 @@ async function readAdminViewDb() {
     ]).read(secondaryReadPreference)
   ]);
   const settingMap = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
+  const generalUsers = users.filter((user) => !isTestAccountUser(user));
+  const generalTransactions = transactions.filter((tx) => !isTestTransaction(tx));
 
   return normalizeDb({
-    users,
-    transactions,
+    users: generalUsers,
+    transactions: generalTransactions,
     cicoRequests,
     exchangeAds,
     exchangeOrders,
@@ -699,6 +704,16 @@ function sanitizeUser(user) {
   return safeUser;
 }
 
+let testAccountId = "";
+
+function isTestAccountUser(user = {}) {
+  return Boolean(TEST_ACCOUNT_EMAIL && (user?.id === testAccountId || normalizeEmail(user?.email) === TEST_ACCOUNT_EMAIL));
+}
+
+function isTestTransaction(tx = {}) {
+  return Boolean(tx?.metadata?.testAccount || tx?.userId === testAccountId || tx?.metadata?.sourceUserId === testAccountId || tx?.metadata?.buyerId === testAccountId);
+}
+
 function isCommissionAccount(user = {}) {
   const email = normalizeEmail(user?.email);
   return Boolean(
@@ -727,8 +742,8 @@ function buildAdminStats(db) {
   startOfWeek.setUTCDate(startOfDay.getUTCDate() - 6);
   const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const userCreatedAt = (user) => new Date(user.createdAt || 0).getTime();
-  const transactions = db.transactions || [];
-  const users = db.users || [];
+  const transactions = (db.transactions || []).filter((tx) => !isTestTransaction(tx));
+  const users = (db.users || []).filter((user) => !isTestAccountUser(user));
   const activePlans = users.flatMap((user) => (user.activePlans || []).filter((plan) => plan.status === "active" || plan.status === "dividend"));
   const activeEtfs = users.flatMap((user) => (user.activeEtfs || []).filter((item) => item.status === "active" || item.status === "matured"));
   const completedTransactions = transactions.filter((tx) => tx.status === "Completed" || tx.status === "Active");
@@ -1278,6 +1293,7 @@ function notifyPlanActivation(user, activePlan, amount) {
 }
 
 async function creditPlatformRevenue({ amount, asset = "USDT", description, source, referenceId, extra = {}, session = null, settings = null }) {
+  if (isTestAccountUser({ id: extra?.sourceUserId, email: extra?.sourceUserEmail }) || extra?.testAccount) return null;
   const revenue = money(amount);
   if (revenue <= 0) return null;
   const feeSettings = settings || await getFeeSettings(session);
@@ -2026,7 +2042,7 @@ function requireAdmin(req, res, next) {
 }
 
 function requireMerchant(req, res, next) {
-  if (req.user?.merchantProfile?.status !== "approved" && req.user?.role !== "admin") {
+  if (req.user?.merchantProfile?.status !== "approved" && !canUseBackoffice(req.user)) {
     return res.status(403).json({ message: "Compte merchant approuve requis." });
   }
   next();
@@ -3190,6 +3206,19 @@ async function ensureCommissionAccount({ email, password, fullName, role }) {
 
   logger.info({ email: maskEmail(account.email), userId: account.id }, "Commission account ready");
   return sanitizeUser(account);
+}
+
+async function ensureTestAccount() {
+  if (!TEST_ACCOUNT_EMAIL || !TEST_ACCOUNT_PASSWORD) return null;
+  const account = await ensureCommissionAccount({
+    email: TEST_ACCOUNT_EMAIL,
+    password: TEST_ACCOUNT_PASSWORD,
+    fullName: TEST_ACCOUNT_NAME,
+    role: "user"
+  });
+  testAccountId = account?.id || "";
+  logger.info({ email: maskEmail(TEST_ACCOUNT_EMAIL), userId: testAccountId }, "Test account ready");
+  return account;
 }
 
 async function ensureCommissionAccounts() {
@@ -6897,7 +6926,8 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
           result = { error: "Utilisateur introuvable." };
           return;
         }
-        const platform = isGrsPurchase || isAusdPurchase ? await PlatformAccountModel.findOneAndUpdate(
+        const isTestDeposit = isTestAccountUser({ id: tx.userId });
+        const platform = !isTestDeposit && (isGrsPurchase || isAusdPurchase) ? await PlatformAccountModel.findOneAndUpdate(
           { id: "platform" },
           { $inc: { balance: grsValueUsdt }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
           { upsert: true, new: true, session, lean: true }
@@ -6910,7 +6940,7 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
           balanceAfter: isAusdCredit ? updatedUser.ausdBalance : isGrsPurchase ? updatedUser.grsBalance : updatedUser.balance,
           description: tx.description || "Depot approuve"
         }];
-        if (isGrsPurchase || isAusdPurchase) {
+        if (!isTestDeposit && (isGrsPurchase || isAusdPurchase)) {
           depositLedgerRows.push({
             accountType: "platform",
             accountId: "platform",
@@ -6922,7 +6952,7 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
         }
         const commissionRows = [];
         const commissionTransactions = [];
-        if (isUsdtConvertedSwapDeposit) {
+        if (isUsdtConvertedSwapDeposit && !isTestDeposit) {
           const adminCommission = money(tx.metadata?.adminCommission || (grsValueUsdt * GRSCOIN_SWAP_ADMIN_RATE));
           const developerCommission = money(tx.metadata?.developerCommission || (grsValueUsdt * GRSCOIN_SWAP_DEVELOPER_RATE));
           const platformCommission = money(tx.metadata?.platformCommission || (grsValueUsdt * GRSCOIN_SWAP_PLATFORM_RATE));
@@ -7706,6 +7736,7 @@ async function bootstrapServer() {
       await ensureAdminUser();
       await ensurePlatformUser();
       await ensureCommissionAccounts();
+      await ensureTestAccount();
       await ensureReferralCodes();
       await reconcileReferralLinks();
     } catch (error) {
