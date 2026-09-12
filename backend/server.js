@@ -7701,7 +7701,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
   if (isBusinessRuleError(err)) {
     return res.status(400).json({ message: err.message });
   }
@@ -7715,7 +7715,7 @@ app.use((err, _req, res, _next) => {
     }
     return res.status(400).json({ message: "Preuve de paiement invalide." });
   }
-  logger.error(err);
+  logger.error({ err, method: req.method, url: req.originalUrl, action: req.body?.action, transactionId: req.body?.id, userId: req.user?.id }, "Unhandled API error");
   res.status(500).json({ message: "Erreur serveur." });
 });
 
