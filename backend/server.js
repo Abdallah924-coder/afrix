@@ -504,6 +504,12 @@ async function readAdminViewDb() {
       {
         $match: {
           status: { $in: ["Completed", "Active"] },
+          $and: [
+            { userId: { $ne: testAccountId || "__disabled_test_account__" } },
+            { "metadata.testAccount": { $ne: true } },
+            { "metadata.sourceUserId": { $ne: testAccountId || "__disabled_test_account__" } },
+            { "metadata.buyerId": { $ne: testAccountId || "__disabled_test_account__" } }
+          ],
           $or: [
             { "metadata.asset": "GRSC_PURCHASE" },
             { type: "Swap", "metadata.direction": { $in: ["USDT_GRSC", "AUSD_GRSC"] } },
@@ -546,6 +552,11 @@ async function readAdminViewDb() {
     platformAccount,
     platformControls: settingMap.platformControls,
     feeSettings: settingMap.feeSettings,
+    marketStats: {
+      issuedGrsSupply: money(marketStatsRows[0]?.issuedSupply || 0),
+      totalTrades: Number(marketStatsRows[0]?.totalTrades || 0),
+      todayTrades: Number(marketStatsRows[0]?.todayTrades || 0)
+    },
     paymentTargets: settingMap.paymentTargets
   });
 }
@@ -1051,6 +1062,20 @@ async function buildAdminTransactionQueryWithSearch(queryParams = {}, baseClause
     ] });
   }
   return clauses.length ? { $and: clauses } : {};
+}
+
+function appendAdminGeneralTransactionFilter(query = {}, { includePendingTest = false } = {}) {
+  const exclusions = [
+    { "metadata.testAccount": { $ne: true } },
+    { "metadata.sourceUserId": { $ne: testAccountId || "__disabled_test_account__" } },
+    { "metadata.buyerId": { $ne: testAccountId || "__disabled_test_account__" } },
+    { userId: { $ne: testAccountId || "__disabled_test_account__" } }
+  ];
+  const filter = includePendingTest
+    ? { $or: [{ status: "Pending" }, { $and: exclusions }] }
+    : { $and: exclusions };
+  query.$and = [...(Array.isArray(query.$and) ? query.$and : []), filter];
+  return query;
 }
 
 function csvEscape(value) {
@@ -6242,8 +6267,8 @@ app.get("/api/admin/transactions", authenticate, requireAdmin, async (req, res, 
       programClauses.push(programQuery);
       summaryClauses.push(programQuery);
     }
-    const query = await buildAdminTransactionQueryWithSearch(req.query, programClauses);
-    const summaryQuery = await buildAdminTransactionQueryWithSearch({ ...req.query, status: "" }, summaryClauses);
+    const query = appendAdminGeneralTransactionFilter(await buildAdminTransactionQueryWithSearch(req.query, programClauses));
+    const summaryQuery = appendAdminGeneralTransactionFilter(await buildAdminTransactionQueryWithSearch({ ...req.query, status: "" }, summaryClauses));
 
     const [total, transactions, summary] = await Promise.all([
       TransactionModel.countDocuments(query),
@@ -6265,8 +6290,8 @@ app.get("/api/admin/deposits", authenticate, requireAdmin, async (req, res, next
   try {
     req.query.type = "Depot";
     const { page, limit, skip } = parseAdminPagination(req.query, 20, 100);
-    const query = await buildAdminTransactionQueryWithSearch(req.query, [{ type: "Depot" }]);
-    const summaryQuery = await buildAdminTransactionQueryWithSearch({ ...req.query, status: "" }, [{ type: "Depot" }]);
+    const query = appendAdminGeneralTransactionFilter(await buildAdminTransactionQueryWithSearch(req.query, [{ type: "Depot" }]), { includePendingTest: true });
+    const summaryQuery = appendAdminGeneralTransactionFilter(await buildAdminTransactionQueryWithSearch({ ...req.query, status: "" }, [{ type: "Depot" }]), { includePendingTest: true });
     const [total, transactions, summary] = await Promise.all([
       TransactionModel.countDocuments(query),
       TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
@@ -6286,8 +6311,8 @@ app.get("/api/admin/deposits", authenticate, requireAdmin, async (req, res, next
 app.get("/api/admin/withdrawals", authenticate, requireAdmin, async (req, res, next) => {
   try {
     const { page, limit, skip } = parseAdminPagination(req.query, 20, 100);
-    const query = await buildAdminTransactionQueryWithSearch(req.query, [{ type: "Retrait" }]);
-    const summaryQuery = await buildAdminTransactionQueryWithSearch({ ...req.query, status: "" }, [{ type: "Retrait" }]);
+    const query = appendAdminGeneralTransactionFilter(await buildAdminTransactionQueryWithSearch(req.query, [{ type: "Retrait" }]));
+    const summaryQuery = appendAdminGeneralTransactionFilter(await buildAdminTransactionQueryWithSearch({ ...req.query, status: "" }, [{ type: "Retrait" }]));
     const [total, transactions, summary] = await Promise.all([
       TransactionModel.countDocuments(query),
       TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
@@ -6368,7 +6393,7 @@ app.get("/api/admin/export/:section", authenticate, requireAdmin, async (req, re
     if (!["deposits", "withdrawals", "transactions", "swap", "money", "founders", "etf"].includes(section)) {
       return res.status(404).json({ message: "Export admin introuvable." });
     }
-    const query = await buildAdminTransactionQueryWithSearch(req.query, baseClauses);
+    const query = appendAdminGeneralTransactionFilter(await buildAdminTransactionQueryWithSearch(req.query, baseClauses));
     const rows = await TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).limit(5000).lean();
     const owners = await UserModel.find({ id: { $in: rows.map((tx) => tx.userId) } }, safeUserProjection).lean();
     const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
@@ -6411,8 +6436,8 @@ app.get("/api/admin/programs/:program", authenticate, requireAdmin, async (req, 
       const [cicoRequests, exchangeOrders, p2pTransactionsTotal, p2pTransactions] = await Promise.all([
         CicoRequestModel.find({}).sort({ createdAt: -1 }).limit(100).lean(),
         ExchangeOrderModel.find({}).sort({ createdAt: -1 }).limit(100).lean(),
-        TransactionModel.countDocuments({ type: { $in: ["P2P", "CICO", "Merchant"] } }),
-        TransactionModel.find({ type: { $in: ["P2P", "CICO", "Merchant"] } }, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+        TransactionModel.countDocuments(appendAdminGeneralTransactionFilter({ type: { $in: ["P2P", "CICO", "Merchant"] } })),
+        TransactionModel.find(appendAdminGeneralTransactionFilter({ type: { $in: ["P2P", "CICO", "Merchant"] } }), transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
       ]);
       const owners = await UserModel.find({ id: { $in: p2pTransactions.map((tx) => tx.userId) } }, safeUserProjection).lean();
       const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
@@ -6424,13 +6449,13 @@ app.get("/api/admin/programs/:program", authenticate, requireAdmin, async (req, 
     }
 
     if (program === "swap") {
-      const query = {
+      const query = appendAdminGeneralTransactionFilter({
         $or: [
           { type: "Swap" },
           { "metadata.asset": { $in: ["GRSC_PURCHASE", "GRSC_WITHDRAWAL"] } },
           { "metadata.source": /grscoin|afrix_swap/i }
         ]
-      };
+      });
       const [total, transactions] = await Promise.all([
         TransactionModel.countDocuments(query),
         TransactionModel.find(query, transactionListProjection).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
