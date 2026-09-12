@@ -6902,6 +6902,115 @@ async function performFastAdminAction({ action, id, amount, role, adminId, email
       const reviewedAt = nowIso();
       const nextStatus = action === "approve" ? "Completed" : "Rejected";
 
+      if (tx.type === "Depot" && action === "approve" && tx.metadata?.asset === "GRSC_PURCHASE" && tx.metadata?.method === "usdt_bep20") {
+        const rawUsdtAmount = money(tx.metadata?.usdtAmount || tx.metadata?.originalAmount || 0);
+        const grsAmount = money(tx.metadata?.grsAmount || tx.amount);
+        const feeUsdtAmount = money(tx.metadata?.feeUsdtAmount || tx.metadata?.fee || 0);
+        const isTestDeposit = isTestAccountUser({ id: tx.userId });
+        const updatedUser = await UserModel.findOneAndUpdate(
+          { id: tx.userId },
+          [{
+            $set: {
+              grsBalance: {
+                $round: [
+                  { $add: [{ $toDouble: { $ifNull: ["$grsBalance", 0] } }, grsAmount] },
+                  2
+                ]
+              }
+            }
+          }],
+          { new: true, session, lean: true }
+        );
+        if (!updatedUser) {
+          result = { error: "Utilisateur introuvable." };
+          return;
+        }
+
+        const ledgerRows = [{
+          accountType: "user_grs",
+          accountId: tx.userId,
+          direction: "credit",
+          amount: grsAmount,
+          balanceAfter: updatedUser.grsBalance,
+          description: tx.description || "Depot USDT converti en GRSCOIN"
+        }];
+
+        if (!isTestDeposit && rawUsdtAmount > 0) {
+          const platform = await PlatformAccountModel.findOneAndUpdate(
+            { id: "platform" },
+            { $inc: { balance: rawUsdtAmount }, $setOnInsert: { createdAt: nowIso(), fees: 0 } },
+            { upsert: true, new: true, session, lean: true }
+          );
+          ledgerRows.push({
+            accountType: "platform",
+            accountId: "platform",
+            direction: "credit",
+            amount: rawUsdtAmount,
+            balanceAfter: platform.balance,
+            description: "Depot USDT - valeur recue"
+          });
+
+          if (feeUsdtAmount > 0) {
+            const feeSettings = await getFeeSettings(session);
+            await creditPlatformRevenue({
+              amount: feeUsdtAmount,
+              asset: "USDT",
+              description: "Commission depot USDT converti en GRSCOIN",
+              source: "grscoin_purchase_fee",
+              referenceId: tx.id,
+              extra: { sourceUserId: tx.userId, reviewedBy: adminId, feeAsset: "USDT" },
+              session,
+              settings: feeSettings
+            });
+            const platformAfterFee = await PlatformAccountModel.findOneAndUpdate(
+              { id: "platform" },
+              { $inc: { balance: -feeUsdtAmount, fees: feeUsdtAmount } },
+              { new: true, session, lean: true }
+            );
+            ledgerRows.push({
+              accountType: "platform",
+              accountId: "platform",
+              direction: "debit",
+              amount: feeUsdtAmount,
+              balanceAfter: platformAfterFee?.balance || 0,
+              description: "Frais depot USDT converti en GRSCOIN"
+            });
+          }
+        }
+
+        const entries = buildLedgerEntries(ledgerRows, {
+          source: isTestDeposit ? "test_grscoin_purchase_approval" : "grscoin_purchase_approval",
+          referenceId: tx.id,
+          extra: { reviewedBy: adminId, testAccount: isTestDeposit, usdtAmount: rawUsdtAmount, feeUsdtAmount }
+        });
+        if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+
+        const txUpdate = await TransactionModel.updateOne(
+          { id: tx.id, status: tx.status },
+          {
+            $set: {
+              status: nextStatus,
+              "metadata.reviewedAt": reviewedAt,
+              "metadata.reviewedBy": adminId,
+              "metadata.testAccount": isTestDeposit
+            }
+          },
+          { session }
+        );
+        if (!txUpdate.matchedCount) {
+          result = { error: "Transaction deja traitee." };
+          return;
+        }
+        result = {
+          transaction: {
+            ...tx,
+            status: nextStatus,
+            metadata: { ...(tx.metadata || {}), reviewedAt, reviewedBy: adminId, testAccount: isTestDeposit }
+          }
+        };
+        return;
+      }
+
       if (tx.type === "Depot" && action === "approve") {
         const isGrsPurchase = tx.metadata?.asset === "GRSC_PURCHASE";
         const isAusdPurchase = tx.metadata?.asset === "AUSD_PURCHASE";
