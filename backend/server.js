@@ -1469,17 +1469,26 @@ function planForAmount(amount) {
 }
 
 function buildLegacyTradingReinvestment(plan, amount) {
-  const nextPlan = plans.find((candidate) => candidate.id === plan.planId) || planForAmount(amount) || plans[0];
+  if (!AUSD_PRICE_USDT || AUSD_PRICE_USDT <= 0) {
+    throw new Error("Prix AUSD/USDT indisponible pour le réinvestissement.");
+  }
+  const previousAsset = String(plan.asset || "USDT").toUpperCase();
+  const previousCapital = money(amount);
+  const capitalUsdtEquivalent = usdtFromAssetAmount(previousCapital, previousAsset);
+  const capitalReinvestedAusd = money(capitalUsdtEquivalent / AUSD_PRICE_USDT);
+  const nextPlan = plans.find((candidate) => candidate.id === plan.planId)
+    || planForAmount(capitalReinvestedAusd)
+    || plans[0];
   const activatedAt = nowIso();
   return {
     id: nanoid(),
     planId: nextPlan.id,
     name: nextPlan.name,
-    amount,
+    amount: capitalReinvestedAusd,
     dailyRate: nextPlan.dailyRate,
     durationDays: nextPlan.durationDays,
     dividendRate: Number(nextPlan.dividendRate || 0),
-    asset: String(nextPlan.asset || plan.asset || "USDT").toUpperCase() === "AUSD" ? "AUSD" : "USDT",
+    asset: "AUSD",
     activatedAt,
     lastPayoutAt: null,
     lastPayoutDate: today(),
@@ -1488,12 +1497,19 @@ function buildLegacyTradingReinvestment(plan, amount) {
     earnedAmount: 0,
     capitalReturnedAt: null,
     status: "active",
-    revenueCommissionEnabled: false,
+    revenueCommissionEnabled: true,
     managementFeeEnabled: true,
     nextManagementFeeAt: addDaysToTimestamp(activatedAt, 365),
     managementFeesPaid: 0,
     autoReinvestment: true,
-    reinvestedFromPlanId: plan.id
+    reinvestedFromPlanId: plan.id,
+    reinvestment: {
+      previousCapital,
+      previousAsset,
+      capitalUsdtEquivalent,
+      conversionRateUsdt: AUSD_PRICE_USDT,
+      capitalReinvestedAusd
+    }
   };
 }
 
@@ -2516,8 +2532,8 @@ async function processDailyPlanEarnings(options = {}) {
               userId: user.id,
               type: "Plan",
               description: "Reinvestissement automatique " + reinvestedPlan.name,
-              amount: currentAmount,
-              displayAmount: formatAssetAmount(currentAmount, reinvestedPlan.asset, "-"),
+              amount: reinvestedPlan.amount,
+              displayAmount: formatAssetAmount(reinvestedPlan.amount, reinvestedPlan.asset, "-"),
               status: "Active",
               createdAt: nowIso(),
               metadata: {
@@ -2526,7 +2542,11 @@ async function processDailyPlanEarnings(options = {}) {
                 previousPlanId: plan.id,
                 planId: reinvestedPlan.planId,
                 asset: reinvestedPlan.asset,
-                capitalReinvested: currentAmount
+                previousCapital: reinvestedPlan.reinvestment.previousCapital,
+                previousAsset: reinvestedPlan.reinvestment.previousAsset,
+                capitalUsdtEquivalent: reinvestedPlan.reinvestment.capitalUsdtEquivalent,
+                conversionRateUsdt: reinvestedPlan.reinvestment.conversionRateUsdt,
+                capitalReinvestedAusd: reinvestedPlan.reinvestment.capitalReinvestedAusd
               }
             }], { session });
           }
