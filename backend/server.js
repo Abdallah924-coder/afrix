@@ -1468,6 +1468,35 @@ function planForAmount(amount) {
     .find((plan) => amount >= plan.minAmount) || null;
 }
 
+function buildLegacyTradingReinvestment(plan, amount) {
+  const nextPlan = plans.find((candidate) => candidate.id === plan.planId) || planForAmount(amount) || plans[0];
+  const activatedAt = nowIso();
+  return {
+    id: nanoid(),
+    planId: nextPlan.id,
+    name: nextPlan.name,
+    amount,
+    dailyRate: nextPlan.dailyRate,
+    durationDays: nextPlan.durationDays,
+    dividendRate: Number(nextPlan.dividendRate || 0),
+    asset: String(nextPlan.asset || plan.asset || "USDT").toUpperCase() === "AUSD" ? "AUSD" : "USDT",
+    activatedAt,
+    lastPayoutAt: null,
+    lastPayoutDate: today(),
+    nextPayoutAt: addDaysToTimestamp(activatedAt, 1),
+    daysPaid: 0,
+    earnedAmount: 0,
+    capitalReturnedAt: null,
+    status: "active",
+    revenueCommissionEnabled: false,
+    managementFeeEnabled: true,
+    nextManagementFeeAt: addDaysToTimestamp(activatedAt, 365),
+    managementFeesPaid: 0,
+    autoReinvestment: true,
+    reinvestedFromPlanId: plan.id
+  };
+}
+
 const planUnlockRules = {
   smart: { requiredStakePlanId: "smart", requiredAmount: 5000, requiredName: "Smart Staking" },
   premium: { requiredStakePlanId: "premium", requiredAmount: 25000, requiredName: "Premium Staking" },
@@ -2383,8 +2412,17 @@ async function processDailyPlanEarnings(options = {}) {
           plan.lastPayoutAt = lastPayoutAt;
           plan.lastPayoutDate = String(lastPayoutAt).slice(0, 10);
           plan.nextPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays);
+          let reinvestedPlan = null;
           if (plan.daysPaid >= currentDurationDays) {
-            if (positiveFiniteNumber(plan.dividendRate) > 0) {
+            if (currentDurationDays === 90) {
+              reinvestedPlan = buildLegacyTradingReinvestment(plan, currentAmount);
+              plan.status = "completed";
+              plan.completedAt = nowIso();
+              plan.reinvestedAt = nowIso();
+              plan.reinvestedPlanId = reinvestedPlan.id;
+              plan.capitalReturnedAt = null;
+              plansList.push(reinvestedPlan);
+            } else if (positiveFiniteNumber(plan.dividendRate) > 0) {
               plan.status = "dividend";
               plan.completedAt = nowIso();
               plan.dividendStartedAt = nowIso();
@@ -2471,6 +2509,27 @@ async function processDailyPlanEarnings(options = {}) {
             createdAt: nowIso(),
             metadata: { planId: plan.planId, activePlanId: plan.id, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate, asset: planAsset }
           }], { session });
+
+          if (reinvestedPlan) {
+            await TransactionModel.create([{
+              id: nanoid(),
+              userId: user.id,
+              type: "Plan",
+              description: "Reinvestissement automatique " + reinvestedPlan.name,
+              amount: currentAmount,
+              displayAmount: formatAssetAmount(currentAmount, reinvestedPlan.asset, "-"),
+              status: "Active",
+              createdAt: nowIso(),
+              metadata: {
+                source: "legacy_plan_auto_reinvestment",
+                activePlanId: reinvestedPlan.id,
+                previousPlanId: plan.id,
+                planId: reinvestedPlan.planId,
+                asset: reinvestedPlan.asset,
+                capitalReinvested: currentAmount
+              }
+            }], { session });
+          }
 
           let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
           for (let level = 0; level < bonusRates.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
