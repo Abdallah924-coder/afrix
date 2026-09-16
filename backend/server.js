@@ -1513,6 +1513,46 @@ function buildLegacyTradingReinvestment(plan, amount) {
   };
 }
 
+function buildLegacyStakingReinvestment(stake) {
+  const durationDays = positiveFiniteNumber(stake.durationDays);
+  if (durationDays !== 90) return null;
+  const sourcePlan = stakingPlans.find((candidate) => candidate.id === stake.planId) || stakingPlans[0];
+  const previousCapital = money(stake.amount);
+  const previousReward = money(stake.rewardAmount);
+  const capitalReinvestedGrsc = money(previousCapital + previousReward);
+  const rewardAmount = money(capitalReinvestedGrsc * sourcePlan.rewardRate);
+  const activatedAt = nowIso();
+  return {
+    id: nanoid(),
+    planId: sourcePlan.id,
+    name: sourcePlan.name,
+    amount: capitalReinvestedGrsc,
+    rewardRate: sourcePlan.rewardRate,
+    rewardAmount,
+    maturityAmount: money(capitalReinvestedGrsc + rewardAmount),
+    durationDays: sourcePlan.durationDays,
+    activatedAt,
+    lastPayoutAt: null,
+    lastPayoutDate: today(),
+    nextPayoutAt: addDaysToTimestamp(activatedAt, 1),
+    daysPaid: 0,
+    earnedAmount: 0,
+    endsAt: addDaysToTimestamp(activatedAt, sourcePlan.durationDays),
+    status: "active",
+    revenueCommissionEnabled: true,
+    managementFeeEnabled: true,
+    nextManagementFeeAt: addDaysToTimestamp(activatedAt, 365),
+    managementFeesPaid: 0,
+    autoReinvestment: true,
+    reinvestedFromStakeId: stake.id,
+    reinvestment: {
+      previousCapital,
+      previousReward,
+      capitalReinvestedGrsc
+    }
+  };
+}
+
 const planUnlockRules = {
   smart: { requiredStakePlanId: "smart", requiredAmount: 5000, requiredName: "Smart Staking" },
   premium: { requiredStakePlanId: "premium", requiredAmount: 25000, requiredName: "Premium Staking" },
@@ -2862,6 +2902,19 @@ async function processDailyPlanEarnings(options = {}) {
           stake.lastPayoutAt = lastPayoutAt;
           stake.lastPayoutDate = String(lastPayoutAt).slice(0, 10);
           stake.nextPayoutAt = addDaysToTimestamp(nextPayoutAt, dueDays);
+          let reinvestedStake = null;
+          if (stake.daysPaid >= currentDurationDays && currentDurationDays === 90) {
+            reinvestedStake = buildLegacyStakingReinvestment({
+              ...stake,
+              rewardAmount: currentRewardAmount
+            });
+            stake.status = "completed";
+            stake.completedAt = nowIso();
+            stake.reinvestedAt = nowIso();
+            stake.reinvestedStakeId = reinvestedStake.id;
+            stake.capitalReturnedAt = null;
+            stakesList.push(reinvestedStake);
+          }
 
           await UserModel.updateOne(
             { id: user.id },
@@ -2918,6 +2971,29 @@ async function processDailyPlanEarnings(options = {}) {
             createdAt: nowIso(),
             metadata: { stakeId: stake.id, planId: stake.planId, days: dueDays, dayFrom: paidDayFrom, dayTo: paidDayTo, payoutDate }
           }], { session });
+
+          if (reinvestedStake) {
+            await TransactionModel.create([{
+              id: nanoid(),
+              userId: user.id,
+              type: "Staking",
+              description: "Reinvestissement automatique " + reinvestedStake.name,
+              amount: reinvestedStake.amount,
+              displayAmount: "-" + reinvestedStake.amount.toFixed(4) + " GRSC",
+              status: "Active",
+              createdAt: nowIso(),
+              metadata: {
+                source: "legacy_staking_auto_reinvestment",
+                activeStakeId: reinvestedStake.id,
+                previousStakeId: stake.id,
+                planId: reinvestedStake.planId,
+                asset: "GRSC",
+                previousCapital: reinvestedStake.reinvestment.previousCapital,
+                previousReward: reinvestedStake.reinvestment.previousReward,
+                capitalReinvestedGrsc: reinvestedStake.reinvestment.capitalReinvestedGrsc
+              }
+            }], { session });
+          }
 
           let currentReferrer = { id: user.referrerId, email: user.referrerEmail, code: user.referrerCode };
           for (let level = 0; level < bonusRates.length && (currentReferrer.id || currentReferrer.email || currentReferrer.code); level += 1) {
