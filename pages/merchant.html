@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="/assets/pwa-icon.svg">
   <meta property="og:image" content="/assets/pwa-icon.svg">
   <meta name="twitter:image" content="/assets/pwa-icon.svg">
-  <title>Merchant - AFRIX</title>
+  <title>Merchant AFRIX MONEY - AFRIX</title>
   <link rel="stylesheet" href="../styles.css?v=20260921-1">
 </head>
 <body data-protected data-page="merchant">
@@ -18,9 +18,146 @@
   <main class="app">
     <header class="topbar" data-topbar></header>
     <section class="hero-card merchant-hero">
-      <span class="pill">Merchant AFRIX</span>
-      <h1>Bientôt disponible.</h1>
-      <p>Le module Merchant sera ouvert après le lancement initial. Les opérations principales sont disponibles depuis Dashboard, Wallet, Plans et Transactions.</p>
+      <span class="pill">AFRIX MONEY · Programme partenaire</span>
+      <h1>Devenez un partenaire officiel du réseau AFRIX MONEY.</h1>
+      <p>Un réseau de Merchants et Agents Agréés pour rapprocher les paiements digitaux, les actifs numériques et les services financiers de proximité des utilisateurs à travers l'Afrique.</p>
+      <div class="principle-strip" aria-label="Réseau AFRIX MONEY">
+        <span>Cash In / Cash Out</span>
+        <span>Achat et vente d'USDT</span>
+        <span>Commissions éligibles</span>
+        <span>Accompagnement local</span>
+      </div>
+    </section>
+
+    <section class="stats merchant-stats" aria-label="État du compte merchant">
+      <article><small>Statut candidature</small><strong data-merchant-application-status>Chargement...</strong><span class="muted">Validation par l'équipe AFRIX</span></article>
+      <article><small>Wallet disponible</small><strong data-merchant-wallet-available>0 USDT</strong><span class="muted">Liquidité opérationnelle</span></article>
+      <article><small>Wallet en attente</small><strong data-merchant-wallet-pending>0 USDT</strong><span class="muted">Opérations en cours</span></article>
+      <article><small>Bonus merchant</small><strong data-merchant-wallet-bonus>0 USDT</strong><span class="muted">Bonus cumulés</span></article>
+      <article><small>Compte principal</small><strong data-merchant-main-balance>0 USDT</strong><span class="muted">Après transfert</span></article>
+    </section>
+
+    <section class="grid two">
+      <article class="panel">
+        <span class="pill">Pourquoi rejoindre le réseau</span>
+        <h1>Un rôle de proximité dans l'économie digitale.</h1>
+        <div class="principle-list">
+          <span>Développer une activité de services financiers digitaux</span>
+          <span>Générer des commissions sur les opérations éligibles</span>
+          <span>Développer une clientèle locale</span>
+          <span>Accéder à un réseau de partenaires AFRIX</span>
+          <span>Accompagner l'adoption des actifs numériques</span>
+        </div>
+      </article>
+      <article class="panel">
+        <span class="pill">Conditions d'éligibilité</span>
+        <h1>Un engagement vérifiable.</h1>
+        <div class="partner-requirements">
+          <div><span>Compte</span><strong>AFRIX CAPITAL INVESTMENT</strong><small>Compte actif requis</small></div>
+          <div><span>Participation</span><strong>10 000 GRSC minimum</strong><small>Staking · 365 jours minimum</small></div>
+          <div><span>Communauté</span><strong>25 membres minimum</strong><small>WhatsApp, Telegram ou autre plateforme</small></div>
+          <div><span>Équipe directe</span><strong>5 partenaires actifs</strong><small>Vérifiés dans le réseau AFRIX</small></div>
+          <div><span>Compétences</span><strong>Validation obligatoire</strong><small>Wallet, USDT, blockchain, sécurité et CICO</small></div>
+          <div><span>Liquidité</span><strong>1 500 USDT minimum</strong><small>1 000 USDT + 500 USDT local</small></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid two">
+      <form class="panel" data-merchant-application-form>
+        <div class="panel-head"><div><span class="pill">Candidature</span><h1>Devenir Merchant</h1></div></div>
+        <p class="muted">Soumettez votre profil. L'activation intervient après vérification de l'éligibilité et de la garantie.</p>
+        <label>Nom commercial<input name="businessName" required minlength="2" placeholder="Ex. AFRIX Services Kinshasa"></label>
+        <label>Pays<select name="country" data-country-select required><option value="">Sélectionnez un pays</option></select></label>
+        <label>Ville<input name="city" required minlength="2" placeholder="Kinshasa"></label>
+        <label>WhatsApp professionnel<input name="phone" required minlength="8" placeholder="+243..."></label>
+        <label>Réseau Mobile Money<input name="paymentProvider" required minlength="2" placeholder="MTN Mobile Money"></label>
+        <label>Numéro de paiement Mobile Money<input name="paymentNumber" required minlength="8" placeholder="+242..."></label>
+        <label>Moyens de paiement<input name="methods" required minlength="2" placeholder="Mobile Money, Airtel Money, Orange Money"></label>
+        <div class="grid two"><label>Taux Cash In (FCFA / USDT)<input name="cashInRate" type="number" min="1" step="1" value="650" required></label><label>Taux Cash Out (FCFA / USDT)<input name="cashOutRate" type="number" min="1" step="1" value="550" required></label></div>
+        <label>Communauté active (membres)<input name="communityMembers" type="number" min="25" step="1" value="25" required></label>
+        <label>Liquidité de fonctionnement (USDT)<input name="operatingLiquidity" type="number" min="1500" step="0.01" value="1500" required></label>
+        <label class="switch-row"><span>Je maîtrise les wallets, USDT, blockchain, sécurité et procédures CICO</span><input name="digitalSkillsConfirmed" type="checkbox" value="true" required></label>
+        <button class="btn primary full" type="submit">Soumettre ma candidature</button>
+      </form>
+      <form class="panel" data-cico-form>
+        <span class="pill">Demande client</span>
+        <h1>Créer une référence CICO</h1>
+        <p class="muted">Demandez un dépôt ou un retrait, puis présentez la référence à un merchant agréé.</p>
+        <label>Merchant sélectionné<select name="merchantId" data-cico-merchant required><option value="">Recherchez puis sélectionnez un Merchant ci-dessous</option></select></label>
+        <label>Opération<select name="operation" data-cico-operation><option value="Depot">Dépôt / Cash In</option><option value="Retrait">Retrait / Cash Out</option></select></label>
+        <label>Pays<select name="country" data-country-select required><option value="">Sélectionnez un pays</option></select></label>
+        <label>Montant USDT (maximum 250)<input name="amount" data-cico-amount type="number" min="1" max="250" step="0.01" value="1" required></label>
+        <label>Preuve du paiement local (Cash In)<input name="proof" type="file" accept="image/png,image/jpeg,image/webp" data-cico-proof></label>
+        <button class="btn primary full" type="submit">Générer la référence</button>
+        <div class="info-grid compact-info"><div><span>Cash In</span><strong>Commission 2%</strong></div><div><span>Cash Out</span><strong>Commission 1,5%</strong></div></div>
+      </form>
+    </section>
+
+    <section class="grid two">
+      <article class="panel">
+        <span class="pill">Rémunération</span><h1>Commission d'approvisionnement</h1>
+        <div class="commission-table">
+          <div><span>1 000 – 4 999 USDT / mois</span><strong>0,50%</strong></div>
+          <div><span>5 000 – 24 999 USDT / mois</span><strong>0,60%</strong></div>
+          <div><span>25 000 – 99 999 USDT / mois</span><strong>0,70%</strong></div>
+          <div><span>100 000 USDT et plus</span><strong>0,80%</strong></div>
+        </div>
+      </article>
+      <article class="panel">
+        <span class="pill">Performance</span><h1>Commission de la zone</h1>
+        <div class="commission-table">
+          <div><span>1 000 – 9 999 USDT / mois</span><strong>0,25%</strong></div>
+          <div><span>10 000 – 49 999 USDT / mois</span><strong>0,36%</strong></div>
+          <div><span>50 000 – 99 999 USDT / mois</span><strong>0,47%</strong></div>
+          <div><span>100 000 USDT et plus</span><strong>0,58%</strong></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel cico-reference-card" data-cico-reference-output hidden>
+      <span class="pill">Référence AFRIX MONEY</span><h1 data-cico-reference>REFERENCE</h1><p class="muted" data-cico-reference-summary></p>
+      <p class="muted">Présentez cette référence et votre email au merchant choisi.</p>
+    </section>
+
+    <section class="grid two">
+      <article class="panel">
+        <span class="pill">Opérations Merchant</span><h1>Valider une référence CICO</h1>
+        <form data-merchant-code-form><label>Référence client<input name="reference" required placeholder="AFX-DP-..."></label><button class="btn secondary full" type="submit">Rechercher la demande</button></form>
+        <div data-merchant-code-result></div>
+      </article>
+      <form class="panel" data-merchant-transfer-form>
+        <span class="pill">Gestion des fonds</span><h1>Transférer vers le compte principal</h1>
+        <p class="muted">Déplacez les fonds disponibles du wallet merchant vers votre solde principal.</p>
+        <label>Montant USDT<input name="amount" type="number" min="0.01" step="0.01" required></label>
+        <button class="btn primary full" type="submit">Transférer les fonds</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <span class="pill">Mes demandes</span><h1>Références CICO reçues</h1><div class="list" data-merchant-request-list></div>
+    </section>
+
+    <section class="grid two">
+      <form class="panel" data-exchange-ad-form>
+        <span class="pill">AFRIX EXCHANGE</span><h1>Publier une annonce</h1>
+        <p class="muted">Disponible après approbation du profil Merchant.</p>
+        <label>Marché<select name="type"><option value="sell">Je vends des USDT · 630–650 FCFA</option><option value="buy">J'achète des USDT · 550–600 FCFA</option></select></label>
+        <label>Taux (FCFA / USDT)<input name="rate" type="number" min="550" max="650" step="1" required placeholder="630"></label>
+        <div class="grid two"><label>Minimum USDT<input name="minAmount" type="number" min="1" step="0.01" value="1" required></label><label>Maximum USDT<input name="maxAmount" type="number" min="1" step="0.01" value="1000" required></label></div>
+        <div class="grid two"><label>Pays<select name="country" data-country-select required><option value="">Sélectionnez un pays</option></select></label><label>Ville<input name="city" required minlength="2" placeholder="Kinshasa"></label></div>
+        <label>WhatsApp de l'annonce<input name="whatsapp" required minlength="8" placeholder="+243..."></label>
+        <label>Moyens de paiement<input name="methods" required minlength="2" placeholder="Mobile Money, Airtel Money"></label>
+        <label>Instructions de paiement<textarea name="paymentInstructions" required minlength="4" rows="3" placeholder="Numéro ou compte à utiliser..."></textarea></label>
+        <button class="btn primary full" type="submit">Publier l'annonce</button>
+      </form>
+      <article class="panel"><span class="pill">Mes annonces</span><h1>Suivi Exchange</h1><div class="list" data-merchant-exchange-ads></div><h2>Ordres reçus</h2><div class="list" data-merchant-exchange-orders></div></article>
+    </section>
+
+    <section class="panel">
+      <span class="pill">Opérations Exchange</span><h1>Confirmer un ordre</h1>
+      <form data-exchange-code-form class="grid two"><label>Référence Exchange<input name="reference" required placeholder="AFX-BUY-..."></label><button class="btn secondary" type="submit">Rechercher l'ordre</button></form>
+      <div data-exchange-code-result></div>
     </section>
   </main>
   <script src="../app.js?v=20260921-1"></script>

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f5d43">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/assets/pwa-icon.svg">
+  <link rel="shortcut icon" href="/assets/pwa-icon.svg">
+  <link rel="apple-touch-icon" href="/assets/pwa-icon.svg">
+  <meta property="og:image" content="/assets/pwa-icon.svg">
+  <meta name="twitter:image" content="/assets/pwa-icon.svg">
+  <title>Agents agréés - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css?v=20260921-1">
+</head>
+<body data-protected data-page="merchants">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app">
+    <header class="topbar" data-topbar></header>
+    <section class="hero-card merchant-hero">
+      <span class="pill">AFRIX MONEY · Agents agréés</span>
+      <h1>Trouvez un Merchant disponible dans votre zone.</h1>
+      <p>Comparez les agents vérifiés, leur liquidité, leurs moyens de paiement, leurs taux et leur historique avant d'initier une opération.</p>
+      <div class="principle-strip" aria-label="Recherche Merchant"><span>Pays et ville</span><span>Liquidité USDT</span><span>Mobile Money</span><span>Fiabilité vérifiée</span></div>
+    </section>
+
+    <section class="panel">
+      <span class="pill">Annuaire opérationnel</span>
+      <h1>Rechercher un agent</h1>
+      <label>Pays<select data-merchant-country-search data-country-select><option value="">Tous les pays</option></select></label>
+      <label>Ville, nom ou réseau Mobile Money<input data-merchant-search placeholder="Ex. Kinshasa, MTN ou Airtel"></label>
+      <div class="list" data-merchant-results></div>
+    </section>
+
+    <section class="grid two">
+      <article class="panel"><span class="pill">Annonces de vente</span><h1>Merchants qui vendent des USDT</h1><p class="muted">Sélectionnez une annonce pour lancer un ordre dans AFRIX Exchange.</p><div class="exchange-list" data-exchange-buy-list></div></article>
+      <article class="panel"><span class="pill">Annonces d'achat</span><h1>Merchants qui achètent des USDT</h1><p class="muted">Comparez les taux et les moyens de paiement avant de vendre.</p><div class="exchange-list" data-exchange-sell-list></div></article>
+    </section>
+
+    <section class="panel cico-reference-card" data-exchange-order-output hidden></section>
+    <section class="panel">
+      <span class="pill">Sécurité</span>
+      <h1>Chaque opération reste traçable</h1>
+      <p class="muted">Choisissez un agent, vérifiez son numéro de paiement et son taux, puis créez votre demande depuis AFRIX. Pour un montant supérieur à 250 USDT, créez plusieurs demandes afin de conserver le contrôle et les preuves de chaque règlement.</p>
+      <a class="btn primary" href="/merchant">Ouvrir les opérations Merchant</a>
+    </section>
+  </main>
+  <script src="../app.js?v=20260921-1"></script>
+</body>
+</html>

@@ -2,7 +2,7 @@ const API_BASE = window.AFRIX_API_BASE || "/api";
 const APP_VERSION = "20260921-1";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
 const DISMISSED_NOTIFICATIONS_KEY = "afrix_dismissed_notifications";
-const API_TIMEOUT_MS = 20_000;
+const API_TIMEOUT_MS = 60_000;
 const MAX_PROOF_FILE_BYTES = 5 * 1024 * 1024;
 let registerCountryOptionsHtml = null;
 
@@ -17,6 +17,7 @@ const pageTitles = {
   etf: "AFRIX ETF PROGRAM",
   swap: "AFRIX Swap GRSCOIN",
   exchange: "Exchange",
+  merchants: "Agents agréés",
   merchant: "Merchant",
   network: "Reseau",
   profile: "Profil",
@@ -39,6 +40,7 @@ const navItems = [
   ["etf", "AFRIX ETF PROGRAM", "/etf"],
   ["swap", "AFRIX SWAP GRSCOIN", "/swap"],
   ["exchange", "EXCHANGE", "/exchange"],
+  ["merchants", "AGENTS AGRÉÉS", "/merchants"],
   ["merchant", "MERCHANT", "/merchant"],
   ["network", "RÉSEAU", "/network"],
   ["profile", "PROFIL", "/profile"],
@@ -62,6 +64,7 @@ const mobileMoreNavKeys = [
   "founders-club",
   "etf",
   "exchange",
+  "merchants",
   "merchant",
   "network",
   "profile",
@@ -476,6 +479,11 @@ async function loadCurrentUser() {
   return normalizeUser(data.user || data);
 }
 
+async function loadNotifications() {
+  const data = await apiRequest("/notifications", { timeoutMs: 10_000 });
+  return Array.isArray(data.notifications) ? data.notifications : [];
+}
+
 function normalizeUser(user) {
   return {
     ...emptyUser,
@@ -820,6 +828,7 @@ function userInitials(user = emptyUser) {
 }
 
 function notificationId(item = {}) {
+  if (item.id) return String(item.id);
   return [
     item.date || item.createdAt || "",
     item.type || "",
@@ -868,7 +877,8 @@ function dismissNotificationKeys(user = emptyUser, keys = []) {
 
 function topbarNotificationItems(user = emptyUser) {
   const dismissed = dismissedNotificationIds(user);
-  return (Array.isArray(user.transactions) ? user.transactions : [])
+  const transactions = Array.isArray(user.notifications) ? user.notifications : user.transactions;
+  return (Array.isArray(transactions) ? transactions : [])
     .filter((item) => !notificationKeys(item).some((key) => dismissed.has(key)))
     .slice(0, 4);
 }
@@ -935,6 +945,15 @@ function renderTopbar(page, user = emptyUser) {
       let startX = 0;
       let deltaX = 0;
       let dragged = false;
+      item.addEventListener("click", () => {
+        let keys = [item.dataset.notificationId];
+        try {
+          keys = JSON.parse(item.dataset.notificationKeys || "[]");
+        } catch {
+          keys = [item.dataset.notificationId];
+        }
+        dismissNotificationKeys(user, keys);
+      });
       item.addEventListener("pointerdown", (event) => {
         startX = event.clientX;
         deltaX = 0;
@@ -2080,9 +2099,10 @@ function merchantCard(merchant, reference = "AFX-...") {
 
   return `
     <div class="merchant-card">
-      <span>${escapeHtml(merchant.businessName)}<small>${escapeHtml(merchant.city)}, ${escapeHtml(merchant.country)} - ${escapeHtml(merchant.methods)} - WhatsApp merchant: ${escapeHtml(merchant.phone)} - ${escapeHtml(merchant.limits)}</small></span>
-      <strong>${escapeHtml(merchant.rating || "Actif")}</strong>
+      <span>${escapeHtml(merchant.businessName)}<small>${escapeHtml(merchant.city)}, ${escapeHtml(merchant.country)} - ${escapeHtml(merchant.methods)} - ${escapeHtml(merchant.paymentProvider || "Mobile Money")}: ${escapeHtml(merchant.paymentNumber || merchant.phone || "Non renseigné")} - ${escapeHtml(merchant.limits || "")}</small><small>USDT disponible: ${formatUsdt(merchant.usdtLiquidity || 0)} · Liquidité locale: ${formatUsdt(merchant.localLiquidity || 0)} · ${Number(merchant.transactionCount || 0)} transactions · Réussite: ${Number(merchant.successRate || 0).toLocaleString("fr-FR")} %</small></span>
+      <strong>${escapeHtml(merchant.reliability || merchant.rating || "Actif")}</strong>
       <span class="badge">${escapeHtml(merchant.status || "Disponible")}</span>
+      <button class="btn primary" type="button" data-merchant-select="${escapeHtml(merchant.userId || "")}" data-merchant-country="${escapeHtml(merchant.country || "")}">Choisir</button>
       <a class="btn secondary" href="${whatsAppLink}" target="_blank" rel="noopener">WhatsApp</a>
     </div>
   `;
@@ -2114,9 +2134,9 @@ function renderExchangeAd(ad, user = emptyUser) {
       <div class="principle-list">
         ${methods.map((method) => `<span>${escapeHtml(method)}</span>`).join("")}
       </div>
-      <small>Limites: ${formatUsdt(ad.minAmount)} à ${formatUsdt(ad.maxAmount)}</small>
+      <small>Limites de l'annonce: ${formatUsdt(ad.minAmount)} à ${formatUsdt(ad.maxAmount)} · Ordre maximum AFRIX: 250 USDT</small>
       <form data-exchange-order-form data-ad-id="${escapeHtml(ad.id)}" data-ad-type="${escapeHtml(ad.type)}" data-rate="${Number(ad.rate || 0)}">
-        <label>Montant USDT<input name="amount" type="number" min="${Number(ad.minAmount || 1)}" max="${Number(ad.maxAmount || 0)}" step="0.01" value="${Number(ad.minAmount || 1)}" required data-exchange-amount></label>
+        <label>Montant USDT<input name="amount" type="number" min="${Number(ad.minAmount || 1)}" max="${Math.min(Number(ad.maxAmount || 250), 250)}" step="0.01" value="${Number(ad.minAmount || 1)}" required data-exchange-amount></label>
         <label>Moyen de paiement
           <select name="paymentMethod" required>
             ${methods.map((method) => `<option>${escapeHtml(method)}</option>`).join("")}
@@ -2140,11 +2160,13 @@ function renderExchange(user) {
   const buyList = document.querySelector("[data-exchange-buy-list]");
   const sellList = document.querySelector("[data-exchange-sell-list]");
   const orderOutput = document.querySelector("[data-exchange-order-output]");
+  const marketSearch = document.querySelector("[data-exchange-market-search]");
+  const marketCountry = document.querySelector("[data-exchange-country-search]");
   if (!buyList && !sellList) return;
 
-  Promise.all([
-    apiRequest("/exchange/ads?type=sell"),
-    apiRequest("/exchange/ads?type=buy")
+  const loadMarkets = (query = "") => Promise.all([
+    apiRequest(`/exchange/ads?type=sell&query=${encodeURIComponent(query)}`),
+    apiRequest(`/exchange/ads?type=buy&query=${encodeURIComponent(query)}`)
   ]).then(([buyData, sellData]) => {
     renderExchangeAds(buyList, Array.isArray(buyData.ads) ? buyData.ads : [], user);
     renderExchangeAds(sellList, Array.isArray(sellData.ads) ? sellData.ads : [], user);
@@ -2153,6 +2175,16 @@ function renderExchange(user) {
     renderExchangeAds(sellList, []);
     showToast(error.message, "error");
   });
+  loadMarkets();
+  if (marketSearch && !marketSearch.dataset.boundSearch) {
+    marketSearch.dataset.boundSearch = "true";
+    marketSearch.addEventListener("input", () => loadMarkets(marketSearch.value.trim()));
+  }
+  if (marketCountry && !marketCountry.dataset.boundSearch) {
+    marketCountry.dataset.boundSearch = "true";
+    hydrateProfileCountrySelect(marketCountry);
+    marketCountry.addEventListener("change", () => loadMarkets([marketCountry.value, marketSearch?.value].filter(Boolean).join(" ")));
+  }
 
   document.querySelector("[data-exchange-orders-list]")?.replaceChildren();
   const ordersList = document.querySelector("[data-exchange-orders-list]");
@@ -2189,20 +2221,17 @@ function renderExchange(user) {
         const order = response.order;
         const currentOutput = document.querySelector("[data-exchange-order-output]");
         if (currentOutput && order) {
-          const whatsappText = encodeURIComponent(`Bonjour ${order.merchantName}, voici ma référence AFRIX Exchange: ${order.reference}. Montant: ${formatUsdt(order.amount)}. Paiement: ${order.paymentMethod}.`);
-          const whatsappLink = `https://wa.me/${String(order.merchantWhatsapp || "").replace(/[^\d]/g, "")}?text=${whatsappText}`;
           currentOutput.hidden = false;
           currentOutput.innerHTML = `
             <span class="pill">Référence générée</span>
             <h1>${escapeHtml(order.reference)}</h1>
-            <p class="muted">${exchangeTypeLabel(order.type)}: ${formatUsdt(order.amount)} pour ${formatXaf(order.localAmount)} au taux de ${Math.round(order.rate).toLocaleString("fr-FR")} FCFA.</p>
+            <p class="muted">${exchangeTypeLabel(order.type)}: ${formatUsdt(order.amount)} pour ${formatXaf(order.localAmount)} au taux de ${Math.round(order.rate).toLocaleString("fr-FR")} FCFA. Frais AFRIX: ${formatUsdt(order.fee || 0)}.</p>
             <div class="wallet-address">
               <div>
                 <span>Références merchant</span>
                 <strong>${escapeHtml(order.paymentInstructions)}</strong>
-                <small>Après paiement, contactez l'annonceur sur WhatsApp avec votre référence.</small>
+                <small>Effectuez uniquement le paiement indiqué dans cet ordre et conservez les preuves. Ne finalisez jamais l'opération hors AFRIX.</small>
               </div>
-              <a class="btn secondary" href="${whatsappLink}" target="_blank" rel="noopener">WhatsApp</a>
             </div>
           `;
         }
@@ -2229,8 +2258,18 @@ function renderMerchants(user) {
   const requestList = document.querySelector("[data-merchant-request-list]");
   const exchangeAdsList = document.querySelector("[data-merchant-exchange-ads]");
   const exchangeOrdersList = document.querySelector("[data-merchant-exchange-orders]");
+  const page = document.body.dataset.page;
+  document.querySelectorAll("[data-country-select]").forEach((select) => hydrateProfileCountrySelect(select, select.value || user.country || ""));
 
   if (applicationStatus) applicationStatus.textContent = user.merchantApplicationStatus || "Aucun profil";
+  if (canUseBackoffice(user)) {
+    ["communityMembers", "operatingLiquidity", "digitalSkillsConfirmed"].forEach((name) => {
+      const field = document.querySelector(`[data-merchant-application-form] [name="${name}"]`);
+      const label = field?.closest("label");
+      if (field) field.required = false;
+      if (label) label.hidden = true;
+    });
+  }
 
   const wallet = user.merchantWallet;
   if (merchantWalletAvailable) merchantWalletAvailable.textContent = formatUsdt(wallet.available);
@@ -2238,20 +2277,45 @@ function renderMerchants(user) {
   if (merchantWalletBonus) merchantWalletBonus.textContent = formatUsdt(wallet.bonus);
   if (merchantMainBalance) merchantMainBalance.textContent = formatUsdt(wallet.mainBalance);
 
-  renderMerchantCards(merchantList, user.merchants);
-  renderMerchantCards(merchantResults, user.merchants);
+  if (merchantList) renderMerchantCards(merchantList, user.merchants);
+  if (merchantResults) merchantResults.innerHTML = page === "merchants"
+    ? `<p class="muted">Sélectionnez un pays ou saisissez une recherche pour afficher les agents disponibles.</p>`
+    : "";
 
-  if (merchantSearch && merchantResults) {
-    merchantSearch.addEventListener("input", async () => {
-      const query = merchantSearch.value.trim();
+  const updateMerchantOptions = (rows) => {
+    const select = document.querySelector("[data-cico-merchant]");
+    if (!select) return;
+    select.innerHTML = rows.length
+      ? `<option value="">Sélectionner un Merchant</option>${rows.map((merchant) => `<option value="${escapeHtml(merchant.userId || "")}">${escapeHtml(merchant.businessName || "Merchant")} · ${escapeHtml(merchant.country || "")} · ${formatUsdt(merchant.usdtLiquidity || 0)} disponibles</option>`).join("")}`
+      : `<option value="">Aucun Merchant agréé disponible pour le moment</option>`;
+  };
+  updateMerchantOptions(user.merchants);
+  const requestedMerchant = new URLSearchParams(window.location.search).get("merchant");
+  if (requestedMerchant) {
+    const merchantSelect = document.querySelector("[data-cico-merchant]");
+    if (merchantSelect) merchantSelect.value = requestedMerchant;
+  }
+
+  const merchantCountrySearch = document.querySelector("[data-merchant-country-search]");
+  const searchMerchants = async () => {
+      const query = [merchantCountrySearch?.value || "", merchantSearch?.value || ""].filter(Boolean).join(" ").trim();
+      if (!query) {
+        merchantResults.innerHTML = `<p class="muted">Sélectionnez un pays ou saisissez une recherche pour afficher les agents disponibles.</p>`;
+        return;
+      }
       try {
         const data = await apiRequest(`/merchants?query=${encodeURIComponent(query)}`);
-        renderMerchantCards(merchantResults, Array.isArray(data.merchants) ? data.merchants : []);
+        const rows = Array.isArray(data.merchants) ? data.merchants : [];
+        renderMerchantCards(merchantResults, rows);
+        updateMerchantOptions(rows);
       } catch (error) {
         renderMerchantCards(merchantResults, []);
         showToast(error.message, "error");
       }
-    });
+  };
+  if (merchantResults && (merchantSearch || merchantCountrySearch)) {
+    merchantSearch?.addEventListener("input", searchMerchants);
+    merchantCountrySearch?.addEventListener("change", searchMerchants);
   }
 
   if (requestList) {
@@ -2279,6 +2343,24 @@ function renderMerchants(user) {
         <strong>${formatUsdt(order.amount)}</strong>
       </div>
     `).join("") : `<p class="muted">Aucune demande Exchange reçue.</p>`;
+  }
+
+  if (!document.body.dataset.merchantSelectionBound) {
+    document.body.dataset.merchantSelectionBound = "true";
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-merchant-select]");
+      if (!button) return;
+      const select = document.querySelector("[data-cico-merchant]");
+      const country = document.querySelector("[data-cico-form] [name='country']");
+      if (!select) {
+        window.location.href = `/merchant?merchant=${encodeURIComponent(button.dataset.merchantSelect || "")}`;
+        return;
+      }
+      if (select) select.value = button.dataset.merchantSelect || "";
+      if (country) country.value = button.dataset.merchantCountry || "";
+      document.querySelector("[data-cico-form]")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      showToast("Merchant sélectionné. Vérifiez le numéro et le taux affichés.");
+    });
   }
 }
 
@@ -3986,10 +4068,31 @@ function setupActions(user) {
       showToast("Montant minimum retrait: 10 USDT.", "error");
       return;
     }
+    if (amount > 250) {
+      showToast("Montant maximum par opération: 250 USDT. Créez plusieurs demandes.", "error");
+      return;
+    }
+    if (!form.querySelector("[name='merchantId']")?.value) {
+      showToast("Sélectionnez d'abord un Merchant agréé.", "error");
+      return;
+    }
+    const proof = form.querySelector("[name='proof']")?.files?.[0];
+    if (operation === "Depot" && !proof) {
+      showToast("Ajoutez la preuve du paiement local pour un Cash In.", "error");
+      return;
+    }
+    if (proof && proof.size > MAX_PROOF_FILE_BYTES) {
+      showToast("Preuve trop lourde. Taille maximale: 5 Mo.", "error");
+      return;
+    }
     const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Creation...");
     try {
-      const response = await apiJson("/cico-requests", formToObject(form));
+      const response = await apiRequest("/cico-requests", {
+        method: "POST",
+        body: new FormData(form),
+        timeoutMs: 20_000
+      });
       if (response.reference) showCicoReference(response.reference, response.operation || "CICO", response.amount, response.fee || 0);
       showToast("Reference CICO creee.");
     } catch (error) {
@@ -4038,12 +4141,12 @@ function setupActions(user) {
     const data = formToObject(form);
     const rate = Number(data.rate || 0);
     const type = String(data.type || "");
-    if (type === "sell" && (rate < 550 || rate > 600)) {
-      showToast("Le prix de vente doit être compris entre 550 et 600 FCFA.", "error");
+    if (type === "sell" && (rate < 630 || rate > 650)) {
+      showToast("Le taux de vente USDT doit être compris entre 630 et 650 FCFA.", "error");
       return;
     }
-    if (type === "buy" && (rate < 630 || rate > 650)) {
-      showToast("Le prix d'achat doit être compris entre 630 et 650 FCFA.", "error");
+    if (type === "buy" && (rate < 550 || rate > 600)) {
+      showToast("Le taux d'achat USDT doit être compris entre 550 et 600 FCFA.", "error");
       return;
     }
     const submitButton = form.querySelector('button[type="submit"]');
@@ -4567,8 +4670,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
+  let currentUser = emptyUser;
   const loadProtectedPage = async () => {
     const user = await loadCurrentUser();
+    currentUser = user;
     if (page === "admin" && !canUseBackoffice(user)) {
       window.location.href = "/dashboard";
       return;
@@ -4591,6 +4696,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   try {
     await loadProtectedPage();
+    window.setInterval(async () => {
+      try {
+        const notifications = await loadNotifications();
+        renderTopbar(page, { ...currentUser, transactions: notifications });
+      } catch {
+        // Notification refresh is best effort and must not interrupt the current page.
+      }
+    }, 30_000);
   } catch (error) {
     showLoadError(error.message);
   }

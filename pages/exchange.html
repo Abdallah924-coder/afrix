@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="/assets/pwa-icon.svg">
   <meta property="og:image" content="/assets/pwa-icon.svg">
   <meta name="twitter:image" content="/assets/pwa-icon.svg">
-  <title>Exchange - AFRIX</title>
+  <title>AFRIX Exchange - Marché local</title>
   <link rel="stylesheet" href="../styles.css?v=20260921-1">
 </head>
 <body data-protected data-page="exchange">
@@ -18,10 +18,37 @@
   <main class="app">
     <header class="topbar" data-topbar></header>
     <section class="hero-card exchange-hero">
-      <span class="pill">AFRIX Exchange</span>
-      <h1>Bientôt disponible.</h1>
-      <p>Le module Exchange sera activé après le lancement initial. Les dépôts et retraits USDT restent disponibles depuis le Wallet.</p>
+      <span class="pill">AFRIX EXCHANGE · Marché local</span>
+      <h1>Achetez et vendez vos USDT avec des merchants vérifiés.</h1>
+      <p>Un marché de proximité reliant utilisateurs et partenaires locaux grâce aux annonces, aux références de transaction et à une validation par le merchant.</p>
+      <div class="principle-strip" aria-label="Fonctionnement Exchange"><span>Annonce locale</span><span>Référence unique</span><span>Paiement direct</span><span>Validation merchant</span></div>
     </section>
+
+    <section class="stats" aria-label="Repères Exchange">
+      <article><small>Achat USDT</small><strong>550–600 FCFA</strong><span class="muted">Selon l'annonce</span></article>
+      <article><small>Vente USDT</small><strong>630–650 FCFA</strong><span class="muted">Selon l'annonce</span></article>
+      <article><small>Règlement</small><strong>Escrow logique</strong><span class="muted">Réservation avant validation</span></article>
+      <article><small>Support</small><strong>WhatsApp</strong><span class="muted">Contact de l'annonceur</span></article>
+    </section>
+
+    <section class="grid two">
+      <article class="panel"><span class="pill">Marché local</span><h1>Rechercher une annonce</h1><p class="muted">Filtrez par pays, ville, Merchant ou moyen de paiement pour trouver un agent disponible.</p><label>Pays<select data-exchange-country-search data-country-select><option value="">Tous les pays</option></select></label><label>Recherche Exchange<input data-exchange-market-search placeholder="Ex. Kinshasa, MTN"></label></article>
+      <article class="panel"><span class="pill">Règle opérationnelle</span><h1>Une demande à la fois, 250 USDT maximum</h1><p class="muted">Pour les montants importants, créez plusieurs ordres distincts afin de conserver la traçabilité et de vérifier chaque règlement.</p></article>
+    </section>
+
+    <section class="grid two">
+      <article class="panel"><span class="pill">Acheter des USDT</span><h1>Les annonces de vente</h1><p class="muted">Choisissez un Merchant qui vend des USDT, indiquez le montant et suivez les instructions de paiement local.</p><div class="exchange-list" data-exchange-buy-list></div></article>
+      <article class="panel"><span class="pill">Vendre des USDT</span><h1>Les annonces d'achat</h1><p class="muted">Vos USDT sont réservés lors de la demande puis transférés au merchant après confirmation de l'opération.</p><div class="exchange-list" data-exchange-sell-list></div></article>
+    </section>
+
+    <section class="panel cico-reference-card" data-exchange-order-output hidden></section>
+
+    <section class="grid two">
+      <article class="panel"><span class="pill">Mes opérations</span><h1>Ordres Exchange</h1><div class="list" data-exchange-orders-list></div></article>
+      <article class="panel"><span class="pill">Parcours sécurisé</span><h1>Comment ça fonctionne ?</h1><div class="principle-list"><span>1. Sélectionnez une annonce adaptée à votre pays et votre moyen de paiement.</span><span>2. Créez une demande avec votre compte AFRIX et recevez une référence.</span><span>3. Réglez ou préparez le transfert selon les instructions du merchant.</span><span>4. Le merchant confirme l'opération et le solde est mis à jour.</span></div></article>
+    </section>
+
+    <section class="panel"><span class="pill">Transparence</span><h1>Un marché connecté à AFRIX MONEY</h1><p class="muted">Les annonces sont publiées par des Merchants agréés. Les limites, le taux, les moyens de paiement, le contact WhatsApp et les instructions sont visibles avant la création de l'ordre. En cas de difficulté, conservez votre référence et contactez le support.</p><a class="btn secondary" href="/merchant">Devenir Merchant</a></section>
   </main>
   <script src="../app.js?v=20260921-1"></script>
 </body>

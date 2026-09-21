@@ -63,6 +63,7 @@ export const pageRoutes = {
   "/founders-club": "pages/founders-club.html",
   "/etf": "pages/etf.html",
   "/exchange": "pages/exchange.html",
+  "/merchants": "pages/merchants.html",
   "/merchant": "pages/merchant.html",
   "/elite": "pages/elite.html",
   "/admin": "pages/admin.html",

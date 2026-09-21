@@ -115,6 +115,8 @@ const AUSD_SWAP_ADMIN_SHARE = 0.10;
 const AUSD_SWAP_DEVELOPER_SHARE = 0.10;
 const CDF_DEPOSIT_RATE_USDT = 2800;
 const CDF_WITHDRAWAL_RATE_USDT = 2365;
+const CICO_CASH_IN_RATE = 0.02;
+const CICO_CASH_OUT_RATE = 0.015;
 const STAKING_PROGRAM_FEE_RATE = 0.005;
 const TRADING_PROGRAM_FEE_RATE = 0.0075;
 const ETF_PROGRAM_FEE_RATE = 0.01;
@@ -1308,11 +1310,11 @@ function grsMarketStats(db = {}) {
 function validateExchangeRate(type, rate) {
   const numericRate = Number(rate);
   if (!Number.isFinite(numericRate)) return "Taux invalide.";
-  if (type === "sell" && (numericRate < 550 || numericRate > 600)) {
-    return "Le prix de vente doit être compris entre 550 et 600 FCFA.";
+  if (type === "sell" && (numericRate < 630 || numericRate > 650)) {
+    return "Le Merchant qui vend des USDT doit appliquer un taux compris entre 630 et 650 FCFA.";
   }
-  if (type === "buy" && (numericRate < 630 || numericRate > 650)) {
-    return "Le prix d'achat doit être compris entre 630 et 650 FCFA.";
+  if (type === "buy" && (numericRate < 550 || numericRate > 600)) {
+    return "Le Merchant qui achète des USDT doit appliquer un taux compris entre 550 et 600 FCFA.";
   }
   return "";
 }
@@ -1364,6 +1366,31 @@ function publicExchangeAd(ad, merchant) {
     rate: money(ad.rate),
     minAmount: money(ad.minAmount),
     maxAmount: money(ad.maxAmount)
+  };
+}
+
+function publicMerchantProfile(user, db) {
+  const profile = user?.merchantProfile || {};
+  const cicoOrders = db.cicoRequests.filter((request) => request.merchantId === user.id);
+  const exchangeOrders = db.exchangeOrders.filter((order) => order.merchantId === user.id);
+  const completedOrders = [...cicoOrders, ...exchangeOrders].filter((item) => item.status === "Completed" || item.status === "completed");
+  const totalOrders = cicoOrders.length + exchangeOrders.length;
+  return {
+    ...profile,
+    userId: user.id,
+    businessName: profile.businessName || user.fullName || user.email,
+    country: profile.country || user.country || "",
+    city: profile.city || "",
+    methods: profile.methods || "",
+    phone: profile.phone || "",
+    paymentProvider: profile.paymentProvider || "",
+    paymentNumber: profile.paymentNumber || "",
+    usdtLiquidity: money(user.merchantWallet?.available),
+    localLiquidity: money(profile.localLiquidity),
+    transactionCount: totalOrders,
+    completedTransactions: completedOrders.length,
+    successRate: totalOrders ? Math.round((completedOrders.length / totalOrders) * 1000) / 10 : 100,
+    reliability: profile.rating || "Nouveau merchant"
   };
 }
 
@@ -1629,7 +1656,7 @@ function composeUser(db, user) {
 
   const approvedMerchants = db.users
     .filter((candidate) => candidate.merchantProfile?.status === "approved")
-    .map((candidate) => candidate.merchantProfile);
+    .map((candidate) => publicMerchantProfile(candidate, db));
   const issuedGrsSupply = grsIssuedSupply(db);
   const marketStats = grsMarketStats(db);
   const remainingGrsSupply = Math.max(0, money(GRSCOIN_TOTAL_SUPPLY - issuedGrsSupply));
@@ -1708,6 +1735,7 @@ function composeUser(db, user) {
       .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       .map((tx) => ({
         id: tx.id,
+        createdAt: tx.createdAt,
         date: formatTransactionDateTime(tx.createdAt),
         type: tx.type,
         description: tx.description,
@@ -3453,13 +3481,45 @@ app.get("/api/me", authenticate, async (req, res, next) => {
   }
 });
 
-app.get("/api/merchants", authenticate, attachDb, (req, res) => {
+app.get("/api/notifications", authenticate, async (req, res, next) => {
+  try {
+    await ensureStorage();
+    const transactions = await TransactionModel.find({ userId: req.user.id }, transactionListProjection)
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+    res.json({ notifications: transactions.map((tx) => ({
+      id: tx.id,
+      createdAt: tx.createdAt,
+      date: formatTransactionDateTime(tx.createdAt),
+      type: tx.type,
+      description: tx.description,
+      amount: tx.displayAmount,
+      status: tx.status
+    })) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/merchants", authenticate, async (req, res, next) => {
   const query = String(req.query.query || "").trim().toLowerCase();
-  const merchants = req.db.users
-    .filter((user) => user.merchantProfile?.status === "approved")
-    .map((user) => user.merchantProfile)
-    .filter((merchant) => !query || merchant.country.toLowerCase().includes(query) || merchant.city.toLowerCase().includes(query));
-  res.json({ merchants });
+  try {
+    await ensureStorage();
+    const [users, cicoRequests, exchangeOrders] = await Promise.all([
+      UserModel.find({ "merchantProfile.status": "approved" }).read(secondaryReadPreference).lean(),
+      CicoRequestModel.find({ merchantId: { $exists: true } }, { merchantId: 1, status: 1 }).read(secondaryReadPreference).lean(),
+      ExchangeOrderModel.find({ merchantId: { $exists: true } }, { merchantId: 1, status: 1 }).read(secondaryReadPreference).lean()
+    ]);
+    const dbView = { cicoRequests, exchangeOrders };
+    const merchants = users
+      .map((user) => publicMerchantProfile(user, dbView))
+      .filter((merchant) => !query || [merchant.country, merchant.city, merchant.businessName, merchant.paymentProvider].some((value) => String(value || "").toLowerCase().includes(query)))
+      .sort((left, right) => Number(right.usdtLiquidity || 0) - Number(left.usdtLiquidity || 0));
+    res.json({ merchants });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post("/api/deposits", authenticate, requirePlatformAccess(), upload.single("proof"), async (req, res) => {
@@ -5334,15 +5394,24 @@ app.post("/api/p2p-transfers", authenticate, requirePlatformAccess(), validate(z
   ]).catch((error) => logger.error({ err: error }, "P2P transfer email failed"));
 });
 
-app.get("/api/exchange/ads", authenticate, requirePlatformAccess(), attachDb, async (req, res) => {
+app.get("/api/exchange/ads", authenticate, requirePlatformAccess(), async (req, res, next) => {
   const type = String(req.query.type || "").trim();
-  const ads = req.db.exchangeAds
-    .filter((ad) => ad.status === "active")
-    .filter((ad) => !type || ad.type === type)
-    .map((ad) => publicExchangeAd(ad, req.db.users.find((user) => user.id === ad.merchantId)))
-    .filter((ad) => ad.whatsapp && ad.methods.length)
-    .sort((a, b) => type === "buy" ? b.rate - a.rate : a.rate - b.rate);
-  res.json({ ads });
+  const query = String(req.query.query || "").trim().toLowerCase();
+  try {
+    await ensureStorage();
+    const adQuery = { status: "active", ...(type ? { type } : {}) };
+    const ads = await ExchangeAdModel.find(adQuery).sort(type === "buy" ? { rate: -1 } : { rate: 1 }).read(secondaryReadPreference).lean();
+    const merchantIds = [...new Set(ads.map((ad) => ad.merchantId).filter(Boolean))];
+    const merchants = await UserModel.find({ id: { $in: merchantIds }, "merchantProfile.status": "approved" }).read(secondaryReadPreference).lean();
+    const merchantMap = new Map(merchants.map((merchant) => [merchant.id, merchant]));
+    const publicAds = ads
+      .map((ad) => publicExchangeAd(ad, merchantMap.get(ad.merchantId)))
+      .filter((ad) => !query || [ad.country, ad.city, ad.merchantName, ...(ad.methods || [])].some((value) => String(value || "").toLowerCase().includes(query)))
+      .filter((ad) => ad.whatsapp && ad.methods.length);
+    res.json({ ads: publicAds });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post("/api/exchange/ads", authenticate, requirePlatformAccess(), requireMerchant, validate(z.object({
@@ -5388,7 +5457,7 @@ app.post("/api/exchange/ads", authenticate, requirePlatformAccess(), requireMerc
 
 app.post("/api/exchange/orders", authenticate, requirePlatformAccess(), validate(z.object({
   adId: z.string().min(2),
-  amount: z.coerce.number().positive(),
+  amount: z.coerce.number().positive().max(250),
   paymentMethod: z.string().min(2),
   customerEmail: z.string().email(),
   txReference: z.string().optional(),
@@ -5415,6 +5484,7 @@ app.post("/api/exchange/orders", authenticate, requirePlatformAccess(), validate
     if (!customer) return { error: "L'adresse email client doit correspondre à un compte AFRIX." };
 
     const localAmount = money(amount * Number(ad.rate || 0));
+    const fee = 0;
     const reference = makeReference(ad.type === "sell" ? "BUY" : "SELL", amount);
 
     if (ad.type === "buy") {
@@ -5439,6 +5509,7 @@ app.post("/api/exchange/orders", authenticate, requirePlatformAccess(), validate
       amount,
       rate: money(ad.rate),
       localAmount,
+      fee,
       paymentMethod: req.body.paymentMethod.trim(),
       txReference: String(req.body.txReference || "").trim(),
       note: String(req.body.note || "").trim().slice(0, 240),
@@ -5456,7 +5527,7 @@ app.post("/api/exchange/orders", authenticate, requirePlatformAccess(), validate
       amount,
       displayAmount: ad.type === "sell" ? formatAmount(amount, "+") : formatAmount(amount, "-"),
       status: "Pending",
-      metadata: { reference, localAmount, rate: ad.rate, paymentMethod: order.paymentMethod }
+      metadata: { reference, localAmount, rate: ad.rate, fee, paymentMethod: order.paymentMethod }
     });
     return { order };
   });
@@ -5516,7 +5587,7 @@ app.post("/api/exchange/orders/:reference/confirm", authenticate, requirePlatfor
       amount: order.amount,
       displayAmount: order.type === "sell" ? formatAmount(order.amount, "+") : formatAmount(order.amount, "-"),
       status: "Completed",
-      metadata: { reference: order.reference, localAmount: order.localAmount, rate: order.rate }
+      metadata: { reference: order.reference, localAmount: order.localAmount, rate: order.rate, fee: order.fee || 0 }
     });
     return { order, customer };
   });
@@ -5536,16 +5607,23 @@ app.post("/api/exchange/orders/:reference/confirm", authenticate, requirePlatfor
   }).catch((error) => logger.error({ err: error }, "Exchange confirmation email failed"));
 });
 
-app.post("/api/cico-requests", authenticate, requirePlatformAccess({ cico: true }), validate(z.object({
+app.post("/api/cico-requests", authenticate, requirePlatformAccess({ cico: true }), upload.single("proof"), validate(z.object({
   operation: z.enum(["Depot", "Retrait"]),
   country: z.string().min(2),
-  amount: z.coerce.number().positive()
+  merchantId: z.string().min(2),
+  amount: z.coerce.number().positive().max(250)
 })), async (req, res) => {
   const result = await updateDb(async (db) => {
     const user = db.users.find((candidate) => candidate.id === req.user.id);
+    const merchant = db.users.find((candidate) => candidate.id === req.body.merchantId && candidate.merchantProfile?.status === "approved");
+    if (!merchant) return { error: "Merchant sélectionné introuvable ou indisponible." };
+    if (String(merchant.merchantProfile?.country || "").toLowerCase() !== String(req.body.country || "").toLowerCase()) {
+      return { error: "Le Merchant sélectionné n'est pas disponible dans ce pays." };
+    }
     const isWithdrawal = req.body.operation === "Retrait";
+    const isTestRequest = isTestAccountUser(user);
     if (isWithdrawal && req.body.amount < 10) return { error: "Montant minimum retrait: 10 USDT." };
-    const fee = isWithdrawal ? money(req.body.amount * 0.1) : 0;
+    const fee = isWithdrawal && !isTestRequest ? money(req.body.amount * CICO_CASH_OUT_RATE) : 0;
     if (isWithdrawal && user.balance < req.body.amount + fee) return { error: "Solde insuffisant." };
     if (isWithdrawal) {
       reserveUserFunds(db, user, money(req.body.amount + fee), "Retrait CICO Mobile Money", {
@@ -5558,17 +5636,30 @@ app.post("/api/cico-requests", authenticate, requirePlatformAccess({ cico: true 
       reference: makeReference(isWithdrawal ? "WD" : "DP", req.body.amount),
       type: req.body.operation,
       userId: user.id,
+      merchantId: merchant.id,
       customer: user.email,
       country: req.body.country,
       amount: money(req.body.amount),
       fee,
-      merchantBonus: money(req.body.amount * (isWithdrawal ? 0.03 : 0.005)),
-      method: "Mobile Money",
-      phone: "",
+      merchantBonus: isTestRequest ? 0 : money(req.body.amount * (isWithdrawal ? CICO_CASH_OUT_RATE : CICO_CASH_IN_RATE)),
+      method: merchant.merchantProfile.paymentProvider || "Mobile Money",
+      phone: merchant.merchantProfile.paymentNumber || merchant.merchantProfile.phone || "",
+      merchantName: merchant.merchantProfile.businessName,
+      merchantRate: money(isWithdrawal ? Number(merchant.merchantProfile.cashOutRate || 550) : Number(merchant.merchantProfile.cashInRate || 650)),
+      localAmount: money(req.body.amount * (isWithdrawal ? Number(merchant.merchantProfile.cashOutRate || 550) : Number(merchant.merchantProfile.cashInRate || 650))),
       status: "En attente merchant",
       reservedAmount: isWithdrawal ? money(req.body.amount + fee) : 0,
       createdAt: nowIso()
     };
+    if (req.file?.buffer?.length) {
+      request.proof = {
+        originalName: req.file.originalname || "preuve-paiement",
+        mimeType: req.file.mimetype || "application/octet-stream",
+        size: req.file.size || req.file.buffer.length,
+        dataBase64: req.file.buffer.toString("base64")
+      };
+    }
+    if (request.type === "Depot" && !request.proof) return { error: "Preuve de paiement requise pour un Cash In." };
     db.cicoRequests.push(request);
     return { request };
   });
@@ -5578,7 +5669,8 @@ app.post("/api/cico-requests", authenticate, requirePlatformAccess({ cico: true 
     reference: result.request.reference,
     operation: result.request.type,
     amount: result.request.amount,
-    fee: result.request.fee
+    fee: result.request.fee,
+    merchant: { name: result.request.merchantName, paymentProvider: result.request.method, paymentNumber: result.request.phone, rate: result.request.merchantRate, localAmount: result.request.localAmount }
   });
 });
 
@@ -5588,10 +5680,26 @@ app.post("/api/merchant/applications", authenticate, requirePlatformAccess(), va
   city: z.string().min(2),
   phone: z.string().min(8),
   methods: z.string().min(2),
-  guarantee: z.coerce.number().min(1000)
+  communityMembers: z.coerce.number().int().min(0).optional(),
+  digitalSkillsConfirmed: z.coerce.boolean().optional(),
+  operatingLiquidity: z.coerce.number().min(0).optional(),
+  paymentProvider: z.string().min(2),
+  paymentNumber: z.string().min(8),
+  cashInRate: z.coerce.number().positive(),
+  cashOutRate: z.coerce.number().positive()
 })), async (req, res) => {
   const application = await updateDb(async (db) => {
     const user = db.users.find((candidate) => candidate.id === req.user.id);
+    const privilegedMerchant = canUseBackoffice(req.user);
+    const eligibleStake = (Array.isArray(user.activeStakes) ? user.activeStakes : [])
+      .filter((stake) => stake.status === "active")
+      .some((stake) => Number(stake.amount || 0) >= 10000 && Number(stake.durationDays || 0) >= 365);
+    if (!privilegedMerchant && !eligibleStake) return { error: "Une participation AFRIX Staking active de 10 000 GRSC minimum sur 365 jours est requise." };
+    const directActivePartners = db.users.filter((candidate) => candidate.referrerId === user.id && hasActiveInvestment(candidate)).length;
+    if (!privilegedMerchant && Number(req.body.communityMembers) < 25) return { error: "Une communauté active d'au moins 25 membres est requise." };
+    if (!privilegedMerchant && directActivePartners < 5) return { error: `Au moins 5 partenaires directs actifs sont requis. Votre compte en compte ${directActivePartners}.` };
+    if (!privilegedMerchant && req.body.digitalSkillsConfirmed !== true) return { error: "La validation des compétences numériques est obligatoire." };
+    if (!privilegedMerchant && Number(req.body.operatingLiquidity) < 1500) return { error: "Une liquidité de fonctionnement d'au moins 1 500 USDT est requise." };
     const item = {
       id: nanoid(),
       userId: user.id,
@@ -5601,14 +5709,24 @@ app.post("/api/merchant/applications", authenticate, requirePlatformAccess(), va
       city: req.body.city,
       phone: req.body.phone,
       methods: req.body.methods,
-      guarantee: money(req.body.guarantee),
+      guarantee: money(req.body.operatingLiquidity || 0),
+      communityMembers: Number(req.body.communityMembers || 0),
+      directActivePartners,
+      digitalSkillsConfirmed: req.body.digitalSkillsConfirmed === true,
+      operatingLiquidity: money(req.body.operatingLiquidity || 0),
+      paymentProvider: req.body.paymentProvider,
+      paymentNumber: req.body.paymentNumber,
+      cashInRate: money(req.body.cashInRate),
+      cashOutRate: money(req.body.cashOutRate),
       status: "pending",
       createdAt: nowIso()
     };
     db.merchantApplications.push(item);
-    user.merchantProfile = { ...item, status: "pending", rating: "En validation", limits: `10 - ${money(req.body.guarantee)} USDT` };
+    user.merchantProfile = { ...item, status: "pending", rating: "En validation", limits: `10 - ${money(req.body.operatingLiquidity)} USDT` };
     return item;
   });
+
+  if (application?.error) return res.status(400).json({ message: application.error });
 
   res.status(201).json({ application });
   Promise.all([
@@ -5632,7 +5750,7 @@ app.post("/api/merchant/applications", authenticate, requirePlatformAccess(), va
 });
 
 app.get("/api/merchant/cico-requests/:reference", authenticate, requirePlatformAccess({ cico: true }), requireMerchant, attachDb, (req, res) => {
-  const request = req.db.cicoRequests.find((item) => item.reference === req.params.reference && item.status === "En attente merchant");
+  const request = req.db.cicoRequests.find((item) => item.reference === req.params.reference && item.merchantId === req.user.id && item.status === "En attente merchant");
   if (!request) return res.status(404).json({ message: "Reference introuvable ou deja traitee." });
   res.json({ request });
 });
@@ -5640,10 +5758,11 @@ app.get("/api/merchant/cico-requests/:reference", authenticate, requirePlatformA
 app.post("/api/merchant/cico-requests/:reference/confirm", authenticate, requirePlatformAccess({ cico: true }), requireMerchant, async (req, res) => {
   const result = await updateDb(async (db) => {
     const merchant = db.users.find((user) => user.id === req.user.id);
-    const request = db.cicoRequests.find((item) => item.reference === req.params.reference && item.status === "En attente merchant");
+    const request = db.cicoRequests.find((item) => item.reference === req.params.reference && item.merchantId === req.user.id && item.status === "En attente merchant");
     if (!request) return { error: "Reference introuvable ou deja traitee." };
     const customer = db.users.find((user) => user.id === request.userId);
     if (!customer) return { error: "Client introuvable." };
+    const isTestRequest = isTestAccountUser(customer);
 
     if (request.type === "Depot") {
       debitMerchantAvailable(db, merchant, request.amount, `Depot CICO ${request.reference}`, {
@@ -5654,10 +5773,10 @@ app.post("/api/merchant/cico-requests/:reference/confirm", authenticate, require
         source: "cico_deposit",
         referenceId: request.id
       });
-      creditMerchantBonus(db, merchant, request.merchantBonus, `Bonus depot CICO ${request.reference}`, {
-        source: "cico_deposit_bonus",
-        referenceId: request.id
-      });
+      if (!isTestRequest) creditMerchantBonus(db, merchant, request.merchantBonus, `Bonus depot CICO ${request.reference}`, {
+          source: "cico_deposit_bonus",
+          referenceId: request.id
+        });
       db.transactions.push({
         id: nanoid(),
         userId: customer.id,
@@ -5669,20 +5788,20 @@ app.post("/api/merchant/cico-requests/:reference/confirm", authenticate, require
         createdAt: nowIso()
       });
     } else {
-      const total = money(request.amount + request.fee);
-      const platformFee = money(request.fee - request.merchantBonus);
+      const total = money(request.amount + (isTestRequest ? 0 : request.fee));
+      const platformFee = isTestRequest ? 0 : money(request.fee - request.merchantBonus);
       consumeReservedFunds(db, customer, total, `Retrait CICO ${request.reference}`, {
         source: "cico_withdrawal",
         referenceId: request.id
       });
-      creditMerchantAvailable(db, merchant, money(request.amount + request.merchantBonus), `Retrait CICO ${request.reference}`, {
+      creditMerchantAvailable(db, merchant, money(request.amount + (isTestRequest ? 0 : request.merchantBonus)), `Retrait CICO ${request.reference}`, {
         source: "cico_withdrawal",
         referenceId: request.id
       });
-      creditMerchantBonus(db, merchant, request.merchantBonus, `Bonus retrait CICO ${request.reference}`, {
-        source: "cico_withdrawal_bonus",
-        referenceId: request.id
-      });
+      if (!isTestRequest) creditMerchantBonus(db, merchant, request.merchantBonus, `Bonus retrait CICO ${request.reference}`, {
+          source: "cico_withdrawal_bonus",
+          referenceId: request.id
+        });
       if (platformFee > 0) {
         creditPlatform(db, platformFee, `Frais retrait CICO ${request.reference}`, {
           source: "cico_withdrawal_fee",
@@ -5714,29 +5833,40 @@ app.post("/api/merchant/cico-requests/:reference/confirm", authenticate, require
 app.post("/api/merchant/transfers", authenticate, requirePlatformAccess(), requireMerchant, validate(z.object({
   amount: z.coerce.number().positive()
 })), async (req, res) => {
-  const result = await updateDb(async (db) => {
-    const user = db.users.find((candidate) => candidate.id === req.user.id);
-    debitMerchantAvailable(db, user, req.body.amount, "Transfert wallet merchant vers compte principal", {
-      source: "merchant_transfer"
+  const amount = money(req.body.amount);
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      const user = await UserModel.findOne({ id: req.user.id, status: "active" }).session(session);
+      if (!user) throw new Error("Compte Merchant introuvable.");
+      const available = money(user.merchantWallet?.available);
+      if (available < amount) throw new Error(`Solde wallet Merchant insuffisant. Disponible: ${available.toFixed(2)} USDT.`);
+      user.merchantWallet = user.merchantWallet || { available: 0, pending: 0, bonus: 0 };
+      user.merchantWallet.available = money(available - amount);
+      user.balance = money(Number(user.balance || 0) + amount);
+      await user.save({ session });
+      const reference = makeReference("MT", amount);
+      const transaction = {
+        id: nanoid(), userId: user.id, type: "Merchant",
+        description: "Transfert wallet merchant vers compte principal",
+        amount, displayAmount: formatAmount(amount, "+"), status: "Completed", createdAt: nowIso(),
+        metadata: { source: "merchant_transfer", reference }
+      };
+      await TransactionModel.create([transaction], { session });
+      const entries = buildLedgerEntries([
+        { accountType: "merchant_available", accountId: user.id, direction: "debit", amount, balanceAfter: user.merchantWallet.available, description: transaction.description },
+        { accountType: "user", accountId: user.id, direction: "credit", amount, balanceAfter: user.balance, description: transaction.description }
+      ], { source: "merchant_transfer", referenceId: reference });
+      if (entries.length) await LedgerEntryModel.insertMany(entries, { session });
+      result = { user: user.toObject(), reference };
     });
-    creditUser(db, user, req.body.amount, "Transfert wallet merchant vers compte principal", {
-      source: "merchant_transfer"
-    });
-    db.transactions.push({
-      id: nanoid(),
-      userId: user.id,
-      type: "Merchant",
-      description: "Transfert wallet merchant vers compte principal",
-      amount: req.body.amount,
-      displayAmount: formatAmount(req.body.amount, "+"),
-      status: "Completed",
-      createdAt: nowIso()
-    });
-    return { user };
-  });
-
-  if (result.error) return res.status(400).json({ message: result.error });
-  res.json({ user: sanitizeUser(result.user) });
+    res.json({ user: sanitizeUser(result.user), reference: result.reference });
+  } catch (error) {
+    res.status(400).json({ message: error.message || "Transfert impossible." });
+  } finally {
+    await session.endSession();
+  }
 });
 
 app.post("/api/disputes", authenticate, validate(z.object({
