@@ -5431,26 +5431,23 @@ app.post("/api/exchange/ads", authenticate, requirePlatformAccess(), requireMerc
   if (money(req.body.maxAmount) < money(req.body.minAmount)) {
     return res.status(400).json({ message: "Le montant maximum doit être supérieur au montant minimum." });
   }
-
-  const ad = await updateDb(async (db) => {
-    const item = {
-      id: nanoid(),
-      merchantId: req.user.id,
-      type: req.body.type,
-      status: req.body.status || "active",
-      rate: money(req.body.rate),
-      minAmount: money(req.body.minAmount),
-      maxAmount: money(req.body.maxAmount),
-      country: req.body.country.trim(),
-      city: req.body.city.trim(),
-      whatsapp: req.body.whatsapp.trim(),
-      methods: normalizePaymentMethods(req.body.methods),
-      paymentInstructions: req.body.paymentInstructions.trim(),
-      createdAt: nowIso()
-    };
-    db.exchangeAds.push(item);
-    return item;
-  });
+  await ensureStorage();
+  const ad = {
+    id: nanoid(),
+    merchantId: req.user.id,
+    type: req.body.type,
+    status: req.body.status || "active",
+    rate: money(req.body.rate),
+    minAmount: money(req.body.minAmount),
+    maxAmount: money(req.body.maxAmount),
+    country: req.body.country.trim(),
+    city: req.body.city.trim(),
+    whatsapp: req.body.whatsapp.trim(),
+    methods: normalizePaymentMethods(req.body.methods),
+    paymentInstructions: req.body.paymentInstructions.trim(),
+    createdAt: nowIso()
+  };
+  await withMongoRetry(() => ExchangeAdModel.create(ad));
 
   res.status(201).json({ ad });
 });
@@ -5688,19 +5685,21 @@ app.post("/api/merchant/applications", authenticate, requirePlatformAccess(), va
   cashInRate: z.coerce.number().positive(),
   cashOutRate: z.coerce.number().positive()
 })), async (req, res) => {
-  const application = await updateDb(async (db) => {
-    const user = db.users.find((candidate) => candidate.id === req.user.id);
-    const privilegedMerchant = canUseBackoffice(req.user);
-    const eligibleStake = (Array.isArray(user.activeStakes) ? user.activeStakes : [])
-      .filter((stake) => stake.status === "active")
-      .some((stake) => Number(stake.amount || 0) >= 10000 && Number(stake.durationDays || 0) >= 365);
-    if (!privilegedMerchant && !eligibleStake) return { error: "Une participation AFRIX Staking active de 10 000 GRSC minimum sur 365 jours est requise." };
-    const directActivePartners = db.users.filter((candidate) => candidate.referrerId === user.id && hasActiveInvestment(candidate)).length;
-    if (!privilegedMerchant && Number(req.body.communityMembers) < 25) return { error: "Une communauté active d'au moins 25 membres est requise." };
-    if (!privilegedMerchant && directActivePartners < 5) return { error: `Au moins 5 partenaires directs actifs sont requis. Votre compte en compte ${directActivePartners}.` };
-    if (!privilegedMerchant && req.body.digitalSkillsConfirmed !== true) return { error: "La validation des compétences numériques est obligatoire." };
-    if (!privilegedMerchant && Number(req.body.operatingLiquidity) < 1500) return { error: "Une liquidité de fonctionnement d'au moins 1 500 USDT est requise." };
-    const item = {
+  await ensureStorage();
+  const user = await UserModel.findOne({ id: req.user.id }).lean();
+  if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
+  const privilegedMerchant = canUseBackoffice(req.user);
+  const eligibleStake = (Array.isArray(user.activeStakes) ? user.activeStakes : [])
+    .filter((stake) => stake.status === "active")
+    .some((stake) => Number(stake.amount || 0) >= 10000 && Number(stake.durationDays || 0) >= 365);
+  if (!privilegedMerchant && !eligibleStake) return res.status(400).json({ message: "Une participation AFRIX Staking active de 10 000 GRSC minimum sur 365 jours est requise." });
+  const partners = await UserModel.find({ referrerId: user.id }, { activePlans: 1, activeStakes: 1, activeFounders: 1, activeEtfs: 1 }).lean();
+  const directActivePartners = partners.filter((candidate) => hasActiveInvestment(candidate)).length;
+  if (!privilegedMerchant && Number(req.body.communityMembers) < 25) return res.status(400).json({ message: "Une communauté active d'au moins 25 membres est requise." });
+  if (!privilegedMerchant && directActivePartners < 5) return res.status(400).json({ message: `Au moins 5 partenaires directs actifs sont requis. Votre compte en compte ${directActivePartners}.` });
+  if (!privilegedMerchant && req.body.digitalSkillsConfirmed !== true) return res.status(400).json({ message: "La validation des compétences numériques est obligatoire." });
+  if (!privilegedMerchant && Number(req.body.operatingLiquidity) < 1500) return res.status(400).json({ message: "Une liquidité de fonctionnement d'au moins 1 500 USDT est requise." });
+  const application = {
       id: nanoid(),
       userId: user.id,
       userEmail: user.email,
@@ -5720,13 +5719,18 @@ app.post("/api/merchant/applications", authenticate, requirePlatformAccess(), va
       cashOutRate: money(req.body.cashOutRate),
       status: "pending",
       createdAt: nowIso()
-    };
-    db.merchantApplications.push(item);
-    user.merchantProfile = { ...item, status: "pending", rating: "En validation", limits: `10 - ${money(req.body.operatingLiquidity)} USDT` };
-    return item;
+  };
+  await withMongoRetry(async () => {
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await MerchantApplicationModel.create([application], { session });
+        await UserModel.updateOne({ id: user.id }, { $set: { merchantProfile: { ...application, status: "pending", rating: "En validation", limits: `10 - ${money(req.body.operatingLiquidity || 0)} USDT` } } }, { session });
+      });
+    } finally {
+      await session.endSession();
+    }
   });
-
-  if (application?.error) return res.status(400).json({ message: application.error });
 
   res.status(201).json({ application });
   Promise.all([
