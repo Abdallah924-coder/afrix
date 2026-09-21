@@ -670,6 +670,10 @@ function isTestTransaction(tx = {}) {
   return Boolean(tx?.metadata?.testAccount || tx?.userId === testAccountId || tx?.metadata?.sourceUserId === testAccountId || tx?.metadata?.buyerId === testAccountId);
 }
 
+function isTestAccountSource(extra = {}) {
+  return Boolean(extra?.testAccount || isTestAccountUser({ id: extra?.sourceUserId, email: extra?.sourceUserEmail }) || isTestAccountUser({ id: extra?.buyerId, email: extra?.buyerEmail }));
+}
+
 const isCommissionAccount = isCommissionAccountCore;
 const canViewCommissionSummary = canViewCommissionSummaryCore;
 
@@ -1036,7 +1040,7 @@ function notifyPlanActivation(user, activePlan, amount) {
 }
 
 async function creditPlatformRevenue({ amount, asset = "USDT", description, source, referenceId, extra = {}, session = null, settings = null }) {
-  if (isTestAccountUser({ id: extra?.sourceUserId, email: extra?.sourceUserEmail }) || extra?.testAccount) return null;
+  if (isTestAccountSource(extra)) return null;
   const revenue = money(amount);
   if (revenue <= 0) return null;
   const feeSettings = settings || await getFeeSettings(session);
@@ -3071,7 +3075,14 @@ async function ensureCommissionAccount({ email, password, fullName, role }) {
 }
 
 async function ensureTestAccount() {
-  if (!TEST_ACCOUNT_EMAIL || !TEST_ACCOUNT_PASSWORD) return null;
+  if (!TEST_ACCOUNT_EMAIL || !TEST_ACCOUNT_PASSWORD) {
+    const existing = await UserModel.findOne({
+      $or: [{ testAccount: true }, { fullName: TEST_ACCOUNT_NAME }]
+    }).lean();
+    testAccountId = existing?.id || "";
+    if (testAccountId) logger.info({ userId: testAccountId }, "Existing test account detected");
+    return existing ? sanitizeUser(existing) : null;
+  }
   const account = await ensureCommissionAccount({
     email: TEST_ACCOUNT_EMAIL,
     password: TEST_ACCOUNT_PASSWORD,
@@ -3079,6 +3090,7 @@ async function ensureTestAccount() {
     role: "user"
   });
   testAccountId = account?.id || "";
+  if (testAccountId) await UserModel.updateOne({ id: testAccountId }, { $set: { testAccount: true } });
   logger.info({ email: maskEmail(TEST_ACCOUNT_EMAIL), userId: testAccountId }, "Test account ready");
   return account;
 }
@@ -3914,7 +3926,8 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
   if (!GRSCOIN_PRICE_USDT) return res.status(503).json({ message: "Prix AFRIX Swap indisponible." });
 
   const feeSettings = await getFeeSettings();
-  const swapFee = money(usdtAmount * feeSettings.swapFeeRate);
+  const isTestSwap = isTestAccountUser({ id: req.user.id, email: req.user.email });
+  const swapFee = isTestSwap ? 0 : money(usdtAmount * feeSettings.swapFeeRate);
   const swapFeeSplit = splitPlatformRevenue(swapFee, feeSettings);
   const adminCommission = swapFeeSplit.admin;
   const developerCommission = swapFeeSplit.developer;
@@ -4113,6 +4126,8 @@ app.post("/api/swap/usdt-to-grsc", authenticate, requirePlatformAccess(), valida
         status: "Completed",
         createdAt: nowIso(),
         metadata: {
+          testAccount: isTestSwap,
+          sourceUserId: user.id,
           priceUsdt: GRSCOIN_PRICE_USDT,
           usdtAmount,
           grossGrsAmount,
@@ -6367,6 +6382,7 @@ app.get("/api/admin/deposits/:id/proof", authenticate, requireAdmin, async (req,
 });
 
 async function payDirectCommission({ session, accountId, amount, label, source, referenceId, extra = {}, asset = "USDT", precision = 2 }) {
+  if (isTestAccountSource(extra)) return;
   const commission = roundedAmount(amount, precision);
   if (commission <= 0 || !accountId) return;
   const publicSource = String(source || "").includes("user_revenue")
