@@ -2175,6 +2175,10 @@ function renderExchange(user) {
     renderExchangeAds(sellList, []);
     showToast(error.message, "error");
   });
+  const triggerExchangeSearch = () => {
+    const query = [marketCountry?.value || "", marketSearch?.value || ""].filter(Boolean).join(" ").trim();
+    loadMarkets(query);
+  };
   loadMarkets();
   if (marketSearch && !marketSearch.dataset.boundSearch) {
     marketSearch.dataset.boundSearch = "true";
@@ -2183,7 +2187,12 @@ function renderExchange(user) {
   if (marketCountry && !marketCountry.dataset.boundSearch) {
     marketCountry.dataset.boundSearch = "true";
     hydrateProfileCountrySelect(marketCountry);
-    marketCountry.addEventListener("change", () => loadMarkets([marketCountry.value, marketSearch?.value].filter(Boolean).join(" ")));
+    marketCountry.addEventListener("change", triggerExchangeSearch);
+  }
+  const exchangeSearchButton = document.querySelector("[data-exchange-search-button]");
+  if (exchangeSearchButton && !exchangeSearchButton.dataset.boundSearch) {
+    exchangeSearchButton.dataset.boundSearch = "true";
+    exchangeSearchButton.addEventListener("click", triggerExchangeSearch);
   }
 
   document.querySelector("[data-exchange-orders-list]")?.replaceChildren();
@@ -2313,9 +2322,14 @@ function renderMerchants(user) {
         showToast(error.message, "error");
       }
   };
+  const merchantSearchButton = document.querySelector("[data-merchant-search-button]");
   if (merchantResults && (merchantSearch || merchantCountrySearch)) {
     merchantSearch?.addEventListener("input", searchMerchants);
     merchantCountrySearch?.addEventListener("change", searchMerchants);
+  }
+  if (merchantSearchButton && !merchantSearchButton.dataset.boundSearch) {
+    merchantSearchButton.dataset.boundSearch = "true";
+    merchantSearchButton.addEventListener("click", searchMerchants);
   }
 
   if (requestList) {
@@ -2415,14 +2429,17 @@ function renderAdmin(user) {
   const pendingWithdrawalsCounts = document.querySelectorAll("[data-pending-withdrawals-count]");
   const cicoRequestsCount = document.querySelector("[data-cico-requests-count]");
   const merchantApplicationsCount = document.querySelector("[data-merchant-applications-count]");
+  const approvedMerchantsCount = document.querySelector("[data-approved-merchants-count]");
   const disputesCount = document.querySelector("[data-disputes-count]");
   const adminUsersCounts = document.querySelectorAll("[data-admin-users-count]");
+  const approvedMerchants = Array.isArray(user.merchants) ? user.merchants : [];
 
   if (adminTeam) adminTeam.textContent = Number(user.team || 0);
   pendingDepositsCounts.forEach((item) => { item.textContent = pendingDeposits.length; });
   pendingWithdrawalsCounts.forEach((item) => { item.textContent = pendingWithdrawals.length; });
   if (cicoRequestsCount) cicoRequestsCount.textContent = user.cicoRequests.length;
   if (merchantApplicationsCount) merchantApplicationsCount.textContent = user.merchantApplications.length;
+  if (approvedMerchantsCount) approvedMerchantsCount.textContent = approvedMerchants.length;
   if (disputesCount) disputesCount.textContent = user.disputes.length;
   adminUsersCounts.forEach((item) => { item.textContent = Array.isArray(user.adminUsers) ? user.adminUsers.length : 0; });
   const adminStats = user.adminStats || {};
@@ -2442,6 +2459,7 @@ function renderAdmin(user) {
     return emailMatch && (!txQuery || txText.includes(txQuery));
   }));
   renderMerchantApplications(user.merchantApplications);
+  renderApprovedMerchants(approvedMerchants);
   renderDisputes(user.disputes);
   const filteredAdminUsers = (user.adminUsers || []).filter((item) => {
     if (!userQuery) return true;
@@ -2711,6 +2729,19 @@ function renderMerchantApplications(applications) {
       <button class="btn secondary" type="button" data-merchant-reject="${escapeHtml(item.id || item.reference || "")}">Rejeter</button>
     </div>
   `).join("") : `<p class="muted">Aucune demande merchant en attente.</p>`;
+}
+
+function renderApprovedMerchants(rows = []) {
+  const list = document.querySelector("[data-admin-approved-merchants]");
+  if (!list) return;
+
+  list.innerHTML = rows.length ? rows.map((merchant) => `
+    <div class="queue-row">
+      <span>${escapeHtml(merchant.businessName || "Merchant")}<small>${escapeHtml(merchant.city || "")}${merchant.city && merchant.country ? ", " : ""}${escapeHtml(merchant.country || "")} - ${escapeHtml(merchant.phone || "")} - ${escapeHtml(merchant.status || "approved")}</small></span>
+      <strong>${formatUsdt(merchant.usdtLiquidity || 0)}</strong>
+      <button class="btn secondary" type="button" data-admin-open-activity="${escapeHtml(merchant.userEmail || merchant.email || merchant.userId || "")}">Détails</button>
+    </div>
+  `).join("") : `<p class="muted">Aucun merchant agréé pour le moment.</p>`;
 }
 
 function renderDisputes(disputes) {
