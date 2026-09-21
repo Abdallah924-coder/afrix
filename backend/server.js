@@ -4198,10 +4198,11 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
         result = { error: "Utilisateur introuvable." };
         return;
       }
+      const isTestSwap = isTestAccountUser({ id: user.id, email: user.email });
       const referenceId = nanoid();
 
       if (direction === "USDT_AUSD") {
-        const feeUsdtEquivalent = money(amount * feeSettings.swapFeeRate);
+        const feeUsdtEquivalent = isTestSwap ? 0 : money(amount * feeSettings.swapFeeRate);
         const feeGrsAmount = grsFromUsdt(feeUsdtEquivalent);
         const feeSplit = splitPlatformRevenue(feeGrsAmount, feeSettings);
         const adminCommission = feeSplit.admin;
@@ -4255,7 +4256,7 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
           commissionRows.push({ accountType: `${target.accountType}_grs`, accountId: creditedUser.id, direction: "credit", amount: target.amount, balanceAfter: creditedUser.grsBalance, description: target.description });
           commissionTransactions.push({ id: nanoid(), userId: creditedUser.id, type: "Commission", description: target.description, amount: target.amount, displayAmount: `+${target.amount.toFixed(4)} GRSC`, status: "Completed", createdAt: nowIso(), metadata: { source: "ausd_swap_commission", swapId: referenceId, rate: target.rate, feeAsset: "GRSC", feeUsdtEquivalent } });
         }
-        const metadata = { direction, priceUsdt: AUSD_PRICE_USDT, usdtAmount: amount, netUsdt, ausdAmount, fee: feeGrsAmount, feeAsset: "GRSC", feeGrsAmount, feeUsdtEquivalent, adminCommission, developerCommission, platformCommission };
+        const metadata = { direction, priceUsdt: AUSD_PRICE_USDT, usdtAmount: amount, netUsdt, ausdAmount, fee: feeGrsAmount, feeAsset: "GRSC", feeGrsAmount, feeUsdtEquivalent, adminCommission, developerCommission, platformCommission, testAccount: isTestSwap, sourceUserId: user.id };
         const tx = { id: referenceId, userId: user.id, type: "Swap", description: "AFRIX Swap USDT vers AUSD", amount, displayAmount: `-${amount.toFixed(4)} USDT -> +${ausdAmount.toFixed(4)} AUSD`, status: "Completed", createdAt: nowIso(), metadata };
         const entries = buildLedgerEntries([
           { accountType: "user", accountId: user.id, direction: "debit", amount, balanceAfter: updatedUser.balance, description: "AFRIX Swap USDT vers AUSD" },
@@ -4273,7 +4274,7 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
 
       if (direction === "AUSD_USDT") {
         const grossUsdtAmount = money(amount * AUSD_PRICE_USDT);
-        const feeUsdtEquivalent = money(grossUsdtAmount * feeSettings.swapFeeRate);
+        const feeUsdtEquivalent = isTestSwap ? 0 : money(grossUsdtAmount * feeSettings.swapFeeRate);
         const feeGrsAmount = grsFromUsdt(feeUsdtEquivalent);
         const feeSplit = splitPlatformRevenue(feeGrsAmount, feeSettings);
         const adminCommission = feeSplit.admin;
@@ -4330,7 +4331,7 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
           commissionRows.push({ accountType: target.accountType, accountId: creditedUser.id, direction: "credit", amount: target.amount, balanceAfter: creditedUser.grsBalance, description: target.description });
           commissionTransactions.push({ id: nanoid(), userId: creditedUser.id, type: "Commission", description: target.description, amount: target.amount, displayAmount: `+${target.amount.toFixed(4)} GRSC`, status: "Completed", createdAt: nowIso(), metadata: { source: "ausd_swap_commission", swapId: referenceId, rate: target.rate, feeAsset: "GRSC", feeUsdtEquivalent } });
         }
-        const metadata = { direction, priceUsdt: AUSD_PRICE_USDT, ausdAmount: amount, grossUsdtAmount, usdtAmount, fee: feeGrsAmount, feeAsset: "GRSC", feeGrsAmount, feeUsdtEquivalent, adminCommission, developerCommission, platformCommission };
+        const metadata = { direction, priceUsdt: AUSD_PRICE_USDT, ausdAmount: amount, grossUsdtAmount, usdtAmount, fee: feeGrsAmount, feeAsset: "GRSC", feeGrsAmount, feeUsdtEquivalent, adminCommission, developerCommission, platformCommission, testAccount: isTestSwap, sourceUserId: user.id };
         const tx = { id: referenceId, userId: user.id, type: "Swap", description: "AFRIX Swap AUSD vers USDT", amount, displayAmount: `-${amount.toFixed(4)} AUSD -> +${usdtAmount.toFixed(4)} USDT`, status: "Completed", createdAt: nowIso(), metadata };
         const entries = buildLedgerEntries([
           { accountType: "user_ausd", accountId: user.id, direction: "debit", amount, balanceAfter: updatedUser.ausdBalance, description: "AFRIX Swap AUSD vers USDT" },
@@ -4349,7 +4350,7 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
       if (direction === "AUSD_GRSC") {
         const usdtEquivalent = money(amount * AUSD_PRICE_USDT);
         const grossGrsAmount = grsFromUsdt(usdtEquivalent);
-        const feeUsdtEquivalent = money(usdtEquivalent * feeSettings.swapFeeRate);
+        const feeUsdtEquivalent = isTestSwap ? 0 : money(usdtEquivalent * feeSettings.swapFeeRate);
         const feeGrsAmount = grsFromUsdt(feeUsdtEquivalent);
         const grsAmount = grossGrsAmount;
         const feeSplit = splitPlatformRevenue(feeGrsAmount, feeSettings);
@@ -4401,7 +4402,7 @@ app.post("/api/swap/convert", authenticate, requirePlatformAccess(), validate(z.
           commissionRows.push({ accountType: target.accountType, accountId: creditedUser.id, direction: "credit", amount: target.amount, balanceAfter: creditedUser.grsBalance, description: target.description });
           commissionTransactions.push({ id: nanoid(), userId: creditedUser.id, type: "Commission", description: target.description, amount: target.amount, displayAmount: `+${target.amount.toFixed(4)} GRSC`, status: "Completed", createdAt: nowIso(), metadata: { source: "ausd_grs_swap_commission", swapId: referenceId, rate: target.rate, feeAsset: "GRSC", feeGrsAmount, feeUsdtEquivalent } });
         }
-        const metadata = { direction, ausdPriceUsdt: AUSD_PRICE_USDT, grsPriceUsdt: GRSCOIN_PRICE_USDT, ausdAmount: amount, usdtEquivalent, grossGrsAmount, grsAmount, fee: feeGrsAmount, feeAsset: "GRSC", feeGrsAmount, feeUsdtEquivalent };
+        const metadata = { direction, ausdPriceUsdt: AUSD_PRICE_USDT, grsPriceUsdt: GRSCOIN_PRICE_USDT, ausdAmount: amount, usdtEquivalent, grossGrsAmount, grsAmount, fee: feeGrsAmount, feeAsset: "GRSC", feeGrsAmount, feeUsdtEquivalent, testAccount: isTestSwap, sourceUserId: user.id };
         const tx = { id: referenceId, userId: user.id, type: "Swap", description: "AFRIX Swap AUSD vers GRSCOIN", amount, displayAmount: `-${amount.toFixed(4)} AUSD -> +${grsAmount.toFixed(4)} GRSC`, status: "Completed", createdAt: nowIso(), metadata };
         const entries = buildLedgerEntries([
           { accountType: "user_ausd", accountId: user.id, direction: "debit", amount, balanceAfter: updatedUser.ausdBalance, description: "AFRIX Swap AUSD vers GRSCOIN" },
@@ -4727,6 +4728,7 @@ app.post("/api/staking/activate", authenticate, requirePlatformAccess(), validat
       const benefitRows = [];
       const benefitTransactions = [];
       const creditGrsBenefit = async ({ account, amount, label, source, extra = {}, accountType = "user_grs" }) => {
+        if (isTestAccountSource({ ...extra, sourceUserId: req.user.id, sourceUserEmail: req.user.email })) return null;
         const benefit = money(amount);
         if (!account?.id || benefit <= 0) return null;
         const updatedAccount = await UserModel.findOneAndUpdate(
@@ -4973,6 +4975,7 @@ app.post("/api/founders/activate", authenticate, requirePlatformAccess(), valida
       const feeRows = [];
       const feeTransactions = [];
       const creditFeeRecipient = async ({ email, amount, accountType, label, share }) => {
+        if (isTestAccountUser({ id: req.user.id, email: req.user.email })) return;
         if (!email || amount <= 0) return;
         const creditedUser = await UserModel.findOneAndUpdate(
           { email },
