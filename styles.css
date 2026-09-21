@@ -986,18 +986,18 @@ body.public-page {
 .side-logout { width: 100%; margin-top: 12px; }
 
 .app {
-  width: calc(100% - 260px);
-  max-width: calc(100% - 260px);
+  width: calc(100% - 278px);
+  max-width: calc(100% - 278px);
   min-width: 0;
-  margin-left: 260px;
+  margin-left: 278px;
   padding: 118px 34px 34px;
 }
 .topbar {
   position: fixed !important;
   top: 0 !important;
-  left: 260px;
+  left: 278px;
   right: 0;
-  width: calc(100% - 260px);
+  width: calc(100% - 278px);
   box-sizing: border-box;
   z-index: 99999;
   display: grid;
