@@ -49,6 +49,7 @@ export const pageRoutes = {
   "/register": "pages/register.html",
   "/reset-password": "pages/reset-password.html",
   "/dashboard": "pages/dashboard.html",
+  "/investments": "pages/investments.html",
   "/wallet": "pages/wallet.html",
   "/transactions": "pages/transactions.html",
   "/plans": "pages/plans.html",

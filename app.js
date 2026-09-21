@@ -1,5 +1,5 @@
 const API_BASE = window.AFRIX_API_BASE || "/api";
-const APP_VERSION = "20260825-1";
+const APP_VERSION = "20260921-1";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
 const DISMISSED_NOTIFICATIONS_KEY = "afrix_dismissed_notifications";
 const API_TIMEOUT_MS = 20_000;
@@ -8,6 +8,7 @@ let registerCountryOptionsHtml = null;
 
 const pageTitles = {
   dashboard: "Tableau de bord",
+  investments: "Evolution des investissements",
   wallet: "Wallet AUSD",
   "afrix-money": "AFRIX Money",
   plans: "AFRIX Trading Program",
@@ -29,6 +30,7 @@ const pageTitles = {
 
 const navItems = [
   ["dashboard", "DASHBOARD", "/dashboard"],
+  ["investments", "ÉVOLUTION INVESTISSEMENTS", "/investments"],
   ["wallet", "WALLET AUSD", "/wallet"],
   ["afrix-money", "AFRIX MONEY", "/afrix-money"],
   ["plans", "AFRIX TRADING PROGRAM", "/plans"],
@@ -53,6 +55,7 @@ const mobilePrimaryNavItems = [
   ["transactions", "Activite", "/transactions", "↗"]
 ];
 const mobileMoreNavKeys = [
+  "investments",
   "plans",
   "staking",
   "swap",
@@ -504,20 +507,34 @@ function normalizeUser(user) {
 }
 
 function showToast(message, type = "info") {
-  const oldToast = document.querySelector(".toast");
-  if (oldToast) oldToast.remove();
+  let stack = document.querySelector("[data-toast-stack]");
+  if (!stack) {
+    stack = document.createElement("div");
+    stack.className = "toast-stack";
+    stack.dataset.toastStack = "true";
+    stack.setAttribute("aria-live", "polite");
+    document.body.appendChild(stack);
+  }
 
   const toast = document.createElement("div");
-  toast.className = `toast ${type}`;
+  const toastType = ["success", "info", "loading", "error"].includes(type) ? type : "info";
+  toast.className = `toast toast-${toastType}`;
+  toast.setAttribute("role", toastType === "error" ? "alert" : "status");
   toast.innerHTML = `
-    <span class="toast-icon">${type === "error" ? "!" : "✓"}</span>
+    <span class="toast-mark">${toastType === "error" ? "!" : toastType === "loading" ? "..." : "✓"}</span>
     <span class="toast-message">${escapeHtml(message)}</span>
     <button class="toast-close" type="button" aria-label="Fermer">×</button>
   `;
-  document.body.appendChild(toast);
+  stack.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("is-visible"));
 
-  toast.querySelector("button").addEventListener("click", () => toast.remove());
-  window.setTimeout(() => toast.remove(), 3200);
+  const close = () => {
+    toast.classList.remove("is-visible");
+    window.setTimeout(() => toast.remove(), 240);
+  };
+  toast.querySelector("button").addEventListener("click", close);
+  if (toastType !== "loading") window.setTimeout(close, 4200);
+  return close;
 }
 
 function collectFormFields(form) {
@@ -578,19 +595,71 @@ function showLoadError(message) {
   `);
 }
 
+function confirmAction(message, options = {}) {
+  const { confirmLabel = "Confirmer", cancelLabel = "Annuler" } = options;
+
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "confirmation-modal-backdrop";
+
+    const dialog = document.createElement("div");
+    dialog.className = "confirmation-modal";
+    dialog.innerHTML = `
+      <div class="confirmation-modal-card">
+        <span class="pill confirmation-pill">Validation</span>
+        <h2>Confirmation requise</h2>
+        <p>${escapeHtml(message)}</p>
+        <div class="confirmation-modal-actions">
+          <button class="btn secondary" type="button" data-confirm-cancel>${escapeHtml(cancelLabel)}</button>
+          <button class="btn primary" type="button" data-confirm-action>${escapeHtml(confirmLabel)}</button>
+        </div>
+      </div>
+    `;
+
+    const close = (nextValue) => {
+      backdrop.classList.remove("is-visible");
+      window.setTimeout(() => backdrop.remove(), 180);
+      resolve(nextValue);
+    };
+
+    dialog.querySelector("[data-confirm-cancel]")?.addEventListener("click", () => close(false));
+    dialog.querySelector("[data-confirm-action]")?.addEventListener("click", () => close(true));
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) close(false);
+    });
+
+    document.body.appendChild(backdrop);
+    backdrop.appendChild(dialog);
+    requestAnimationFrame(() => backdrop.classList.add("is-visible"));
+  });
+}
+
 function renderSidebar(page, user = emptyUser) {
   const sidebar = document.querySelector("[data-sidebar]");
   if (!sidebar) return;
   const visibleNavItems = navItems.filter(([key]) => !profileOnlyNavItems.has(key) && (key !== "admin" || canUseBackoffice(user)));
+  const primaryLinks = visibleNavItems.filter(([key]) => ["dashboard", "investments", "wallet", "afrix-money", "plans", "admin"].includes(key));
+  const secondaryLinks = visibleNavItems.filter(([key]) => !["dashboard", "investments", "wallet", "afrix-money", "plans", "admin"].includes(key));
 
   sidebar.innerHTML = `
-    <a class="brand" href="/">
-      <span class="brand-mark">A</span>
-      <span><strong>AFRIX</strong><small>Capital Investment</small></span>
-    </a>
-    <nav class="nav">
-      ${visibleNavItems.map(([key, label, href]) => `<a class="${page === key ? "active" : ""}" href="${href}">${label}</a>`).join("")}
-    </nav>
+    <div class="sidebar-shell">
+      <a class="brand" href="/">
+        <span class="brand-mark">A</span>
+        <span><strong>AFRIX</strong><small>Capital Investment</small></span>
+      </a>
+      <div class="nav-group">
+        <span class="nav-label">Accès rapide</span>
+        <nav class="nav">
+          ${primaryLinks.map(([key, label, href]) => `<a class="nav-pill ${page === key ? "active" : ""}" href="${href}">${label}</a>`).join("")}
+        </nav>
+      </div>
+      <div class="nav-group">
+        <span class="nav-label">Produits</span>
+        <nav class="nav">
+          ${secondaryLinks.map(([key, label, href]) => `<a class="${page === key ? "active" : ""}" href="${href}">${label}</a>`).join("")}
+        </nav>
+      </div>
+    </div>
     <div class="side-card">
       <span>Rang partenaire</span>
       <strong>${escapeHtml(user.rank || "Niveau 0")}</strong>
@@ -627,6 +696,7 @@ function renderMobileMoreItem([key, label, href], page) {
 function getMobileNavIcon(key) {
   const icons = {
     plans: "▦",
+    investments: "↗",
     staking: "◍",
     "founders-club": "★",
     etf: "▧",
@@ -1526,6 +1596,87 @@ function renderPlans(user) {
   }).join("");
 }
 
+function renderInvestments(user) {
+  const page = document.querySelector("[data-investments-page]");
+  if (!page) return;
+
+  const records = [
+    ...(user.activePlans || []).map((item) => ({ ...item, category: "Trading", categoryClass: "trading", startedAt: item.activatedAt, asset: item.asset || "AUSD" })),
+    ...(user.activeStakes || []).map((item) => ({ ...item, category: "Staking", categoryClass: "staking", startedAt: item.activatedAt, asset: "GRSC" })),
+    ...(user.activeFounders || []).map((item) => ({ ...item, category: "Founders Club", categoryClass: "founders", startedAt: item.activatedAt, asset: "GRSC" })),
+    ...(user.activeEtfs || []).map((item) => ({ ...item, category: "ETF", categoryClass: "etf", startedAt: item.activatedAt, asset: "AUSD" }))
+  ].sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
+
+  const activeRecords = records.filter((item) => item.status !== "completed");
+  const totalAusd = activeRecords.filter((item) => item.asset === "AUSD").reduce((total, item) => total + Number(item.amount || 0), 0);
+  const totalGrsc = activeRecords.filter((item) => item.asset === "GRSC").reduce((total, item) => total + Number(item.amount || 0), 0);
+  const totalEarnedAusd = records.filter((item) => item.asset === "AUSD").reduce((total, item) => total + Number(item.earnedAmount || item.dividendAmount || 0), 0);
+  const totalEarnedGrsc = records.filter((item) => item.asset === "GRSC").reduce((total, item) => total + Number(item.earnedAmount || item.rewardAmount || 0), 0);
+
+  const progressFor = (item) => {
+    if (item.status === "completed") return 100;
+    if (item.category === "Trading") {
+      const duration = Math.max(1, Number(item.durationDays || 0));
+      return Math.min(100, Math.round((Math.max(0, Number(item.daysPaid || 0)) / duration) * 100));
+    }
+    const start = Date.parse(item.startedAt || "");
+    const end = Date.parse(item.endsAt || "");
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+    return Math.max(0, Math.min(100, Math.round(((Date.now() - start) / (end - start)) * 100)));
+  };
+
+  const amountFor = (item, value) => item.asset === "GRSC" ? formatGrsc(value) : formatAssetAmount(value, item.asset);
+  const statusFor = (item) => item.status === "completed" ? "Terminé" : item.status === "matured" ? "Arrivé à maturité" : "Actif";
+  const earnedFor = (item) => item.asset === "GRSC" ? Number(item.earnedAmount || item.rewardAmount || 0) : Number(item.earnedAmount || item.dividendAmount || 0);
+
+  page.querySelector("[data-investment-count]").textContent = records.length.toLocaleString("fr-FR");
+  page.querySelector("[data-investment-active]").textContent = activeRecords.length.toLocaleString("fr-FR");
+  page.querySelector("[data-investment-ausd]").textContent = formatAusd(totalAusd);
+  page.querySelector("[data-investment-grsc]").textContent = formatGrsc(totalGrsc);
+  page.querySelector("[data-investment-earned]").textContent = `${formatAusd(totalEarnedAusd)} / ${formatGrsc(totalEarnedGrsc)}`;
+
+  const list = page.querySelector("[data-investments-list]");
+  list.innerHTML = records.length ? records.map((item) => {
+    const progress = progressFor(item);
+    const durationLabel = item.category === "Trading"
+      ? `${Math.max(0, Number(item.daysPaid || 0))}/${Math.max(1, Number(item.durationDays || 0))} jours`
+      : `${progress}% du cycle`;
+    return `
+      <article class="investment-evolution-card">
+        <div class="investment-evolution-head">
+          <span><i class="investment-dot ${item.categoryClass}"></i><strong>${escapeHtml(item.name || item.planId || item.category)}</strong><small>${escapeHtml(item.category)} · ${escapeHtml(statusFor(item))}</small></span>
+          <b>${progress}%</b>
+        </div>
+        <div class="progress investment-evolution-progress" aria-label="Progression ${escapeHtml(item.name || item.category)}: ${progress}%"><span style="width:${progress}%"></span></div>
+        <div class="investment-evolution-meta">
+          <span><small>Capital engagé</small><strong>${amountFor(item, item.amount || 0)}</strong></span>
+          <span><small>Gains cumulés</small><strong>${amountFor(item, earnedFor(item))}</strong></span>
+          <span><small>Évolution</small><strong>${durationLabel}</strong></span>
+          <span><small>Début</small><strong>${escapeHtml(String(item.startedAt || "").slice(0, 10) || "-")}</strong></span>
+        </div>
+      </article>
+    `;
+  }).join("") : `<div class="investment-empty"><strong>Aucun investissement enregistré</strong><p>Vos participations Trading, Staking, Founders Club et ETF apparaîtront ici.</p><a class="btn primary" href="/plans">Découvrir les programmes</a></div>`;
+  bindInvestmentCardParallax(list);
+}
+
+function bindInvestmentCardParallax(container) {
+  if (!container || container.dataset.parallaxBound || window.matchMedia("(prefers-reduced-motion: reduce)").matches || !window.matchMedia("(pointer: fine)").matches) return;
+  container.dataset.parallaxBound = "true";
+  container.addEventListener("pointermove", (event) => {
+    const card = event.target.closest(".investment-evolution-card");
+    if (!card || !container.contains(card)) return;
+    const bounds = card.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) / bounds.width - 0.5;
+    const y = (event.clientY - bounds.top) / bounds.height - 0.5;
+    card.style.transform = `translateY(-4px) rotateX(${(-y * 2.4).toFixed(2)}deg) rotateY(${(x * 3.2).toFixed(2)}deg)`;
+  });
+  container.addEventListener("pointerleave", (event) => {
+    const card = event.target.closest(".investment-evolution-card");
+    if (card) card.style.transform = "";
+  });
+}
+
 function renderActivePlans(user) {
   const list = document.querySelector("[data-active-plans-list]");
   const count = document.querySelector("[data-active-plans-count]");
@@ -2216,6 +2367,7 @@ function renderAdmin(user) {
   }).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
   renderAdminUsers(filteredAdminUsers);
   renderAdminUserActivity(user.adminUsers || [], userQuery);
+  renderActivePlansOverview(user);
   renderAdminFeeSettings(user.feeSettings || {});
   bindAdminSections();
   bindAdminUsersPanel();
@@ -2329,6 +2481,57 @@ function renderAdminUserActivity(users, query) {
       <div><span>Niveaux bonus</span><strong>${Number(item.bonusLevelsOverride || 0)}</strong></div>
       <div><span>Parrain</span><strong>${escapeHtml(item.referrerEmail || "-")}</strong></div>
       <div><span>Statut</span><strong>${escapeHtml(item.status || "active")}</strong></div>
+    </div>
+  `;
+}
+
+function renderActivePlansOverview(user = {}) {
+  const target = document.querySelector("[data-admin-active-plans]");
+  if (!target) return;
+
+  const adminStats = user.adminStats || {};
+  const programStats = adminStats.programStats || {};
+  const items = [
+    {
+      label: "Trading",
+      count: Number(programStats.trading?.activeCount || adminStats.activePlansCount || 0),
+      value: formatAusd(programStats.trading?.activeCapital || 0),
+      accent: "green"
+    },
+    {
+      label: "Staking",
+      count: Number(programStats.staking?.activeCount || 0),
+      value: formatGrsc(programStats.staking?.activeLocked || 0),
+      accent: "cyan"
+    },
+    {
+      label: "Founders",
+      count: Number(programStats.founders?.activeCount || 0),
+      value: formatGrsc(programStats.founders?.activeLocked || 0),
+      accent: "gold"
+    },
+    {
+      label: "ETF",
+      count: Number(programStats.etf?.activeCount || 0),
+      value: formatAusd(programStats.etf?.activeCapital || 0),
+      accent: "teal"
+    }
+  ];
+
+  target.innerHTML = `
+    <div class="admin-active-plan-total">
+      <span>Plans actifs totaux</span>
+      <strong>${Number(adminStats.activePlansCount || 0).toLocaleString("fr-FR")}</strong>
+      <small>${Number(adminStats.usersWithActivePlans || 0).toLocaleString("fr-FR")} utilisateurs concernés</small>
+    </div>
+    <div class="admin-plan-overview-grid">
+      ${items.map((item) => `
+        <article class="admin-plan-overview-card ${item.accent}">
+          <span>${escapeHtml(item.label)}</span>
+          <strong>${Number(item.count).toLocaleString("fr-FR")}</strong>
+          <small>${item.value}</small>
+        </article>
+      `).join("")}
     </div>
   `;
 }
@@ -3158,6 +3361,12 @@ function setupActions(user) {
       showToast(formError, "error");
       return;
     }
+    const depositAmount = Number(form.querySelector("[name='amount']")?.value || 0);
+    const depositAsset = form.querySelector("[name='asset']")?.value || "USDT";
+    const depositConfirmed = await confirmAction(`Confirmer la demande de dépôt de ${formatAssetAmount(depositAmount, depositAsset)} ? La demande sera transmise pour vérification.`, {
+      confirmLabel: "Confirmer le dépôt"
+    });
+    if (!depositConfirmed) return;
     const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Traitement...");
     try {
@@ -3207,6 +3416,10 @@ function setupActions(user) {
         showToast("Solde GRSCOIN insuffisant. Les frais de retrait sont payables exclusivement en GRSC. Veuillez recharger votre portefeuille GRSCOIN pour poursuivre cette opération.", "error");
         return;
       }
+      const withdrawalConfirmed = await confirmAction(`Confirmer le retrait de ${formatAssetAmount(amount, asset)} ? Les frais estimés sont de ${formatGrsc(feeGrs)}.`, {
+        confirmLabel: "Confirmer le retrait"
+      });
+      if (!withdrawalConfirmed) return;
       const response = await apiJson("/withdrawals", formToObject(form));
       if (response.reference) {
         showCicoReference(response.reference, "Retrait", response.amount, response.fee || 0, response.netAmount, {
@@ -3258,13 +3471,17 @@ function setupActions(user) {
           return;
         }
       }
+      const targetAsset = direction.split("_")[1] || "GRSC";
+      const swapConfirmed = await confirmAction(`Confirmer le swap de ${formatAssetAmount(amount, sourceAsset)} vers ${targetAsset} ? Les frais seront prélevés selon le tarif actuel.`, {
+        confirmLabel: "Confirmer le swap"
+      });
+      if (!swapConfirmed) return;
       const submitButton = form.querySelector('button[type="submit"]');
       const restoreButton = setButtonLoading(submitButton, "Conversion...");
       try {
         const response = direction === "USDT_GRSC"
           ? await apiJson("/swap/usdt-to-grsc", { amount }, { timeoutMs: 20_000 })
           : await apiJson("/swap/convert", { amount, direction }, { timeoutMs: 20_000 });
-        const targetAsset = direction.split("_")[1] || "GRSC";
         const credited = targetAsset === "AUSD"
           ? formatAusd(response.ausdAmount)
           : targetAsset === "GRSC"
@@ -3298,6 +3515,10 @@ function setupActions(user) {
         showToast("Montant minimum depot GRSCOIN: 1 GRSC.", "error");
         return;
       }
+      const confirmed = await confirmAction(`Confirmer la demande de dépôt de ${formatGrsc(amount)} ? La demande sera transmise pour vérification.`, {
+        confirmLabel: "Confirmer le dépôt"
+      });
+      if (!confirmed) return;
       const submitButton = form.querySelector('button[type="submit"]');
       const restoreButton = setButtonLoading(submitButton, "Envoi...");
       try {
@@ -3335,6 +3556,11 @@ function setupActions(user) {
         showToast("Montant minimum depot USDT BEP20: 1 USDT.", "error");
         return;
       }
+      const creditAsset = form.querySelector("[name='creditAsset']")?.value || "GRSC";
+      const confirmed = await confirmAction(`Confirmer le dépôt de ${formatUsdt(amount)} pour créditer ${creditAsset} ? La demande sera transmise pour vérification.`, {
+        confirmLabel: "Confirmer le dépôt"
+      });
+      if (!confirmed) return;
       const submitButton = form.querySelector('button[type="submit"]');
       const restoreButton = setButtonLoading(submitButton, "Envoi...");
       try {
@@ -3391,6 +3617,11 @@ function setupActions(user) {
         showToast(`Solde GRSCOIN insuffisant. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
         return;
       }
+      const fee = Number((amount * 0.10).toFixed(2));
+      const confirmed = await confirmAction(`Confirmer le retrait de ${formatGrsc(amount)} ? Frais estimés: ${formatGrsc(fee)}.`, {
+        confirmLabel: "Confirmer le retrait"
+      });
+      if (!confirmed) return;
       const submitButton = form.querySelector('button[type="submit"]');
       const restoreButton = setButtonLoading(submitButton, "Envoi...");
       try {
@@ -3426,6 +3657,10 @@ function setupActions(user) {
       showToast(`Solde GRSCOIN insuffisant pour les frais Trading. Requis: ${formatGrsc(costs.totalGrsFees)}. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
       return;
     }
+    const tradingConfirmed = await confirmAction(`Confirmer l'investissement de ${formatAusd(amount)} dans ${button.dataset.plan} ? Capital et frais seront débités immédiatement.`, {
+      confirmLabel: "Confirmer l'investissement"
+    });
+    if (!tradingConfirmed) return;
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
       const response = await apiJson("/plans/activate", { amount, plan: button.dataset.plan }, { timeoutMs: 25_000 });
@@ -3460,6 +3695,10 @@ function setupActions(user) {
       showToast(`Solde GRSCOIN insuffisant. Total requis: ${formatGrsc(costs.total)} incluant ${formatGrsc(costs.programFee)} de frais programme. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
       return;
     }
+    const stakingConfirmed = await confirmAction(`Confirmer le staking de ${formatGrsc(amount)} dans ${plan?.name || "AFRIX Staking Program"} ? Total débité: ${formatGrsc(costs.total)}.`, {
+      confirmLabel: "Confirmer le staking"
+    });
+    if (!stakingConfirmed) return;
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
       const response = await apiJson("/staking/activate", { amount, plan: button.dataset.stakingPlan }, { timeoutMs: 25_000 });
@@ -3507,7 +3746,7 @@ function setupActions(user) {
       showToast(`Solde GRSCOIN insuffisant. Total requis: ${formatGrsc(totalRequired)} incluant ${formatGrsc(activationFee)} de frais programme. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
       return;
     }
-    const confirmed = window.confirm(`Confirmer l'immobilisation de ${formatGrsc(amount)} dans ${plan?.name || "GRS Core Founders Club"} ? Frais programme: ${formatGrsc(activationFee)}. Total debite: ${formatGrsc(totalRequired)}.`);
+    const confirmed = await confirmAction(`Confirmer l'immobilisation de ${formatGrsc(amount)} dans ${plan?.name || "GRS Core Founders Club"} ? Frais programme: ${formatGrsc(activationFee)}. Total debite: ${formatGrsc(totalRequired)}.`);
     if (!confirmed) return;
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
@@ -3558,6 +3797,10 @@ function setupActions(user) {
       showToast(`Solde GRSCOIN insuffisant pour les frais ETF. Requis: ${formatGrsc(costs.totalGrsFees)}. Disponible: ${formatGrsc(user.grsBalance)}.`, "error");
       return;
     }
+    const etfConfirmed = await confirmAction(`Confirmer l'investissement de ${formatAusd(amount)} dans ${plan?.name || "AFRIX ETF Program"} ? Capital et frais seront débités immédiatement.`, {
+      confirmLabel: "Confirmer l'investissement"
+    });
+    if (!etfConfirmed) return;
     const restoreButton = setButtonLoading(button, "Activation...");
     try {
       const response = await apiJson("/etf/activate", { amount, plan: button.dataset.etfPlan }, { timeoutMs: 25_000 });
@@ -3661,7 +3904,7 @@ function setupActions(user) {
       const recipient = await lookupP2pRecipient();
       if (!recipient) return;
     }
-    const confirmed = window.confirm(`Confirmer l'envoi de ${formatAssetAmount(amount, asset)} a ${p2pRecipient.displayName || p2pRecipient.email} ? Frais: ${formatGrsc(feeGrsAmount)} en GRSC. Total debite: ${formatAssetAmount(total, asset)}.`);
+    const confirmed = await confirmAction(`Confirmer l'envoi de ${formatAssetAmount(amount, asset)} a ${p2pRecipient.displayName || p2pRecipient.email} ? Frais: ${formatGrsc(feeGrsAmount)} en GRSC. Total debite: ${formatAssetAmount(total, asset)}.`);
     if (!confirmed) return;
     const submitButton = form.querySelector('button[type="submit"]');
     const restoreButton = setButtonLoading(submitButton, "Envoi...");
@@ -4181,7 +4424,8 @@ async function handleAdminClick(event) {
   const exchangeConfirmButton = event.target.closest("[data-admin-exchange-confirm]");
   if (exchangeConfirmButton) {
     const reference = exchangeConfirmButton.dataset.adminExchangeConfirm;
-    if (!window.confirm(`Valider la demande Exchange ${reference} ?`)) return;
+    const confirmed = await confirmAction(`Valider la demande Exchange ${reference} ?`);
+    if (!confirmed) return;
     const restoreButton = setButtonLoading(exchangeConfirmButton, "Validation...");
     try {
       await apiJson(`/exchange/orders/${encodeURIComponent(reference)}/confirm`, {});
@@ -4231,7 +4475,10 @@ async function handleAdminClick(event) {
     "user-reactivate": "reactiver ce compte",
     "user-role": "modifier le role de ce compte"
   };
-  if (confirmationLabels[actionName] && !window.confirm(`Confirmer: ${confirmationLabels[actionName]} ?`)) return;
+  if (confirmationLabels[actionName]) {
+    const confirmed = await confirmAction(`Confirmer: ${confirmationLabels[actionName]} ?`);
+    if (!confirmed) return;
+  }
   const restoreButton = setButtonLoading(action, "Traitement...");
 
   try {
@@ -4260,6 +4507,7 @@ function renderProtectedShell(page, user) {
   renderTopbar(page, user);
   renderMobileNavigation(page, user);
   renderDashboard(user);
+  renderInvestments(user);
   renderTransactions(user);
   renderWallet(user);
   renderSwap(user);

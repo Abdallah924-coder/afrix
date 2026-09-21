@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f5d43">
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="../assets/pwa-icon.svg">
+  <title>Evolution des investissements - AFRIX</title>
+  <link rel="stylesheet" href="../styles.css?v=20260921-1">
+</head>
+<body data-protected data-page="investments">
+  <aside class="sidebar" data-sidebar></aside>
+  <main class="app" data-investments-page>
+    <header class="topbar" data-topbar></header>
+    <section class="hero-card investment-hero">
+      <div>
+        <span class="pill">Vue consolidée • Trading • Staking • Founders • ETF</span>
+        <h1>L'évolution de vos investissements.</h1>
+        <p>Suivez en un seul endroit le capital engagé, l'avancement des cycles et les gains cumulés de chaque programme.</p>
+      </div>
+      <div class="investment-hero-mark" aria-hidden="true"><span>↗</span><small>Cycle<br>en mouvement</small></div>
+    </section>
+
+    <section class="investment-summary-grid" aria-label="Résumé des investissements">
+      <article class="investment-summary-card"><span>Participations</span><strong data-investment-count>0</strong><small>Toutes catégories confondues</small></article>
+      <article class="investment-summary-card"><span>Investissements actifs</span><strong data-investment-active>0</strong><small>Cycles en cours</small></article>
+      <article class="investment-summary-card"><span>Capital AUSD engagé</span><strong data-investment-ausd>0.00 AUSD</strong><small>Trading et ETF</small></article>
+      <article class="investment-summary-card"><span>Capital GRSC engagé</span><strong data-investment-grsc>0.00 GRSC</strong><small>Staking et Founders Club</small></article>
+    </section>
+
+    <section class="panel investment-overview-panel">
+      <div class="panel-head"><div><span class="section-kicker">Lecture rapide</span><h2>Vue d'ensemble</h2></div><span class="badge">Suivi en temps réel</span></div>
+      <div class="investment-overview-row">
+        <div><small>Gains cumulés AUSD / GRSC</small><strong data-investment-earned>0.00 AUSD / 0.00 GRSC</strong></div>
+        <p class="muted">La progression est calculée à partir du temps écoulé ou des jours déjà rémunérés selon le programme.</p>
+      </div>
+    </section>
+
+    <section class="panel investment-list-panel">
+      <div class="panel-head"><div><span class="section-kicker">Détail des cycles</span><h2>Evolution de chaque investissement</h2></div><a class="icon-btn" href="/transactions" aria-label="Voir les transactions">↗</a></div>
+      <div class="investment-evolution-list" data-investments-list></div>
+    </section>
+  </main>
+  <script src="../app.js?v=20260921-1"></script>
+</body>
+</html>

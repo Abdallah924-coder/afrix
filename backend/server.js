@@ -69,6 +69,9 @@ import {
   today
 } from "./ledger.js";
 import { maskEmail, notifyAdmin, sendBrevoMail } from "./mailer.js";
+import { adminProgramStatsFromUsers as adminProgramStatsFromUsersCore, buildAdminPaginatedResponse as buildAdminPaginatedResponseCore, buildAdminStats as buildAdminStatsCore, buildPlatformSummary as buildPlatformSummaryCore, compactAdminUser as compactAdminUserCore, canViewTransaction as canViewTransactionCore, parseAdminPagination as parseAdminPaginationCore, transactionExportSummary as transactionExportSummaryCore, transactionStatusSummary as transactionStatusSummaryCore } from "./business-core.js";
+import { canUseBackoffice as canUseBackofficeCore, canViewCommissionSummary as canViewCommissionSummaryCore, escapeRegExp as escapeRegExpCore, isCommissionAccount as isCommissionAccountCore, normalizeEmail as normalizeEmailCore, normalizeInvitationCode as normalizeInvitationCodeCore, referralMatches as referralMatchesCore, stableRefCodeFromEmail as stableRefCodeFromEmailCore } from "./access-core.js";
+import { normalizeFeeSettings, normalizeRate, platformRevenueShares, splitActivationCommissions, splitPlatformRevenue, validateProofFile } from "./platform-core.js";
 import {
   CicoRequestModel,
   DisputeModel,
@@ -87,6 +90,15 @@ let mongoReadyPromise = null;
 let storageReadyPromise = null;
 let dailyEarningsPromise = null;
 let dailyEarningsUnavailableUntil = 0;
+const buildAdminPaginatedResponse = buildAdminPaginatedResponseCore;
+const buildAdminStats = buildAdminStatsCore;
+const buildPlatformSummary = buildPlatformSummaryCore;
+const canViewTransaction = canViewTransactionCore;
+const compactAdminUser = compactAdminUserCore;
+const adminProgramStatsFromUsers = adminProgramStatsFromUsersCore;
+const parseAdminPagination = parseAdminPaginationCore;
+const summarizeTransactionExportRows = transactionExportSummaryCore;
+const summarizeTransactionStatusRows = transactionStatusSummaryCore;
 const secondaryReadPreference = "primary";
 const transactionListProjection = { "metadata.proof.dataBase64": 0 };
 const PLAN_EARNINGS_INTERVAL_MS = 15 * 60 * 1000;
@@ -129,80 +141,12 @@ const safeUserProjection = {
 
 const feeSettingKeys = Object.keys(defaultDb.feeSettings || {});
 
-function proofFileSignature(buffer) {
-  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return "";
-  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
-  if (
-    buffer[0] === 0x89 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x4e &&
-    buffer[3] === 0x47
-  ) return "image/png";
-  if (
-    buffer.length >= 12 &&
-    buffer.slice(0, 4).toString("ascii") === "RIFF" &&
-    buffer.slice(8, 12).toString("ascii") === "WEBP"
-  ) return "image/webp";
-  return "";
-}
-
-function validateProofFile(file) {
-  if (!file?.buffer?.length) {
-    return { error: "Preuve de paiement requise." };
-  }
-  const declaredMime = String(file.mimetype || "").toLowerCase();
-  const detectedMime = proofFileSignature(file.buffer);
-  if (!ALLOWED_PROOF_MIME_TYPES.has(declaredMime) || detectedMime !== declaredMime) {
-    return { error: "Format de preuve invalide. Formats acceptes: JPG, PNG ou WEBP." };
-  }
-  return null;
-}
-
-function normalizeRate(value, fallback = 0) {
-  const rate = Number(value);
-  return Number.isFinite(rate) && rate >= 0 ? rate : fallback;
-}
-
-function normalizeFeeSettings(settings = {}) {
-  const defaults = defaultDb.feeSettings || {};
-  return feeSettingKeys.reduce((normalized, key) => {
-    normalized[key] = normalizeRate(settings?.[key], defaults[key]);
-    return normalized;
-  }, {});
-}
-
 async function getFeeSettings(session = null) {
   await ensureStorage();
   const query = SettingModel.findOne({ key: "feeSettings" }, null, session ? { session } : {});
   if (!session) query.read(secondaryReadPreference);
   const setting = await query.lean();
-  return normalizeFeeSettings(setting?.value);
-}
-
-function platformRevenueShares(settings = {}) {
-  const adminShare = normalizeRate(settings.platformRevenueAdminShare, PLATFORM_FEE_ADMIN_SHARE);
-  const developerShare = normalizeRate(settings.platformRevenueDeveloperShare, PLATFORM_FEE_DEVELOPER_SHARE);
-  const platformShare = Math.max(0, 1 - adminShare - developerShare);
-  return { adminShare, developerShare, platformShare };
-}
-
-function splitPlatformRevenue(amount, settings = {}) {
-  const revenue = money(amount);
-  if (revenue <= 0) return { admin: 0, developer: 0, platform: 0 };
-  const shares = platformRevenueShares(settings);
-  const admin = money(revenue * shares.adminShare);
-  const developer = money(revenue * shares.developerShare);
-  const platform = money(revenue - admin - developer);
-  return { admin, developer, platform };
-}
-
-function splitActivationCommissions(amount, settings = {}) {
-  const baseAmount = money(amount);
-  if (baseAmount <= 0) return { admin: 0, developer: 0 };
-  return {
-    admin: money(baseAmount * normalizeRate(settings.activationAdminCommissionRate, ACTIVATION_ADMIN_COMMISSION_RATE)),
-    developer: money(baseAmount * normalizeRate(settings.activationDeveloperCommissionRate, ACTIVATION_DEVELOPER_COMMISSION_RATE))
-  };
+  return normalizeFeeSettings(setting?.value, defaultDb.feeSettings || {});
 }
 
 function dueAnnualManagementFees(item = {}, settings = {}) {
@@ -253,7 +197,7 @@ function normalizeDb(db = {}) {
     passwordResetTokens: Array.isArray(db.passwordResetTokens) ? db.passwordResetTokens : [],
     platformAccount: { ...defaultDb.platformAccount, ...(db.platformAccount || {}) },
     platformControls: { ...defaultDb.platformControls, ...(db.platformControls || {}) },
-    feeSettings: normalizeFeeSettings(db.feeSettings),
+    feeSettings: normalizeFeeSettings(db.feeSettings, defaultDb.feeSettings || {}),
     paymentTargets: defaultDb.paymentTargets
   };
 }
@@ -291,11 +235,12 @@ async function ensureStorage() {
         if (!mongoReadyPromise) {
           mongoose.set("strictQuery", true);
           mongoReadyPromise = mongoose.connect(MONGODB_URI, {
-            serverSelectionTimeoutMS: 5000,
+            serverSelectionTimeoutMS: 15000,
             socketTimeoutMS: 15000,
-            connectTimeoutMS: 5000,
+            connectTimeoutMS: 10000,
             maxPoolSize: 20,
             minPoolSize: 0,
+            family: 4,
             readPreference: secondaryReadPreference
           }).then(() => logger.info("MongoDB Atlas connected"));
         }
@@ -725,128 +670,8 @@ function isTestTransaction(tx = {}) {
   return Boolean(tx?.metadata?.testAccount || tx?.userId === testAccountId || tx?.metadata?.sourceUserId === testAccountId || tx?.metadata?.buyerId === testAccountId);
 }
 
-function isCommissionAccount(user = {}) {
-  const email = normalizeEmail(user?.email);
-  return Boolean(
-    isConfiguredAdminEmail(email) ||
-    (COMMISSION_DEVELOPER_EMAIL && email === normalizeEmail(COMMISSION_DEVELOPER_EMAIL)) ||
-    (PLATFORM_EMAIL && email === normalizeEmail(PLATFORM_EMAIL))
-  );
-}
-
-function canViewCommissionSummary(user = {}) {
-  const email = normalizeEmail(user?.email);
-  return Boolean(canUseBackoffice(user) || (PLATFORM_EMAIL && email === normalizeEmail(PLATFORM_EMAIL)));
-}
-
-function canViewTransaction(user, tx) {
-  if (tx.type === "Commission") {
-    return canUseBackoffice(user) || (tx.userId === user.id && canViewCommissionSummary(user));
-  }
-  return user.role === "admin" || tx.userId === user.id;
-}
-
-function buildAdminStats(db) {
-  const now = new Date();
-  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const startOfWeek = new Date(startOfDay);
-  startOfWeek.setUTCDate(startOfDay.getUTCDate() - 6);
-  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const userCreatedAt = (user) => new Date(user.createdAt || 0).getTime();
-  const transactions = (db.transactions || []).filter((tx) => !isTestTransaction(tx));
-  const users = (db.users || []).filter((user) => !isTestAccountUser(user));
-  const activePlans = users.flatMap((user) => (user.activePlans || []).filter((plan) => plan.status === "active" || plan.status === "dividend"));
-  const activeEtfs = users.flatMap((user) => (user.activeEtfs || []).filter((item) => item.status === "active" || item.status === "matured"));
-  const completedTransactions = transactions.filter((tx) => tx.status === "Completed" || tx.status === "Active");
-  const platformRevenue = completedTransactions.reduce((total, tx) => {
-    if (tx.type === "Retrait") return total + Number(tx.metadata?.fee || 0);
-    if (tx.type === "P2P" && tx.displayAmount?.startsWith("-")) return total + Number(tx.metadata?.fee || 0);
-    return total;
-  }, 0);
-  const countries = new Set(users.map((user) => String(user.country || "").trim()).filter(Boolean));
-
-  return {
-    totalUsers: users.length,
-    newUsersToday: users.filter((user) => userCreatedAt(user) >= startOfDay.getTime()).length,
-    newUsersWeek: users.filter((user) => userCreatedAt(user) >= startOfWeek.getTime()).length,
-    newUsersMonth: users.filter((user) => userCreatedAt(user) >= startOfMonth.getTime()).length,
-    activeUsers: users.filter((user) => (user.status || "active") === "active").length,
-    activePlansCount: activePlans.length + activeEtfs.length,
-    usersWithActivePlans: users.filter((user) => (user.activePlans || []).some((plan) => plan.status === "active" || plan.status === "dividend") || (user.activeEtfs || []).some((item) => item.status === "active" || item.status === "matured")).length,
-    investedCapital: money(activePlans.reduce((total, plan) => total + Number(plan.amount || 0), 0) + activeEtfs.reduce((total, item) => total + Number(item.amount || 0), 0)),
-    transactionVolume: money(completedTransactions.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0)),
-    platformRevenue: money(platformRevenue),
-    partners: users.filter((user) => user.referrerId).length,
-    approvedMerchants: users.filter((user) => user.merchantProfile?.status === "approved").length,
-    activeCountries: countries.size
-  };
-}
-
-function buildPlatformSummary(transactions = []) {
-  const completedOrActive = transactions.filter((tx) => tx.status === "Completed" || tx.status === "Active");
-  const deposits = transactions.filter((tx) => tx.type === "Depot");
-  const withdrawals = transactions.filter((tx) => tx.type === "Retrait");
-  const byStatus = (rows, status) => rows.filter((tx) => tx.status === status);
-  const sumAmount = (rows) => money(rows.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0));
-  const sumFees = (rows) => money(rows.reduce((total, tx) => total + Number(tx.metadata?.fee || 0), 0));
-  const platformRevenue = money(completedOrActive.reduce((total, tx) => {
-    if (tx.type === "Retrait") return total + Number(tx.metadata?.fee || 0);
-    if (tx.type === "P2P" && tx.displayAmount?.startsWith("-")) return total + Number(tx.metadata?.fee || 0);
-    return total;
-  }, 0));
-
-  return {
-    transactions: {
-      total: transactions.length,
-      completed: byStatus(transactions, "Completed").length,
-      pending: byStatus(transactions, "Pending").length,
-      rejected: byStatus(transactions, "Rejected").length,
-      active: byStatus(transactions, "Active").length,
-      volume: sumAmount(completedOrActive)
-    },
-    deposits: {
-      total: deposits.length,
-      pending: byStatus(deposits, "Pending").length,
-      completed: byStatus(deposits, "Completed").length,
-      rejected: byStatus(deposits, "Rejected").length,
-      completedAmount: sumAmount(byStatus(deposits, "Completed")),
-      rejectedAmount: sumAmount(byStatus(deposits, "Rejected")),
-      pendingAmount: sumAmount(byStatus(deposits, "Pending"))
-    },
-    withdrawals: {
-      total: withdrawals.length,
-      pending: byStatus(withdrawals, "Pending").length,
-      completed: byStatus(withdrawals, "Completed").length,
-      rejected: byStatus(withdrawals, "Rejected").length,
-      completedAmount: sumAmount(byStatus(withdrawals, "Completed")),
-      rejectedAmount: sumAmount(byStatus(withdrawals, "Rejected")),
-      pendingAmount: sumAmount(byStatus(withdrawals, "Pending")),
-      fees: sumFees(withdrawals)
-    },
-    platformRevenue
-  };
-}
-
-function parseAdminPagination(query = {}, defaultLimit = 20, maxLimit = 100) {
-  const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
-  const limit = Math.min(maxLimit, Math.max(1, Number.parseInt(query.limit, 10) || defaultLimit));
-  return { page, limit, skip: (page - 1) * limit };
-}
-
-function buildAdminPaginatedResponse(items, total, page, limit) {
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-  return {
-    items,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages,
-      hasPrev: page > 1,
-      hasNext: page < totalPages
-    }
-  };
-}
+const isCommissionAccount = isCommissionAccountCore;
+const canViewCommissionSummary = canViewCommissionSummaryCore;
 
 function adminRegex(value = "") {
   const trimmed = String(value || "").trim();
@@ -867,43 +692,6 @@ function transactionProgram(tx = {}) {
   if (type === "Depot") return "deposit";
   if (type === "Retrait") return "withdrawal";
   return "general";
-}
-
-function compactAdminUser(user = {}) {
-  const activePlans = Array.isArray(user.activePlans) ? user.activePlans : [];
-  const activeStakes = Array.isArray(user.activeStakes) ? user.activeStakes : [];
-  const activeFounders = Array.isArray(user.activeFounders) ? user.activeFounders : [];
-  const activeEtfs = Array.isArray(user.activeEtfs) ? user.activeEtfs : [];
-  return {
-    id: user.id,
-    fullName: user.fullName || user.email,
-    email: user.email,
-    country: user.country || "",
-    wallet: user.wallet || "",
-    role: user.role || "user",
-    status: user.status || "active",
-    ausdBalance: money(user.ausdBalance),
-    balance: money(user.balance),
-    grsBalance: money(user.grsBalance),
-    reservedBalance: money(user.reservedBalance),
-    activity: money(user.activity),
-    bonus: money(user.bonus),
-    refCode: user.refCode || "",
-    referrerId: user.referrerId || "",
-    referrerEmail: user.referrerEmail || "",
-    referrerCode: user.referrerCode || "",
-    bonusLevelsOverride: Number(user.bonusLevelsOverride || 0),
-    activePlansCount: activePlans.filter((plan) => plan.status === "active" || plan.status === "dividend").length,
-    activeStakesCount: activeStakes.filter((stake) => stake.status === "active").length,
-    activeFoundersCount: activeFounders.filter((item) => item.status === "active").length,
-    activeEtfsCount: activeEtfs.filter((item) => item.status === "active" || item.status === "matured").length,
-    activeInvestmentAmount: money(activePlans.filter((plan) => plan.status === "active" || plan.status === "dividend").reduce((total, plan) => total + Number(plan.amount || 0), 0)),
-    activeStakeAmount: money(activeStakes.filter((stake) => stake.status === "active").reduce((total, stake) => total + Number(stake.amount || 0), 0)),
-    activeFounderAmount: money(activeFounders.filter((item) => item.status === "active").reduce((total, item) => total + Number(item.amount || 0), 0)),
-    activeEtfAmount: money(activeEtfs.filter((item) => item.status === "active" || item.status === "matured").reduce((total, item) => total + Number(item.amount || 0), 0)),
-    merchantStatus: user.merchantProfile?.status || "Aucun profil",
-    createdAt: user.createdAt || ""
-  };
 }
 
 function enrichAdminTransaction(tx = {}, owner = null) {
@@ -927,84 +715,6 @@ function enrichAdminTransaction(tx = {}, owner = null) {
       proof: undefined
     }
   };
-}
-
-function adminProgramStatsFromUsers(users = []) {
-  const activeTrading = users.flatMap((user) => (user.activePlans || [])
-    .filter((plan) => plan.status === "active")
-    .map((plan) => ({ ...plan, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
-  const allTrading = users.flatMap((user) => (user.activePlans || [])
-    .map((plan) => ({ ...plan, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
-  const activeStaking = users.flatMap((user) => (user.activeStakes || [])
-    .filter((stake) => stake.status === "active")
-    .map((stake) => ({ ...stake, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
-  const allStaking = users.flatMap((user) => (user.activeStakes || [])
-    .map((stake) => ({ ...stake, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
-  const activeFounders = users.flatMap((user) => (user.activeFounders || [])
-    .filter((item) => item.status === "active")
-    .map((item) => ({ ...item, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
-  const allFounders = users.flatMap((user) => (user.activeFounders || [])
-    .map((item) => ({ ...item, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
-  const activeEtfs = users.flatMap((user) => (user.activeEtfs || [])
-    .filter((item) => item.status === "active" || item.status === "matured")
-    .map((item) => ({ ...item, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
-  const allEtfs = users.flatMap((user) => (user.activeEtfs || [])
-    .map((item) => ({ ...item, userId: user.id, userEmail: user.email, userName: user.fullName || user.email })));
-
-  return {
-    trading: {
-      activeCount: activeTrading.length,
-      totalCount: allTrading.length,
-      activeCapital: money(activeTrading.reduce((total, plan) => total + Number(plan.amount || 0), 0)),
-      totalEarned: money(allTrading.reduce((total, plan) => total + Number(plan.earnedAmount || 0), 0))
-    },
-    staking: {
-      activeCount: activeStaking.length,
-      totalCount: allStaking.length,
-      activeLocked: money(activeStaking.reduce((total, stake) => total + Number(stake.amount || 0), 0)),
-      totalEarned: money(allStaking.reduce((total, stake) => total + Number(stake.earnedAmount || 0), 0))
-    },
-    founders: {
-      activeCount: activeFounders.length,
-      totalCount: allFounders.length,
-      activeLocked: money(activeFounders.reduce((total, item) => total + Number(item.amount || 0), 0)),
-      totalReward: money(allFounders.reduce((total, item) => total + Number(item.rewardAmount || 0), 0))
-    },
-    etf: {
-      activeCount: activeEtfs.length,
-      totalCount: allEtfs.length,
-      activeCapital: money(activeEtfs.reduce((total, item) => total + Number(item.amount || 0), 0)),
-      totalDividends: money(allEtfs.reduce((total, item) => total + Number(item.dividendAmount || 0), 0))
-    }
-  };
-}
-
-async function transactionStatusSummary(query = {}) {
-  const rows = await TransactionModel.aggregate([
-    { $match: query },
-    {
-      $group: {
-        _id: "$status",
-        count: { $sum: 1 },
-        amount: { $sum: { $toDouble: { $ifNull: ["$amount", 0] } } }
-      }
-    }
-  ]);
-  const summary = { total: 0, pending: 0, completed: 0, rejected: 0, active: 0 };
-  rows.forEach((row) => {
-    const key = String(row._id || "").toLowerCase();
-    summary.total += Number(row.count || 0);
-    if (key === "pending") summary.pending = Number(row.count || 0);
-    if (key === "completed") summary.completed = Number(row.count || 0);
-    if (key === "rejected") summary.rejected = Number(row.count || 0);
-    if (key === "active") summary.active = Number(row.count || 0);
-  });
-  summary.rows = rows.map((row) => ({
-    status: row._id || "",
-    count: Number(row.count || 0),
-    amount: money(row.amount || 0)
-  }));
-  return summary;
 }
 
 function buildAdminTransactionQuery(queryParams = {}, baseClauses = []) {
@@ -1089,14 +799,22 @@ function transactionExportRows(user, db) {
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 }
 
+async function transactionStatusSummary(query = {}) {
+  const rows = await TransactionModel.aggregate([
+    { $match: query },
+    {
+      $group: {
+        _id: "$status",
+        count: { $sum: 1 },
+        amount: { $sum: { $toDouble: { $ifNull: ["$amount", 0] } } }
+      }
+    }
+  ]);
+  return summarizeTransactionStatusRows(rows);
+}
+
 function transactionExportSummary(rows = []) {
-  return {
-    total: rows.length,
-    completed: rows.filter((tx) => tx.status === "Completed").length,
-    pending: rows.filter((tx) => tx.status === "Pending").length,
-    rejected: rows.filter((tx) => tx.status === "Rejected").length,
-    volume: money(rows.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0))
-  };
+  return summarizeTransactionExportRows(Array.isArray(rows) ? rows : []);
 }
 
 function pdfSafe(value = "") {
@@ -1383,45 +1101,11 @@ function prunePasswordResetTokenList(tokens = []) {
   return (Array.isArray(tokens) ? tokens : []).filter((item) => !item.usedAt && Date.parse(item.expiresAt) > now);
 }
 
-function normalizeInvitationCode(value = "") {
-  let code = String(value || "").trim();
-  if (!code) return "";
-  try {
-    const parsedUrl = new URL(code, APP_URL);
-    code = parsedUrl.searchParams.get("ref") || parsedUrl.searchParams.get("code") || code;
-  } catch {
-    // The value is usually just the code, not a full URL.
-  }
-  return code.trim().replace(/\s+/g, "").toUpperCase();
-}
-
-function escapeRegExp(value = "") {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function normalizeEmail(value = "") {
-  return String(value || "").trim().toLowerCase();
-}
-
-function stableRefCodeFromEmail(email = "") {
-  const normalizedEmail = normalizeEmail(email);
-  const digest = createHash("sha256").update(normalizedEmail).digest("hex").slice(0, 8).toUpperCase();
-  return `AFX-${digest}`;
-}
-
-function referralMatches(candidate, sponsor) {
-  const candidateReferrerId = String(candidate?.referrerId || "");
-  const sponsorId = String(sponsor?.id || "");
-  const candidateReferrerEmail = normalizeEmail(candidate?.referrerEmail);
-  const sponsorEmail = normalizeEmail(sponsor?.email);
-  const candidateReferrerCode = normalizeInvitationCode(candidate?.referrerCode);
-  const sponsorRefCode = normalizeInvitationCode(sponsor?.refCode);
-  return Boolean(
-    (candidateReferrerId && sponsorId && candidateReferrerId === sponsorId) ||
-    (candidateReferrerEmail && sponsorEmail && candidateReferrerEmail === sponsorEmail) ||
-    (candidateReferrerCode && sponsorRefCode && candidateReferrerCode === sponsorRefCode)
-  );
-}
+const normalizeInvitationCode = normalizeInvitationCodeCore;
+const escapeRegExp = escapeRegExpCore;
+const normalizeEmail = normalizeEmailCore;
+const stableRefCodeFromEmail = stableRefCodeFromEmailCore;
+const referralMatches = referralMatchesCore;
 
 async function findUserByReferralPointer(pointer = {}, session = null) {
   const clauses = [];
@@ -2074,7 +1758,7 @@ function composeUser(db, user) {
       mainBalance: money(user.balance)
     },
     merchantApplicationStatus: user.merchantProfile?.status || "Aucun profil",
-    cicoRequests: ownCicoRequests.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    cicoRequests: ownCicoRequests.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
     exchangeAds: ownExchangeAds.map((ad) => publicExchangeAd(ad, db.users.find((candidate) => candidate.id === ad.merchantId))),
     exchangeOrders: ownExchangeOrders.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
     adminExchangeOrders: canUseBackoffice(user)
@@ -2109,8 +1793,8 @@ function composeUser(db, user) {
         }))
       : [],
     ledgerEntries: canUseBackoffice(user)
-      ? db.ledgerEntries.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 500)
-      : db.ledgerEntries.filter((entry) => entry.accountId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 200),
+      ? db.ledgerEntries.slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 500)
+      : db.ledgerEntries.filter((entry) => entry.accountId === user.id).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 200),
     platformAccount: canUseBackoffice(user) ? ensurePlatform(db) : {},
     adminStats: canUseBackoffice(user) ? buildAdminStats(db) : {}
   };
@@ -2142,9 +1826,7 @@ async function attachDb(req, res, next) {
   }
 }
 
-function canUseBackoffice(user) {
-  return user?.role === "admin" || user?.role === "developer";
-}
+const canUseBackoffice = canUseBackofficeCore;
 
 function requireAdmin(req, res, next) {
   if (!canUseBackoffice(req.user)) return res.status(403).json({ message: "Acces backoffice requis." });
@@ -6154,7 +5836,7 @@ app.get("/api/admin/summary", authenticate, requireAdmin, async (_req, res, next
     });
     const stats = buildAdminStats(db);
     const programStats = adminProgramStatsFromUsers(users);
-    const platformSummary = buildPlatformSummary(transactions);
+    const platformSummary = buildPlatformSummaryCore(transactions);
     const swapTransactions = transactions.filter((tx) => transactionProgram(tx) === "swap");
     const moneyTransactions = transactions.filter((tx) => transactionProgram(tx) === "money");
 
@@ -6583,7 +6265,7 @@ app.get("/api/admin/programs/:program", authenticate, requireAdmin, async (req, 
       const pageItems = rows.slice(skip, skip + limit);
       return res.json({
         stats: programStats[program],
-        ...buildAdminPaginatedResponse(pageItems, rows.length, page, limit)
+        ...buildAdminPaginatedResponseCore(pageItems, rows.length, page, limit)
       });
     }
 
@@ -6599,7 +6281,7 @@ app.get("/api/admin/programs/:program", authenticate, requireAdmin, async (req, 
       return res.json({
         cicoRequests,
         exchangeOrders,
-        ...buildAdminPaginatedResponse(p2pTransactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), p2pTransactionsTotal, page, limit)
+        ...buildAdminPaginatedResponseCore(p2pTransactions.map((tx) => enrichAdminTransaction(tx, ownerMap.get(tx.userId))), p2pTransactionsTotal, page, limit)
       });
     }
 
@@ -6664,7 +6346,7 @@ app.post("/api/admin/fee-settings", authenticate, requireAdmin, validate(z.objec
         .filter(([key]) => feeSettingKeys.includes(key))
         .map(([key, value]) => [key, Number(value) / 100])
     )
-  });
+  }, defaultDb.feeSettings || {});
   await SettingModel.updateOne({ key: "feeSettings" }, { $set: { value: next } }, { upsert: true });
   res.json({ feeSettings: next });
 });
@@ -8005,7 +7687,9 @@ app.use((err, req, res, _next) => {
     return res.status(400).json({ message: "Preuve de paiement invalide." });
   }
   logger.error({ err, method: req.method, url: req.originalUrl, action: req.body?.action, transactionId: req.body?.id, userId: req.user?.id }, "Unhandled API error");
-  res.status(500).json({ message: "Erreur serveur." });
+  res.status(500).json({
+    message: isProduction ? "Erreur serveur." : `Erreur serveur: ${err.message || "exception inconnue"}`
+  });
 });
 
 function runDailyPlanEarnings() {

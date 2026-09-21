@@ -24,6 +24,23 @@ On startup, Render creates or updates the admin account from `ADMIN_EMAIL` and `
 - Merchant: applications, CICO lookup/confirmation, merchant wallet transfer
 - Admin: platform settings, transaction validation, merchant approval, dispute closure
 
+## Financial Core Separation
+
+The project keeps the business rules in a single entrypoint for now, but critical math and validation functions are being isolated to keep production risk controlled:
+
+- `platform-core.js` centralizes platform revenue shares, activation commissions, rate normalization, and proof validation.
+- `server.js` stays as the orchestration layer, calling the financial rules instead of embedding the logic inline.
+- `smoke-test.js` verifies the calculations and public routes to catch regressions before deployment.
+
+This is a production-safe refactor pattern: centralize the sensitive logic first, keep the external behavior stable, and only then split modules further.
+
+## Production Safety Notes
+
+- Keep all operator actions and financial calculations auditable.
+- Treat ledger and commission logic as privileged business logic, not as UI code.
+- Prefer small refactors with regression tests over large rewrites during live operations.
+- Do not move to a new architecture without coverage on the legacy behavior.
+
 ## Production Setup
 
 Render uses the root `render.yaml`.
