@@ -668,16 +668,16 @@ function normalizeStatusValue(value = "") {
 
 let testAccountId = "";
 
-function isTestAccountUser(user = {}) {
-  return Boolean(TEST_ACCOUNT_EMAIL && (user?.id === testAccountId || normalizeEmail(user?.email) === TEST_ACCOUNT_EMAIL));
+function isTestAccountUser(_user = {}) {
+  return false;
 }
 
-function isTestTransaction(tx = {}) {
-  return Boolean(tx?.metadata?.testAccount || tx?.userId === testAccountId || tx?.metadata?.sourceUserId === testAccountId || tx?.metadata?.buyerId === testAccountId);
+function isTestTransaction(_tx = {}) {
+  return false;
 }
 
-function isTestAccountSource(extra = {}) {
-  return Boolean(extra?.testAccount || isTestAccountUser({ id: extra?.sourceUserId, email: extra?.sourceUserEmail }) || isTestAccountUser({ id: extra?.buyerId, email: extra?.buyerEmail }));
+function isTestAccountSource(_extra = {}) {
+  return false;
 }
 
 const isCommissionAccount = isCommissionAccountCore;
@@ -3110,24 +3110,7 @@ async function ensureCommissionAccount({ email, password, fullName, role }) {
 }
 
 async function ensureTestAccount() {
-  if (!TEST_ACCOUNT_EMAIL || !TEST_ACCOUNT_PASSWORD) {
-    const existing = await UserModel.findOne({
-      $or: [{ testAccount: true }, { fullName: TEST_ACCOUNT_NAME }]
-    }).lean();
-    testAccountId = existing?.id || "";
-    if (testAccountId) logger.info({ userId: testAccountId }, "Existing test account detected");
-    return existing ? sanitizeUser(existing) : null;
-  }
-  const account = await ensureCommissionAccount({
-    email: TEST_ACCOUNT_EMAIL,
-    password: TEST_ACCOUNT_PASSWORD,
-    fullName: TEST_ACCOUNT_NAME,
-    role: "user"
-  });
-  testAccountId = account?.id || "";
-  if (testAccountId) await UserModel.updateOne({ id: testAccountId }, { $set: { testAccount: true } });
-  logger.info({ email: maskEmail(TEST_ACCOUNT_EMAIL), userId: testAccountId }, "Test account ready");
-  return account;
+  return null;
 }
 
 async function ensureCommissionAccounts() {
@@ -5490,6 +5473,17 @@ app.post("/api/exchange/orders", authenticate, requirePlatformAccess(), validate
     const localAmount = money(amount * Number(ad.rate || 0));
     const fee = 0;
     const reference = makeReference(ad.type === "sell" ? "BUY" : "SELL", amount);
+    const duplicatePendingOrder = db.exchangeOrders.find((item) =>
+      item.userId === customer.id &&
+      item.merchantId === merchant.id &&
+      item.type === ad.type &&
+      item.status === "pending" &&
+      Number(item.amount || 0) === Number(amount) &&
+      String(item.paymentMethod || "").trim().toLowerCase() === String(req.body.paymentMethod || "").trim().toLowerCase()
+    );
+    if (duplicatePendingOrder) {
+      return { order: duplicatePendingOrder };
+    }
 
     if (ad.type === "buy") {
       if (customer.id !== req.user.id && req.user.role !== "admin") {
@@ -5664,6 +5658,16 @@ app.post("/api/cico-requests", authenticate, requirePlatformAccess({ cico: true 
       };
     }
     if (request.type === "Depot" && !request.proof) return { error: "Preuve de paiement requise pour un Cash In." };
+    const duplicatePendingRequest = db.cicoRequests.find((item) =>
+      item.userId === user.id &&
+      item.merchantId === merchant.id &&
+      item.type === request.type &&
+      item.status === "En attente merchant" &&
+      Number(item.amount || 0) === Number(request.amount)
+    );
+    if (duplicatePendingRequest) {
+      return { request: duplicatePendingRequest };
+    }
     db.cicoRequests.push(request);
     return { request };
   });
@@ -7940,7 +7944,6 @@ async function bootstrapServer() {
       await ensureAdminUser();
       await ensurePlatformUser();
       await ensureCommissionAccounts();
-      await ensureTestAccount();
       await ensureReferralCodes();
       await reconcileReferralLinks();
     } catch (error) {
