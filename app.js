@@ -2701,23 +2701,16 @@ function renderMerchantApplications(applications) {
   const list = document.querySelector("[data-admin-merchant-applications]");
   if (!list) return;
   const normalizeStatus = (value = "") => String(value ?? "").trim().toLowerCase();
+  const openApplications = (Array.isArray(applications) ? applications : []).filter((item) => !["approved", "rejected", "closed"].includes(normalizeStatus(item.status)));
 
-  list.innerHTML = applications.length ? applications.map((item) => {
-    const isApproved = normalizeStatus(item.status) === "approved";
-    return `
+  list.innerHTML = openApplications.length ? openApplications.map((item) => `
     <div class="queue-row">
       <span>${escapeHtml(item.businessName)}<small>${escapeHtml(item.userEmail)} - ${escapeHtml(item.city)}, ${escapeHtml(item.country)} - ${escapeHtml(item.status)}</small></span>
       <strong>${formatUsdt(item.guarantee)}</strong>
-      ${isApproved ? `
-        <input class="admin-inline-input" type="number" min="1" step="0.01" value="${Number(item.guarantee || 1000)}" data-merchant-fund-amount>
-        <button class="btn primary" type="button" data-merchant-fund="${escapeHtml(item.id || item.userId || "")}">Approvisionner</button>
-      ` : `
-        <button class="btn primary" type="button" data-merchant-approve="${escapeHtml(item.id || item.reference || "")}">Approuver</button>
-        <button class="btn secondary" type="button" data-merchant-reject="${escapeHtml(item.id || item.reference || "")}">Rejeter</button>
-      `}
+      <button class="btn primary" type="button" data-merchant-approve="${escapeHtml(item.id || item.reference || "")}">Approuver</button>
+      <button class="btn secondary" type="button" data-merchant-reject="${escapeHtml(item.id || item.reference || "")}">Rejeter</button>
     </div>
-  `;
-  }).join("") : `<p class="muted">Aucune demande merchant en attente.</p>`;
+  `).join("") : `<p class="muted">Aucune demande merchant en attente.</p>`;
 }
 
 function renderDisputes(disputes) {

@@ -1671,6 +1671,7 @@ function composeUser(db, user) {
   const ownExchangeOrders = canUseBackoffice(user)
     ? db.exchangeOrders
     : db.exchangeOrders.filter((order) => order.userId === user.id || order.merchantId === user.id || order.customerEmail === user.email);
+  const openMerchantApplications = (db.merchantApplications || []).filter((item) => !["approved", "rejected", "closed"].includes(normalizeStatusValue(item.status)));
   const ownExchangeAds = db.exchangeAds
     .filter((ad) => canUseBackoffice(user) || ad.merchantId === user.id)
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
@@ -1802,7 +1803,9 @@ function composeUser(db, user) {
         .slice()
         .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       : [],
-    merchantApplications: canUseBackoffice(user) ? db.merchantApplications : db.merchantApplications.filter((item) => item.userId === user.id),
+    merchantApplications: canUseBackoffice(user)
+      ? openMerchantApplications
+      : openMerchantApplications.filter((item) => item.userId === user.id),
     disputes: canUseBackoffice(user) ? db.disputes : db.disputes.filter((item) => item.userId === user.id),
     platformControls: canUseBackoffice(user) ? db.platformControls : {},
     feeSettings: canUseBackoffice(user) ? normalizeFeeSettings(db.feeSettings) : {},
@@ -5692,6 +5695,12 @@ app.post("/api/merchant/applications", authenticate, requirePlatformAccess(), va
   await ensureStorage();
   const user = await UserModel.findOne({ id: req.user.id }).lean();
   if (!user) return res.status(404).json({ message: "Utilisateur introuvable." });
+
+  const existingApplication = await MerchantApplicationModel.findOne({ userId: user.id }).sort({ createdAt: -1 }).lean();
+  if (existingApplication && !["approved", "rejected", "closed"].includes(normalizeStatusValue(existingApplication.status))) {
+    return res.status(400).json({ message: "Une demande merchant est déjà en cours de validation pour ce compte." });
+  }
+
   const privilegedMerchant = canUseBackoffice(req.user);
   const eligibleStake = (Array.isArray(user.activeStakes) ? user.activeStakes : [])
     .filter((stake) => stake.status === "active")
@@ -5986,7 +5995,7 @@ app.get("/api/admin/summary", authenticate, requireAdmin, async (_req, res, next
       transactions,
       cicoCount,
       exchangeOrderCount,
-      merchantApplicationsCount,
+      merchantApplicationsRaw,
       disputesCount,
       platformAccount
     ] = await Promise.all([
@@ -5994,10 +6003,11 @@ app.get("/api/admin/summary", authenticate, requireAdmin, async (_req, res, next
       TransactionModel.find({}, summaryTransactionProjection).lean(),
       CicoRequestModel.countDocuments(),
       ExchangeOrderModel.countDocuments(),
-      MerchantApplicationModel.countDocuments(),
+      MerchantApplicationModel.find({}).lean(),
       DisputeModel.countDocuments(),
       PlatformAccountModel.findOne({ id: "platform" }).lean()
     ]);
+    const merchantApplicationsCount = merchantApplicationsRaw.filter((item) => !["approved", "rejected", "closed"].includes(normalizeStatusValue(item.status))).length;
 
     const db = normalizeDb({
       users,
@@ -7558,10 +7568,21 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
     const application = await MerchantApplicationModel.findOne({ id: applicationId }).lean();
     if (!application) return res.status(404).json({ message: "Demande merchant introuvable." });
 
+    const currentStatus = normalizeStatusValue(application.status);
+    const terminalStatuses = new Set(["approved", "rejected", "closed"]);
+    if (terminalStatuses.has(currentStatus)) {
+      return res.json({
+        ok: true,
+        application,
+        ignored: true,
+        message: currentStatus === "approved" ? "Cette demande merchant est déjà approuvée." : "Cette demande merchant est déjà rejetée."
+      });
+    }
+
     const nextStatus = action === "merchant-approve" ? "approved" : "rejected";
     const [updatedApplication, user] = await Promise.all([
       MerchantApplicationModel.findOneAndUpdate(
-        { id: applicationId },
+        { id: applicationId, status: { $ne: nextStatus } },
         {
           $set: {
             status: nextStatus,
@@ -7594,7 +7615,12 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
       );
     }
 
-    return res.json({ application: updatedApplication || application });
+    return res.json({
+      ok: true,
+      application: updatedApplication || application,
+      ignored: false,
+      message: nextStatus === "approved" ? "Demande merchant approuvée." : "Demande merchant rejetée."
+    });
   }
 
   const fastResult = await performFastAdminAction({
