@@ -5958,6 +5958,25 @@ app.post("/api/transactions/export/email", authenticate, attachDb, emailTransact
 app.get("/api/admin/summary", authenticate, requireAdmin, async (_req, res, next) => {
   try {
     await ensureStorage();
+    const summaryUserProjection = {
+      id: 1,
+      createdAt: 1,
+      country: 1,
+      status: 1,
+      referrerId: 1,
+      merchantProfile: 1,
+      activePlans: 1,
+      activeEtfs: 1
+    };
+    const summaryTransactionProjection = {
+      id: 1,
+      amount: 1,
+      type: 1,
+      status: 1,
+      displayAmount: 1,
+      metadata: 1,
+      createdAt: 1
+    };
     const [
       users,
       transactions,
@@ -5967,8 +5986,8 @@ app.get("/api/admin/summary", authenticate, requireAdmin, async (_req, res, next
       disputesCount,
       platformAccount
     ] = await Promise.all([
-      UserModel.find({}, safeUserProjection).lean(),
-      TransactionModel.find({}, transactionListProjection).lean(),
+      UserModel.find({}, summaryUserProjection).lean(),
+      TransactionModel.find({}, summaryTransactionProjection).lean(),
       CicoRequestModel.countDocuments(),
       ExchangeOrderModel.countDocuments(),
       MerchantApplicationModel.countDocuments(),
@@ -7527,10 +7546,57 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
   role: z.enum(["user", "admin"]).optional(),
   status: z.enum(["active", "blocked"]).optional()
 })), async (req, res) => {
+  const { action, id, amount } = req.body;
+
+  if (action === "merchant-approve" || action === "merchant-reject") {
+    const applicationId = String(id || "").trim();
+    if (!applicationId) return res.status(400).json({ message: "Demande merchant requise." });
+    const application = await MerchantApplicationModel.findOne({ id: applicationId }).lean();
+    if (!application) return res.status(404).json({ message: "Demande merchant introuvable." });
+
+    const nextStatus = action === "merchant-approve" ? "approved" : "rejected";
+    const [updatedApplication, user] = await Promise.all([
+      MerchantApplicationModel.findOneAndUpdate(
+        { id: applicationId },
+        {
+          $set: {
+            status: nextStatus,
+            reviewedAt: nowIso(),
+            reviewedBy: req.user.id
+          }
+        },
+        { new: true, lean: true }
+      ),
+      UserModel.findOne({ id: application.userId }).lean()
+    ]);
+
+    if (user) {
+      const nextMerchantProfile = {
+        ...(user.merchantProfile || {}),
+        ...application,
+        status: nextStatus,
+        rating: nextStatus === "approved" ? "Actif" : "Rejete",
+        limits: `10 - ${money(Number(application.guarantee || 0))} USDT`,
+        guaranteeRequired: money(Number(application.guarantee || 0))
+      };
+      await UserModel.updateOne(
+        { id: user.id },
+        {
+          $set: {
+            merchantProfile: nextMerchantProfile,
+            merchantWallet: user.merchantWallet || { available: 0, pending: 0, bonus: 0 }
+          }
+        }
+      );
+    }
+
+    return res.json({ application: updatedApplication || application });
+  }
+
   const fastResult = await performFastAdminAction({
-    action: req.body.action,
-    id: req.body.id,
-    amount: req.body.amount,
+    action,
+    id,
+    amount,
     role: req.body.role,
     adminId: req.user.id,
     email: req.body.email,
