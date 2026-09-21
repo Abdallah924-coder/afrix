@@ -103,6 +103,14 @@ const secondaryReadPreference = "primary";
 const transactionListProjection = { "metadata.proof.dataBase64": 0 };
 const PLAN_EARNINGS_INTERVAL_MS = 15 * 60 * 1000;
 const PLAN_PAYOUT_INTERVAL_MS = 86_400_000;
+const sortByCreatedAtDesc = (left, right) => {
+  const leftTime = Number(new Date(left?.createdAt || left || 0).getTime());
+  const rightTime = Number(new Date(right?.createdAt || right || 0).getTime());
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+    return rightTime - leftTime;
+  }
+  return String(right?.createdAt || right || "").localeCompare(String(left?.createdAt || left || ""));
+};
 const GRSCOIN_SWAP_FEE_RATE = 0.025;
 const GRSCOIN_WITHDRAWAL_FEE_RATE = 0.10;
 const USDT_WITHDRAWAL_FEE_RATE = 0.10;
@@ -1674,7 +1682,7 @@ function composeUser(db, user) {
   const openMerchantApplications = (db.merchantApplications || []).filter((item) => !["approved", "rejected", "closed"].includes(normalizeStatusValue(item.status)));
   const ownExchangeAds = db.exchangeAds
     .filter((ad) => canUseBackoffice(user) || ad.merchantId === user.id)
-    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    .sort(sortByCreatedAtDesc);
 
   return {
     ...sanitizeUser(user),
@@ -1737,7 +1745,7 @@ function composeUser(db, user) {
     refLink: `${process.env.APP_URL || "http://localhost:" + PORT}/register?ref=${user.refCode}`,
     transactions: db.transactions
       .filter((tx) => tx.userId === user.id && (tx.type !== "Commission" || canAccessCommissionSummary))
-      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+      .sort((a, b) => sortByCreatedAtDesc(a, b))
       .map((tx) => ({
         id: tx.id,
         createdAt: tx.createdAt,
@@ -1751,7 +1759,7 @@ function composeUser(db, user) {
       ? db.transactions
         .filter((tx) => canViewTransaction(user, tx))
         .slice()
-        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+        .sort((a, b) => sortByCreatedAtDesc(a, b))
         .map((tx) => {
           const owner = db.users.find((candidate) => candidate.id === tx.userId);
           return {
@@ -1795,13 +1803,13 @@ function composeUser(db, user) {
       mainBalance: money(user.balance)
     },
     merchantApplicationStatus: user.merchantProfile?.status || "Aucun profil",
-    cicoRequests: ownCicoRequests.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
+    cicoRequests: ownCicoRequests.slice().sort((a, b) => sortByCreatedAtDesc(a, b)),
     exchangeAds: ownExchangeAds.map((ad) => publicExchangeAd(ad, db.users.find((candidate) => candidate.id === ad.merchantId))),
-    exchangeOrders: ownExchangeOrders.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
+    exchangeOrders: ownExchangeOrders.slice().sort((a, b) => sortByCreatedAtDesc(a, b)),
     adminExchangeOrders: canUseBackoffice(user)
       ? db.exchangeOrders
         .slice()
-        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+        .sort((a, b) => sortByCreatedAtDesc(a, b))
       : [],
     merchantApplications: canUseBackoffice(user)
       ? openMerchantApplications
