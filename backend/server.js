@@ -662,6 +662,10 @@ function sanitizeUser(user) {
   return safeUser;
 }
 
+function normalizeStatusValue(value = "") {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 let testAccountId = "";
 
 function isTestAccountUser(user = {}) {
@@ -1655,7 +1659,7 @@ function composeUser(db, user) {
   const canAccessCommissionSummary = canViewCommissionSummary(user);
 
   const approvedMerchants = db.users
-    .filter((candidate) => candidate.merchantProfile?.status === "approved")
+    .filter((candidate) => normalizeStatusValue(candidate.merchantProfile?.status) === "approved")
     .map((candidate) => publicMerchantProfile(candidate, db));
   const issuedGrsSupply = grsIssuedSupply(db);
   const marketStats = grsMarketStats(db);
@@ -1866,7 +1870,7 @@ function requireAdmin(req, res, next) {
 }
 
 function requireMerchant(req, res, next) {
-  if (req.user?.merchantProfile?.status !== "approved" && !canUseBackoffice(req.user)) {
+  if (normalizeStatusValue(req.user?.merchantProfile?.status) !== "approved" && !canUseBackoffice(req.user)) {
     return res.status(403).json({ message: "Compte merchant approuve requis." });
   }
   next();
@@ -5464,7 +5468,7 @@ app.post("/api/exchange/orders", authenticate, requirePlatformAccess(), validate
     const ad = db.exchangeAds.find((item) => item.id === req.body.adId && item.status === "active");
     if (!ad) return { error: "Annonce introuvable ou inactive." };
     const merchant = db.users.find((user) => user.id === ad.merchantId);
-    if (!merchant || merchant.merchantProfile?.status !== "approved") return { error: "Merchant indisponible." };
+    if (!merchant || normalizeStatusValue(merchant.merchantProfile?.status) !== "approved") return { error: "Merchant indisponible." };
 
     const amount = money(req.body.amount);
     if (amount < money(ad.minAmount) || amount > money(ad.maxAmount)) {
@@ -5612,7 +5616,7 @@ app.post("/api/cico-requests", authenticate, requirePlatformAccess({ cico: true 
 })), async (req, res) => {
   const result = await updateDb(async (db) => {
     const user = db.users.find((candidate) => candidate.id === req.user.id);
-    const merchant = db.users.find((candidate) => candidate.id === req.body.merchantId && candidate.merchantProfile?.status === "approved");
+    const merchant = db.users.find((candidate) => candidate.id === req.body.merchantId && normalizeStatusValue(candidate.merchantProfile?.status) === "approved");
     if (!merchant) return { error: "Merchant sélectionné introuvable ou indisponible." };
     if (String(merchant.merchantProfile?.country || "").toLowerCase() !== String(req.body.country || "").toLowerCase()) {
       return { error: "Le Merchant sélectionné n'est pas disponible dans ce pays." };
@@ -7714,28 +7718,10 @@ app.post("/api/admin/actions", authenticate, requireAdmin, validate(z.object({
       return { user: sanitizeUser(target) };
     }
 
-    if (action === "merchant-approve" || action === "merchant-reject") {
-      const application = db.merchantApplications.find((item) => item.id === id);
-      if (!application) return { error: "Demande merchant introuvable." };
-      const user = db.users.find((candidate) => candidate.id === application.userId);
-      application.status = action === "merchant-approve" ? "approved" : "rejected";
-      if (user) {
-        user.merchantProfile = {
-          ...application,
-          status: application.status,
-          rating: application.status === "approved" ? "Actif" : "Rejete",
-          limits: `10 - ${application.guarantee.toLocaleString("fr-FR")} USDT`
-        };
-        user.merchantWallet = user.merchantWallet || { available: 0, pending: 0, bonus: 0 };
-        user.merchantProfile.guaranteeRequired = money(application.guarantee);
-      }
-      return { application };
-    }
-
     if (action === "merchant-fund") {
       const application = db.merchantApplications.find((item) => item.id === id);
       const user = db.users.find((candidate) => candidate.id === id || candidate.id === application?.userId);
-      if (!user || user.merchantProfile?.status !== "approved") return { error: "Merchant approuve introuvable." };
+      if (!user || normalizeStatusValue(user.merchantProfile?.status) !== "approved") return { error: "Merchant approuve introuvable." };
       creditMerchantAvailable(db, user, amount, "Approvisionnement wallet merchant", {
         source: "admin_merchant_funding",
         referenceId: id,

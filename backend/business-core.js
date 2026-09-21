@@ -111,7 +111,7 @@ export function buildAdminStats(db = {}) {
     transactionVolume: money(completedTransactions.reduce((total, tx) => total + Math.abs(Number(tx.amount || 0)), 0)),
     platformRevenue: money(platformRevenue),
     partners: users.filter((user) => user.referrerId).length,
-    approvedMerchants: users.filter((user) => user.merchantProfile?.status === "approved").length,
+    approvedMerchants: users.filter((user) => String(user.merchantProfile?.status || "").trim().toLowerCase() === "approved").length,
     activeCountries: countries.size
   };
 }

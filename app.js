@@ -2700,9 +2700,10 @@ function renderExchangeAdminOrders(rows) {
 function renderMerchantApplications(applications) {
   const list = document.querySelector("[data-admin-merchant-applications]");
   if (!list) return;
+  const normalizeStatus = (value = "") => String(value ?? "").trim().toLowerCase();
 
   list.innerHTML = applications.length ? applications.map((item) => {
-    const isApproved = item.status === "approved";
+    const isApproved = normalizeStatus(item.status) === "approved";
     return `
     <div class="queue-row">
       <span>${escapeHtml(item.businessName)}<small>${escapeHtml(item.userEmail)} - ${escapeHtml(item.city)}, ${escapeHtml(item.country)} - ${escapeHtml(item.status)}</small></span>
@@ -2753,18 +2754,17 @@ function nestedValue(source, path) {
 }
 
 function adminStatusLabel(status = "") {
+  const key = String(status || "").trim().toLowerCase();
   const labels = {
-    Pending: "En attente",
-    Completed: "Validé",
-    Rejected: "Rejeté",
-    Active: "Actif",
-    active: "Actif",
-    blocked: "Suspendu",
     pending: "En attente",
     completed: "Validé",
+    rejected: "Rejeté",
+    active: "Actif",
+    blocked: "Suspendu",
+    approved: "Approuvé",
     rejected: "Rejeté"
   };
-  return labels[status] || status || "-";
+  return labels[key] || status || "-";
 }
 
 function renderAdminPagination(kind, pagination = {}) {
