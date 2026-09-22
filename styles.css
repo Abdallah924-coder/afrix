@@ -2835,15 +2835,25 @@ label { color: #aec7c4; }
 .admin-detail-row, .queue-row { border-radius: 11px; border-color: rgba(121, 225, 227, .18); background: rgba(11, 34, 39, .78); }
 
 @media (max-width: 980px) {
-  .app { padding: 108px 20px 42px; }
-  .topbar { left: 0; width: 100%; padding: 10px 16px; }
+  .app {
+    padding: calc(118px + env(safe-area-inset-top)) 20px 42px;
+  }
+  .topbar {
+    left: 0;
+    width: 100%;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  }
   .sidebar { width: 100vw; }
   .hero-card, .panel { padding: 24px; }
   .auth-layout { padding: 24px; gap: 24px; }
 }
 
 @media (max-width: 520px) {
-  .app { padding-left: 14px; padding-right: 14px; }
+  .app {
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: calc(114px + env(safe-area-inset-top));
+  }
   .hero-card, .panel { padding: 20px; border-radius: 13px; }
   .auth-layout { padding: 14px; }
   .auth-intro, .auth-card { border-radius: 15px; }
