@@ -2567,7 +2567,7 @@ th { color: var(--muted); font-size: 12px; }
     width: 100%;
     max-width: 100%;
     margin-left: 0;
-    padding: calc(84px + env(safe-area-inset-top)) 16px 16px;
+    padding: 102px 16px 16px;
   }
   .menu-btn {
     display: none;
