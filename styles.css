@@ -990,7 +990,7 @@ body.public-page {
   max-width: calc(100% - 278px);
   min-width: 0;
   margin-left: 278px;
-  padding: 118px 34px 34px;
+  padding: 100px 34px 34px; /* ✅ RÉDUIT: de 118px à 100px (calcul: ~82px topbar + 18px marge) */
 }
 .topbar {
   position: fixed !important;
@@ -1008,7 +1008,7 @@ body.public-page {
   margin: 0;
   padding: 12px 34px;
   border-bottom: 1px solid var(--line);
-  border-radius: 0 0 12px 12px;
+  border-radius: 0; /* ✅ CORRIGÉ: était "0 0 12px 12px" (coins bas). Header ne doit pas avoir de coins arrondis. */
   background: rgba(6, 17, 15, .84);
   backdrop-filter: blur(14px);
   box-shadow: 0 18px 42px rgba(0, 0, 0, .22);
@@ -1129,7 +1129,8 @@ body.public-page {
 .investment-empty { display: grid; justify-items: start; gap: 10px; padding: 26px; border: 1px dashed var(--line); border-radius: 10px; }
 .investment-empty p { margin-bottom: 6px; color: var(--muted); }
 @keyframes investment-holo-floor { 0%, 100% { opacity: .32; transform: perspective(400px) rotateX(62deg) translateZ(-20px) scaleX(.76) translateY(2px); } 50% { opacity: .82; transform: perspective(400px) rotateX(62deg) translateZ(-20px) scaleX(1) translateY(-3px); } }
-body[data-page="dashboard"] .topbar { margin-bottom: 26px; }
+/* ❌ SUPPRIMÉ: margin-bottom n'a aucun effet sur un élément position: fixed */
+/* body[data-page="dashboard"] .topbar { margin-bottom: 26px; } */
 body[data-page="dashboard"] .hero-card { margin-bottom: 26px; }
 body[data-page="dashboard"] .hero-card,
 body[data-page="dashboard"] .stats article {
