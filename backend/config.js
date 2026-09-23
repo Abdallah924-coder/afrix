@@ -86,7 +86,6 @@ export const publicFiles = new Set([
   "/manifest.webmanifest",
   "/service-worker.js",
   "/offline.html",
-  "/IMG-20260609-WA0003.jpg"
 ]);
 
 export const plans = [
