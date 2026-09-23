@@ -1,4 +1,4 @@
-const APP_VERSION = "20260921-1";
+const APP_VERSION = "20260923-1";
 const CACHE_NAME = `afrix-v${APP_VERSION}`;
 const APP_SHELL = [
   "/",
@@ -6,8 +6,7 @@ const APP_SHELL = [
   `/styles.css?v=${APP_VERSION}`,
   `/app.js?v=${APP_VERSION}`,
   `/manifest.webmanifest?v=${APP_VERSION}`,
-  "/assets/pwa-icon.svg",
-  "/IMG-20260609-WA0003.jpg"
+  "/assets/pwa-icon.svg"
 ];
 
 self.addEventListener("install", (event) => {
