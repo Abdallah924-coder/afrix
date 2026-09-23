@@ -990,7 +990,7 @@ body.public-page {
   max-width: calc(100% - 278px);
   min-width: 0;
   margin-left: 278px;
-  padding: 130px 34px 34px; 
+  padding: 160px 34px 34px; 
 }
 .topbar {
   position: fixed !important;
