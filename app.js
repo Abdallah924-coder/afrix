@@ -1,5 +1,5 @@
 const API_BASE = window.AFRIX_API_BASE || "/api";
-const APP_VERSION = "20260921-1";
+const APP_VERSION = "20260923-1";
 const AUTH_TOKEN_KEY = "afrix_auth_token";
 const DISMISSED_NOTIFICATIONS_KEY = "afrix_dismissed_notifications";
 const API_TIMEOUT_MS = 60_000;
