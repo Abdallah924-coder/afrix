@@ -921,7 +921,14 @@ body.public-page {
   position: fixed;
   inset: 0 auto 0 0;
   width: 260px;
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   padding: 22px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
   border-right: 1px solid var(--line);
   background: rgba(6, 17, 15, .94);
   box-shadow: inset -1px 0 0 rgba(255,255,255,.02);
@@ -929,6 +936,8 @@ body.public-page {
 .sidebar-shell {
   display: grid;
   gap: 18px;
+  flex: 0 0 auto;
+  min-height: max-content;
 }
 .nav-group {
   display: grid;
@@ -981,7 +990,7 @@ body.public-page {
   border-color: rgba(63, 226, 160, .5);
   background: linear-gradient(135deg, rgba(63, 226, 160, .16), rgba(55, 217, 209, .08));
 }
-.side-card { position: absolute; left: 22px; right: 22px; bottom: 22px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(180deg, rgba(18, 35, 31, .94), rgba(10, 20, 18, .94)); box-shadow: var(--shadow-soft); }
+.side-card { position: static; margin: auto 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(180deg, rgba(18, 35, 31, .94), rgba(10, 20, 18, .94)); box-shadow: var(--shadow-soft); }
 .side-card span, .side-card small { display: block; color: var(--muted); font-size: 13px; }
 .side-card strong { display: block; margin: 7px 0; color: var(--gold); font-size: 22px; }
 .side-logout { width: 100%; margin-top: 12px; }
@@ -1347,13 +1356,14 @@ body[data-page="wallet"] select {
 }
 .support-widget {
   position: fixed;
-  left: 20px;
+  left: 50%;
   bottom: 20px;
   z-index: 80;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  align-items: center;
   gap: 10px;
+  transform: translateX(-50%);
 }
 .support-float {
   display: inline-flex;
@@ -2624,7 +2634,12 @@ th { color: var(--muted); font-size: 12px; }
   .support-widget {
     left: 14px;
     bottom: 106px;
+    right: auto;
+    top: auto;
+    flex-direction: column;
     gap: 8px;
+    align-items: flex-start;
+    transform: none;
   }
   .support-float {
     min-height: 42px;
@@ -2743,12 +2758,17 @@ body[data-page]::before {
 
 .sidebar {
   width: 278px;
-  padding: 26px 20px;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 26px 20px 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
   background: linear-gradient(180deg, rgba(5, 18, 23, .98), rgba(7, 27, 31, .96));
   border-right-color: rgba(121, 225, 227, .18);
 }
 
-.sidebar-shell { gap: 22px; }
+.sidebar-shell { gap: 22px; flex: 0 0 auto; min-height: max-content; }
 .sidebar .brand { padding: 2px 8px 12px; }
 .sidebar .brand-mark { box-shadow: 0 12px 24px rgba(84, 230, 168, .18); }
 .nav { margin-top: 0; gap: 5px; }
@@ -3181,8 +3201,7 @@ body.public-page {
 }
 
 .home-header {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 20;
   display: flex;
   align-items: center;

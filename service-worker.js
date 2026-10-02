@@ -1,4 +1,4 @@
-const APP_VERSION = "20260923-1";
+const APP_VERSION = "20261002-1";
 const CACHE_NAME = `afrix-v${APP_VERSION}`;
 const APP_SHELL = [
   "/",
